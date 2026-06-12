@@ -5,7 +5,7 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m1
     integrations:
-      app_store_connect: "hubword_key" # Match this with the API Key Name in Codemagic integrations
+      app_store_connect: "emir" # Match this with the API Key Name in Codemagic integrations
     environment:
       flutter: stable
       xcode: latest
