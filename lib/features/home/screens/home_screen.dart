@@ -235,15 +235,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         controller: _nameController,
         textAlign: TextAlign.left,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          color: AppColors.ivory,
+          color: AppColors.ink,
           fontWeight: FontWeight.w900,
         ),
-        decoration: const InputDecoration(
+        cursorColor: AppColors.mahogany,
+        decoration: InputDecoration(
           isDense: true,
+          filled: true,
+          fillColor: AppColors.ivory,
           hintText: 'Enter your name',
-          prefixIcon: Icon(
+          hintStyle: TextStyle(
+            color: AppColors.mahoganyDark.withValues(alpha: 0.55),
+            fontWeight: FontWeight.w700,
+          ),
+          prefixIcon: const Icon(
             Icons.person_outline_rounded,
-            color: AppColors.brassLight,
+            color: AppColors.brass,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(999),
+            borderSide: BorderSide(
+              color: AppColors.brassLight.withValues(alpha: 0.48),
+              width: 1.2,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(999),
+            borderSide: const BorderSide(
+              color: AppColors.brassLight,
+              width: 1.8,
+            ),
           ),
         ),
       ),
@@ -362,21 +383,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildPremiumButton() {
-    return OutlinedButton.icon(
+    return _CasinoMenuButton(
+      label: 'GO PREMIUM',
+      icon: Icons.workspace_premium_rounded,
       onPressed: _goPremium,
-      icon: const Icon(Icons.workspace_premium_rounded, size: 20),
-      label: const Text('GO PREMIUM'),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(46),
-        foregroundColor: AppColors.brassLight,
-        side: BorderSide(color: AppColors.brassLight.withValues(alpha: 0.5)),
-        backgroundColor: AppColors.feltDark.withValues(alpha: 0.64),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0,
-        ),
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFFFF4B8),
+          Color(0xFFFFC534),
+          Color(0xFFE18A0B),
+          Color(0xFFFFE99A),
+        ],
       ),
+      foregroundColor: AppColors.mahoganyDark,
+      isPremium: true,
     );
   }
 }
@@ -396,20 +418,21 @@ class _FormPlaque extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.ivory.withValues(alpha: 0.98),
-            const Color(0xFFEBD9B1),
+            AppColors.feltDark.withValues(alpha: 0.96),
+            AppColors.felt.withValues(alpha: 0.78),
+            AppColors.feltDark.withValues(alpha: 0.96),
           ],
         ),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.brassLight.withValues(alpha: 0.42),
-          width: 1.1,
+          color: AppColors.brassLight.withValues(alpha: 0.4),
+          width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.24),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -423,7 +446,7 @@ class _FormPlaque extends StatelessWidget {
                 title,
                 style: const TextStyle(
                   fontFamily: 'RehnCondensed',
-                  color: AppColors.felt,
+                  color: AppColors.brassLight,
                   fontSize: 19,
                   fontWeight: FontWeight.w900,
                   height: 1,
@@ -459,6 +482,7 @@ class _CasinoMenuButton extends StatelessWidget {
   final Gradient gradient;
   final Color foregroundColor;
   final bool isLoading;
+  final bool isPremium;
 
   const _CasinoMenuButton({
     required this.label,
@@ -467,6 +491,7 @@ class _CasinoMenuButton extends StatelessWidget {
     required this.gradient,
     required this.foregroundColor,
     this.isLoading = false,
+    this.isPremium = false,
   });
 
   @override
@@ -487,6 +512,12 @@ class _CasinoMenuButton extends StatelessWidget {
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
+            if (isPremium)
+              BoxShadow(
+                color: AppColors.brassLight.withValues(alpha: 0.42),
+                blurRadius: 18,
+                spreadRadius: 1.2,
+              ),
           ],
         ),
         child: Material(
@@ -505,7 +536,9 @@ class _CasinoMenuButton extends StatelessWidget {
                       shape: BoxShape.circle,
                       color: Colors.black.withValues(alpha: 0.2),
                       border: Border.all(
-                        color: AppColors.brassLight.withValues(alpha: 0.44),
+                        color: AppColors.brassLight.withValues(
+                          alpha: isPremium ? 0.82 : 0.44,
+                        ),
                         width: 1.1,
                       ),
                     ),

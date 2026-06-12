@@ -137,12 +137,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final contentWidth = constraints.maxWidth
-                    .clamp(320.0, 560.0)
+                    .clamp(300.0, 520.0)
                     .toDouble();
                 final designHeight = constraints.maxHeight
-                    .clamp(760.0, 900.0)
+                    .clamp(580.0, 760.0)
                     .toDouble();
-                final horizontalPadding = contentWidth < 380 ? 10.0 : 16.0;
+                final horizontalPadding = contentWidth < 380 ? 10.0 : 14.0;
 
                 return Center(
                   child: FittedBox(
@@ -154,33 +154,32 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
-                          8,
+                          4,
                           horizontalPadding,
-                          12,
+                          8,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _buildTopBar(context),
-                            const SizedBox(height: 2),
                             const SizedBox(
-                              height: 132,
+                              height: 72,
                               child: CachedAssetImage(
                                 AppAssetPaths.logo,
                                 fit: BoxFit.contain,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 4),
                             _buildTitle(),
-                            const SizedBox(height: 7),
+                            const SizedBox(height: 5),
                             _buildCurrentPlanStrip(),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 6),
                             _buildBenefitStrip(),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 8),
                             Expanded(child: _buildPlans(context)),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 6),
                             _buildBottomBanner(),
-                            const SizedBox(height: 11),
+                            const SizedBox(height: 6),
                             _buildFooter(),
                           ],
                         ),
@@ -200,8 +199,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     return Row(
       children: [
         SizedBox(
-          width: 42,
-          height: 42,
+          width: 36,
+          height: 36,
           child: IconButton(
             onPressed: () {
               if (Navigator.of(context).canPop()) {
@@ -210,7 +209,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                 context.goNamed('home');
               }
             },
-            icon: const Icon(Icons.close_rounded, size: 28),
+            icon: const Icon(Icons.close_rounded, size: 24),
             color: AppColors.ivory,
             style: IconButton.styleFrom(
               backgroundColor: AppColors.feltDark.withValues(alpha: 0.84),
@@ -233,7 +232,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       style: TextStyle(
         fontFamily: 'RehnCondensed',
         color: AppColors.ivory,
-        fontSize: 21,
+        fontSize: 19,
         fontWeight: FontWeight.w900,
         letterSpacing: 0.8,
         height: 1,
@@ -246,8 +245,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   Widget _buildBenefitStrip() {
     return Container(
-      height: 86,
-      decoration: _darkPanel(radius: 18),
+      height: 56,
+      decoration: _darkPanel(radius: 12),
       child: Row(
         children: [
           Expanded(
@@ -328,8 +327,6 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.alarm_rounded, '8-12 rounds'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
               _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
-              _PlanFeature(Icons.layers_rounded, 'All question packs'),
-              _PlanFeature(Icons.star_rounded, 'Premium themes'),
             ],
             price: '₺59,99',
             displayPrice:
@@ -352,9 +349,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.groups_rounded, 'Up to 10 players'),
               _PlanFeature(Icons.alarm_add_rounded, 'Custom rounds'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
-              _PlanFeature(Icons.layers_rounded, 'All question packs'),
-              _PlanFeature(Icons.auto_awesome_rounded, 'Premium themes'),
-              _PlanFeature(Icons.edit_rounded, 'Create questions'),
+              _PlanFeature(Icons.auto_awesome_rounded, 'All premium features'),
             ],
             price: '₺199,99',
             displayPrice:
@@ -386,9 +381,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   Widget _buildBottomBanner() {
     return Container(
-      height: 82,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: _darkPanel(radius: 18).copyWith(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: _darkPanel(radius: 12).copyWith(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -398,25 +393,25 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       child: Row(
         children: [
           Container(
-            width: 64,
-            height: 50,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: AppColors.goldGradient,
               boxShadow: [
                 BoxShadow(
                   color: AppColors.brass.withValues(alpha: 0.38),
-                  blurRadius: 18,
+                  blurRadius: 14,
                 ),
               ],
             ),
             child: const Icon(
               Icons.workspace_premium_rounded,
               color: AppColors.ink,
-              size: 40,
+              size: 22,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -428,19 +423,19 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppColors.brassLight,
-                    fontSize: 19,
+                    fontSize: 13,
                     fontWeight: FontWeight.w900,
                     height: 1,
                   ),
                 ),
-                SizedBox(height: 7),
+                SizedBox(height: 3),
                 Text(
                   'Perfect for game nights, parties & events!',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppColors.ivory,
-                    fontSize: 13,
+                    fontSize: 10,
                     fontWeight: FontWeight.w700,
                     height: 1,
                   ),
@@ -483,13 +478,17 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           _FooterChip(
             icon: Icons.description_rounded,
             label: 'TERMS OF USE',
-            onTap: () => _launchURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'),
+            onTap: () => _launchURL(
+              'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/',
+            ),
           ),
           const SizedBox(width: 20),
           _FooterChip(
             icon: Icons.privacy_tip_rounded,
             label: 'PRIVACY POLICY',
-            onTap: () => _launchURL('https://stalkeet123.github.io/betsandguesses/privacy.html'),
+            onTap: () => _launchURL(
+              'https://stalkeet123.github.io/betsandguesses/privacy.html',
+            ),
           ),
         ],
       ),
@@ -499,7 +498,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   Widget _verticalRule() {
     return Container(
       width: 1,
-      height: 58,
+      height: 42,
       color: AppColors.brassLight.withValues(alpha: 0.22),
     );
   }
@@ -553,8 +552,8 @@ class _BenefitItem extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: AppColors.brassLight, size: 30),
-        const SizedBox(height: 7),
+        Icon(icon, color: AppColors.brassLight, size: 22),
+        const SizedBox(height: 4),
         Text(
           title,
           maxLines: 1,
@@ -562,12 +561,12 @@ class _BenefitItem extends StatelessWidget {
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: AppColors.brassLight,
-            fontSize: 11,
+            fontSize: 9.5,
             fontWeight: FontWeight.w900,
             height: 1,
           ),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 3),
         Text(
           subtitle,
           maxLines: 1,
@@ -575,7 +574,7 @@ class _BenefitItem extends StatelessWidget {
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: AppColors.ivory,
-            fontSize: 10,
+            fontSize: 8.5,
             fontWeight: FontWeight.w700,
             height: 1,
           ),
@@ -633,8 +632,8 @@ class _PlanCard extends StatelessWidget {
       alignment: Alignment.topCenter,
       children: [
         Container(
-          margin: EdgeInsets.only(top: badge == null ? 14 : 24),
-          padding: const EdgeInsets.fromLTRB(12, 20, 12, 12),
+          margin: EdgeInsets.only(top: badge == null ? 10 : 20),
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
           decoration: BoxDecoration(
             gradient:
                 background ??
@@ -690,9 +689,9 @@ class _PlanCard extends StatelessWidget {
               Icon(
                 Icons.workspace_premium_rounded,
                 color: crownColor,
-                size: 34,
+                size: 22,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(
                 title,
                 maxLines: 2,
@@ -701,7 +700,7 @@ class _PlanCard extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'RehnCondensed',
                   color: badge == null ? AppColors.ivory : AppColors.brassLight,
-                  fontSize: title.length > 8 ? 22 : 27,
+                  fontSize: title.length > 8 ? 17 : 21,
                   fontWeight: FontWeight.w900,
                   height: 0.95,
                   shadows: const [
@@ -713,7 +712,7 @@ class _PlanCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 3),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
@@ -721,28 +720,27 @@ class _PlanCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.ivory,
-                  fontSize: 13,
+                  fontSize: 10,
                   fontWeight: FontWeight.w700,
                   height: 1,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 7),
               Container(
                 height: 1,
                 color: AppColors.brassLight.withValues(alpha: 0.26),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 7),
               Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      for (var index = 0; index < features.length; index++) ...[
-                        _FeatureRow(feature: features[index]),
-                        if (index != features.length - 1)
-                          const SizedBox(height: 6),
-                      ],
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var index = 0; index < features.length; index++) ...[
+                      _FeatureRow(feature: features[index]),
+                      if (index != features.length - 1)
+                        const SizedBox(height: 5),
                     ],
-                  ),
+                  ],
                 ),
               ),
               if (price != null) ...[
@@ -752,7 +750,7 @@ class _PlanCard extends StatelessWidget {
                   isLoading: isLoading,
                   onTap: onTap,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
               ],
               _PlanFooter(label: footer),
             ],
@@ -781,7 +779,7 @@ class _PlanCard extends StatelessWidget {
                 badge!,
                 style: const TextStyle(
                   color: AppColors.ink,
-                  fontSize: 12,
+                  fontSize: 10,
                   fontWeight: FontWeight.w900,
                   height: 1,
                 ),
@@ -802,18 +800,18 @@ class _FeatureRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(feature.icon, color: AppColors.brassLight, size: 16),
-        const SizedBox(width: 7),
+        Icon(feature.icon, color: AppColors.brassLight, size: 14),
+        const SizedBox(width: 5),
         Expanded(
           child: Text(
             feature.label,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.ivory,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
-              height: 1.1,
+              height: 1,
             ),
           ),
         ),
@@ -839,14 +837,14 @@ class _PriceButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 42,
+      height: 36,
       child: ElevatedButton(
         onPressed: isLoading ? null : onTap,
         style: ElevatedButton.styleFrom(
           padding: EdgeInsets.zero,
           backgroundColor: isGreen ? AppColors.feltLight : AppColors.brass,
           foregroundColor: isGreen ? AppColors.ivory : AppColors.ink,
-          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
             side: BorderSide(
@@ -885,7 +883,7 @@ class _PlanFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 36,
+      height: 24,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.18),
@@ -899,7 +897,7 @@ class _PlanFooter extends StatelessWidget {
           style: TextStyle(
             fontFamily: 'RehnCondensed',
             color: AppColors.brassLight,
-            fontSize: 12,
+            fontSize: 10,
             fontWeight: FontWeight.w900,
             height: 1,
           ),
