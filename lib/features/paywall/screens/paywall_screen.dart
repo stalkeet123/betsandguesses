@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/revenuecat_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
@@ -452,6 +453,19 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     );
   }
 
+  Future<void> _launchURL(String urlString) async {
+    final url = Uri.parse(urlString);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        _showSnack('Could not open link: $urlString');
+      }
+    } catch (e) {
+      _showSnack('Error opening link: $e');
+    }
+  }
+
   Widget _buildFooter() {
     return FittedBox(
       fit: BoxFit.scaleDown,
@@ -462,18 +476,20 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             icon: _isRestoring
                 ? Icons.hourglass_top_rounded
                 : Icons.restore_rounded,
-            label: _isRestoring ? 'RESTORING' : 'RESTORE',
+            label: _isRestoring ? 'RESTORING' : 'RESTORE PURCHASES',
             onTap: _restorePurchases,
           ),
-          const SizedBox(width: 22),
-          const _FooterChip(
-            icon: Icons.verified_user_rounded,
-            label: 'SECURE PAYMENT',
+          const SizedBox(width: 20),
+          _FooterChip(
+            icon: Icons.description_rounded,
+            label: 'TERMS OF USE',
+            onTap: () => _launchURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'),
           ),
-          const SizedBox(width: 22),
-          const _FooterChip(
-            icon: Icons.lock_outline_rounded,
-            label: 'PRIVACY SAFE',
+          const SizedBox(width: 20),
+          _FooterChip(
+            icon: Icons.privacy_tip_rounded,
+            label: 'PRIVACY POLICY',
+            onTap: () => _launchURL('https://stalkeet123.github.io/betsandguesses/privacy.html'),
           ),
         ],
       ),

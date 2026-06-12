@@ -30,6 +30,7 @@ dependencies:
   shared_preferences: ^2.5.3
   collection: ^1.19.1
   purchases_flutter: ^10.2.3
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
