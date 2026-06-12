@@ -733,14 +733,16 @@ class _PlanCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Expanded(
-                child: Column(
-                  children: [
-                    for (var index = 0; index < features.length; index++) ...[
-                      _FeatureRow(feature: features[index]),
-                      if (index != features.length - 1)
-                        const SizedBox(height: 6),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (var index = 0; index < features.length; index++) ...[
+                        _FeatureRow(feature: features[index]),
+                        if (index != features.length - 1)
+                          const SizedBox(height: 6),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               if (price != null) ...[
