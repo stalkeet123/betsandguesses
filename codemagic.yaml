@@ -5,13 +5,14 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m1
     integrations:
-      app_store_connect: "emir" # Match this with the API Key Name in Codemagic integrations
+      app_store_connect: "emir" # Used for publishing to App Store Connect
     environment:
       flutter: stable
       xcode: latest
       cocoapods: default
-      vars:
-        BUNDLE_ID: "com.hubword.app"
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.hubword.app
     triggering:
       events:
         - push
@@ -19,16 +20,6 @@ workflows:
         - pattern: main
           include: true
     scripts:
-      - name: Initialize keychain
-        script: |
-          keychain initialize
-      - name: Fetch signing files
-        script: |
-          # Fetch signing certificates and provisioning profiles from App Store Connect automatically
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-      - name: Add certificates to keychain
-        script: |
-          keychain add-certificates
       - name: Set up code signing settings
         script: |
           xcode-project use-profiles
