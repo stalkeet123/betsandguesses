@@ -3,6 +3,7 @@ import '../../features/home/screens/home_screen.dart';
 import '../../features/room/screens/lobby_screen.dart';
 import '../../features/game/screens/game_screen.dart';
 import '../../features/game/screens/results_screen.dart';
+import '../../features/paywall/screens/paywall_screen.dart';
 
 /// App router using GoRouter
 final appRouter = GoRouter(
@@ -14,6 +15,13 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final roomCode = state.uri.queryParameters['room'];
         return HomeScreen(prefilledRoomCode: roomCode);
+      },
+    ),
+    GoRoute(
+      path: '/premium',
+      name: 'premium',
+      builder: (context, state) {
+        return const PaywallScreen();
       },
     ),
     GoRoute(

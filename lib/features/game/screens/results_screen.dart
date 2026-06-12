@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../core/constants/game_constants.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/providers/room_providers.dart';
@@ -56,9 +57,22 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     context.goNamed('home');
   }
 
-  void _backToLobby() {
+  Future<void> _backToLobby() async {
+    final room = ref.read(currentRoomProvider);
+    if (room != null) {
+      await ref.read(roomServiceProvider).resetToLobby(room.id);
+      ref.read(currentRoomProvider.notifier).set(
+            room.copyWith(
+              status: RoomStatus.waiting,
+              currentRound: 0,
+              roundPhase: RoundPhase.idle,
+            ),
+          );
+    }
     ref.read(gameStateProvider.notifier).reset();
-    context.goNamed('lobby', pathParameters: {'roomCode': widget.roomCode});
+    if (mounted) {
+      context.goNamed('lobby', pathParameters: {'roomCode': widget.roomCode});
+    }
   }
 
   Future<void> _shareResults() async {
@@ -509,7 +523,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 label: 'PLAY AGAIN',
                 icon: Icons.workspace_premium_rounded,
                 isGold: true,
-                onTap: _backToLobby,
+                onTap: () {
+                  _backToLobby();
+                },
               ),
             ),
             const SizedBox(width: 12),
@@ -518,7 +534,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 label: 'BACK TO LOBBY',
                 icon: Icons.meeting_room_rounded,
                 isGold: false,
-                onTap: _backToLobby,
+                onTap: () {
+                  _backToLobby();
+                },
               ),
             ),
           ],

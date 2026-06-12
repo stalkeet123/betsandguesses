@@ -1,5 +1,5 @@
 name: witsgame
-description: "Tahmin.io - Wits & Wagers style party game"
+description: "Bets & Guesses party quiz and betting game"
 publish_to: 'none'
 version: 1.0.5+6
 
@@ -29,6 +29,7 @@ dependencies:
   audioplayers: ^6.0.0
   shared_preferences: ^2.5.3
   collection: ^1.19.1
+  purchases_flutter: ^10.2.3
 
 dev_dependencies:
   flutter_test:

@@ -60,7 +60,7 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
         return;
       }
 
-      if (room.status.name != 'waiting') {
+      if (!room.canJoinLobby) {
         setState(() => _error = 'That table is already playing.');
         return;
       }

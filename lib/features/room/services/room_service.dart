@@ -10,20 +10,37 @@ class RoomService {
 
   /// Create a new room, returns the created Room
   Future<Room> createRoom(String hostId) async {
-    final code = Helpers.generateRoomCode();
-    final response = await _client
-        .from('rooms')
-        .insert({
-          'code': code,
-          'host_id': hostId,
-          'status': 'waiting',
-          'current_round': 0,
-          'max_rounds': 8,
-          'round_phase': 'idle',
-        })
-        .select()
-        .single();
-    return Room.fromJson(response);
+    for (var attempt = 0; attempt < 12; attempt++) {
+      final code = Helpers.generateRoomCode();
+      final existing = await _client
+          .from('rooms')
+          .select('id')
+          .eq('code', code)
+          .limit(1);
+
+      if ((existing as List).isNotEmpty) continue;
+
+      try {
+        final response = await _client
+            .from('rooms')
+            .insert({
+              'code': code,
+              'host_id': hostId,
+              'status': 'waiting',
+              'current_round': 0,
+              'max_rounds': 8,
+              'round_phase': 'idle',
+            })
+            .select()
+            .single();
+        return Room.fromJson(response);
+      } on PostgrestException catch (error) {
+        if (error.code == '23505') continue;
+        rethrow;
+      }
+    }
+
+    throw StateError('Could not generate a unique room code.');
   }
 
   /// Find a room by its code
@@ -32,9 +49,16 @@ class RoomService {
         .from('rooms')
         .select()
         .eq('code', code.toUpperCase())
-        .maybeSingle();
-    if (response == null) return null;
-    return Room.fromJson(response);
+        .order('created_at', ascending: false)
+        .limit(20);
+    final rows = response as List;
+    if (rows.isEmpty) return null;
+
+    final rooms = rows.map((row) => Room.fromJson(row as Map<String, dynamic>)).toList();
+    return rooms.firstWhere(
+      (room) => room.canJoinLobby,
+      orElse: () => rooms.first,
+    );
   }
 
   /// Get room by ID
@@ -72,6 +96,15 @@ class RoomService {
   Future<void> endGame(String roomId) async {
     await _client.from('rooms').update({
       'status': 'finished',
+      'round_phase': 'idle',
+    }).eq('id', roomId);
+  }
+
+  /// Reset a room so players can return to the lobby after a game.
+  Future<void> resetToLobby(String roomId) async {
+    await _client.from('rooms').update({
+      'status': 'waiting',
+      'current_round': 0,
       'round_phase': 'idle',
     }).eq('id', roomId);
   }

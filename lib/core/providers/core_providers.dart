@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/realtime_service.dart';
 import '../services/audio_service.dart';
+import '../services/revenuecat_service.dart';
 import '../../features/room/services/room_service.dart';
 import '../../features/player/services/player_service.dart';
 import '../../features/game/services/game_service.dart';
@@ -39,6 +40,16 @@ final audioServiceProvider = Provider<AudioService>((ref) {
   return service;
 });
 
+final revenueCatServiceProvider = Provider<RevenueCatService>((ref) {
+  return RevenueCatService();
+});
+
+final premiumStatusProvider = FutureProvider<bool>((ref) async {
+  final service = ref.watch(revenueCatServiceProvider);
+  await service.initialize();
+  return service.isPremium();
+});
+
 // ── SharedPreferences ──
 final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError('Must be overridden in main');
@@ -64,9 +75,11 @@ class PlayerNameNotifier extends Notifier<String> {
 }
 
 // ── Current Player (after joining a room) ──
-final currentPlayerProvider = NotifierProvider<CurrentPlayerNotifier, Player?>(() {
-  return CurrentPlayerNotifier();
-});
+final currentPlayerProvider = NotifierProvider<CurrentPlayerNotifier, Player?>(
+  () {
+    return CurrentPlayerNotifier();
+  },
+);
 
 class CurrentPlayerNotifier extends Notifier<Player?> {
   @override

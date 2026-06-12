@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/game_constants.dart';
@@ -39,7 +38,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       ref.read(audioServiceProvider).stopAmbience();
 
-      if (savedName.isNotEmpty && _prefilledRoomCode != null && _prefilledRoomCode!.isNotEmpty) {
+      if (savedName.isNotEmpty &&
+          _prefilledRoomCode != null &&
+          _prefilledRoomCode!.isNotEmpty) {
         _joinRoom();
       }
     });
@@ -76,7 +77,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       await roomService.updateRoom(room.id, {'host_id': player.id});
       ref.read(currentPlayerProvider.notifier).set(player);
-      ref.read(currentRoomProvider.notifier).set(room.copyWith(hostId: player.id));
+      ref
+          .read(currentRoomProvider.notifier)
+          .set(room.copyWith(hostId: player.id));
 
       if (mounted) {
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
@@ -98,7 +101,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final code = _roomCodeController.text.trim().toUpperCase();
     if (code.length != GameConstants.roomCodeLength) {
-      _showSnack('Enter a ${GameConstants.roomCodeLength}-character room code.');
+      _showSnack(
+        'Enter a ${GameConstants.roomCodeLength}-character room code.',
+      );
       return;
     }
 
@@ -112,7 +117,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         return;
       }
 
-      if (room.status.name != 'waiting') {
+      if (!room.canJoinLobby) {
         _showSnack('That table is already playing.');
         return;
       }
@@ -142,16 +147,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _goPremium() {
-    _showSnack('Premium table coming soon.');
+    context.pushNamed('premium');
   }
 
   String _pickAvatarColor([Set<String> usedColors = const {}]) {
-    final availableColors = GameConstants.avatarColors.where((color) => !usedColors.contains(color)).toList();
-    final palette = availableColors.isEmpty ? GameConstants.avatarColors : availableColors;
+    final availableColors = GameConstants.avatarColors
+        .where((color) => !usedColors.contains(color))
+        .toList();
+    final palette = availableColors.isEmpty
+        ? GameConstants.avatarColors
+        : availableColors;
     return palette[_random.nextInt(palette.length)];
   }
 
@@ -169,10 +180,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Positioned.fill(
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final logoHeight = (constraints.maxHeight * 0.24).clamp(112.0, 210.0).toDouble();
+                    final logoHeight = (constraints.maxHeight * 0.2)
+                        .clamp(92.0, 158.0)
+                        .toDouble();
 
                     return Center(
                       child: ConstrainedBox(
@@ -188,19 +204,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   AppAssetPaths.logo,
                                   fit: BoxFit.contain,
                                 ),
-                              ).animate().fadeIn(duration: 300.ms).scale(begin: const Offset(0.96, 0.96)),
-                              const SizedBox(height: 4),
-                              _buildTagline(),
-                              const SizedBox(height: 10),
+                              ),
+                              const SizedBox(height: 12),
                               _buildNameCard(),
-                              const SizedBox(height: 8),
-                              _buildCreateLobbyButton(),
-                              const SizedBox(height: 8),
-                              _buildJoinLobbyCard(),
-                              const SizedBox(height: 8),
-                              _buildPremiumButton(),
                               const SizedBox(height: 10),
-                              _buildFooterActions(),
+                              _buildCreateLobbyButton(),
+                              const SizedBox(height: 10),
+                              _buildJoinLobbyCard(),
+                              const SizedBox(height: 10),
+                              _buildPremiumButton(),
                             ],
                           ),
                         ),
@@ -216,34 +228,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildTagline() {
-    return Row(
-      children: [
-        Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.56))),
-        const SizedBox(width: 10),
-        Text(
-          'PARTY QUIZ & BETTING GAME',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: AppColors.brassLight,
-            fontWeight: FontWeight.w900,
-            fontSize: 12,
-            letterSpacing: 0.8,
-            shadows: [
-              Shadow(
-                color: Colors.black.withValues(alpha: 0.7),
-                blurRadius: 5,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.56))),
-      ],
-    ).animate().fadeIn(delay: 80.ms).slideY(begin: 0.08);
-  }
-
   Widget _buildNameCard() {
     return _FormPlaque(
       title: 'YOUR NAME',
@@ -257,10 +241,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         decoration: const InputDecoration(
           isDense: true,
           hintText: 'Enter your name',
-          prefixIcon: Icon(Icons.person_outline_rounded, color: AppColors.brassLight),
+          prefixIcon: Icon(
+            Icons.person_outline_rounded,
+            color: AppColors.brassLight,
+          ),
         ),
       ),
-    ).animate().fadeIn(delay: 120.ms).slideY(begin: 0.08);
+    );
   }
 
   Widget _buildCreateLobbyButton() {
@@ -275,25 +262,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         colors: [Color(0xFFFFF0A8), Color(0xFFFFC42E), Color(0xFFB56A09)],
       ),
       foregroundColor: AppColors.ink,
-    ).animate().fadeIn(delay: 160.ms).slideY(begin: 0.08);
+    );
   }
 
   Widget _buildJoinLobbyCard() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0D653C), Color(0xFF053A24), Color(0xFF021910)],
+          colors: [
+            AppColors.feltDark.withValues(alpha: 0.96),
+            AppColors.felt.withValues(alpha: 0.76),
+          ],
         ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.62), width: 1.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.32),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.34),
-            blurRadius: 13,
-            offset: const Offset(0, 7),
+            color: Colors.black.withValues(alpha: 0.24),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -309,14 +302,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   style: const TextStyle(
                     fontFamily: 'RehnCondensed',
                     color: AppColors.ivory,
-                    fontSize: 30,
+                    fontSize: 27,
                     fontWeight: FontWeight.w900,
                     height: 0.92,
                     letterSpacing: 0,
                   ),
                 ),
               ),
-              Icon(Icons.auto_awesome_rounded, color: AppColors.brassLight.withValues(alpha: 0.9), size: 18),
             ],
           ),
           const SizedBox(height: 10),
@@ -337,7 +329,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     isDense: true,
                     hintText: 'Room code',
                     counterText: '',
-                    prefixIcon: Icon(Icons.tag_rounded, color: AppColors.brassLight),
+                    prefixIcon: Icon(
+                      Icons.tag_rounded,
+                      color: AppColors.brassLight,
+                    ),
                   ),
                   onSubmitted: (_) => _joinRoom(),
                 ),
@@ -350,7 +345,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onPressed: _isLoading ? null : _joinRoom,
                   style: ElevatedButton.styleFrom(
                     padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    backgroundColor: AppColors.brass,
+                    foregroundColor: AppColors.ink,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: const Icon(Icons.arrow_forward_rounded, size: 26),
                 ),
@@ -359,32 +358,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-    ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.08);
+    );
   }
 
   Widget _buildPremiumButton() {
-    return _CasinoMenuButton(
-      label: 'GO PREMIUM',
-      icon: Icons.workspace_premium_rounded,
+    return OutlinedButton.icon(
       onPressed: _goPremium,
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFFFFF7C4), Color(0xFFFFCF45), Color(0xFFE38A10), Color(0xFFFFEAA0)],
+      icon: const Icon(Icons.workspace_premium_rounded, size: 20),
+      label: const Text('GO PREMIUM'),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(46),
+        foregroundColor: AppColors.brassLight,
+        side: BorderSide(color: AppColors.brassLight.withValues(alpha: 0.5)),
+        backgroundColor: AppColors.feltDark.withValues(alpha: 0.64),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
       ),
-      foregroundColor: AppColors.mahoganyDark,
-      glowColor: AppColors.brassLight,
-    ).animate().fadeIn(delay: 240.ms).slideY(begin: 0.08);
-  }
-
-  Widget _buildFooterActions() {
-    return Row(
-      children: [
-        Expanded(child: _FooterMenuButton(icon: Icons.menu_book_rounded, label: 'HOW TO PLAY', onPressed: () => _showSnack('How to play coming soon.'))),
-        const SizedBox(width: 10),
-        Expanded(child: _FooterMenuButton(icon: Icons.settings_rounded, label: 'SETTINGS', onPressed: () => _showSnack('Settings coming soon.'))),
-      ],
-    ).animate().fadeIn(delay: 280.ms).slideY(begin: 0.08);
+    );
   }
 }
 
@@ -397,25 +390,26 @@ class _FormPlaque extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 13),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFFFAEC), Color(0xFFEFD39A), Color(0xFFFFF7E0)],
+          colors: [
+            AppColors.ivory.withValues(alpha: 0.98),
+            const Color(0xFFEBD9B1),
+          ],
         ),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: AppColors.ivory.withValues(alpha: 0.92), width: 1.4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.42),
+          width: 1.1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.32),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-          BoxShadow(
-            color: AppColors.brassLight.withValues(alpha: 0.18),
-            blurRadius: 8,
-            spreadRadius: -2,
+            color: Colors.black.withValues(alpha: 0.24),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -423,11 +417,8 @@ class _FormPlaque extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(child: Container(height: 1, color: AppColors.brass.withValues(alpha: 0.42))),
-              const SizedBox(width: 6),
-              const Icon(Icons.auto_awesome_rounded, color: AppColors.brass, size: 10),
-              const SizedBox(width: 6),
               Text(
                 title,
                 style: const TextStyle(
@@ -439,10 +430,6 @@ class _FormPlaque extends StatelessWidget {
                   letterSpacing: 0,
                 ),
               ),
-              const SizedBox(width: 6),
-              const Icon(Icons.auto_awesome_rounded, color: AppColors.brass, size: 10),
-              const SizedBox(width: 6),
-              Expanded(child: Container(height: 1, color: AppColors.brass.withValues(alpha: 0.42))),
             ],
           ),
           const SizedBox(height: 8),
@@ -451,9 +438,9 @@ class _FormPlaque extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: 9,
-                  offset: const Offset(0, 4),
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
@@ -471,7 +458,6 @@ class _CasinoMenuButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Gradient gradient;
   final Color foregroundColor;
-  final Color? glowColor;
   final bool isLoading;
 
   const _CasinoMenuButton({
@@ -480,37 +466,33 @@ class _CasinoMenuButton extends StatelessWidget {
     required this.onPressed,
     required this.gradient,
     required this.foregroundColor,
-    this.glowColor,
     this.isLoading = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 62,
+      height: 58,
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: gradient,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.ivory.withValues(alpha: 0.88), width: 1.5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: AppColors.ivory.withValues(alpha: 0.62),
+            width: 1.2,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.34),
-              blurRadius: 11,
-              offset: const Offset(0, 6),
+              color: Colors.black.withValues(alpha: 0.24),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
             ),
-            if (glowColor != null)
-              BoxShadow(
-                color: glowColor!.withValues(alpha: 0.35),
-                blurRadius: 16,
-                spreadRadius: 1,
-              ),
           ],
         ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             onTap: onPressed,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -521,13 +503,19 @@ class _CasinoMenuButton extends StatelessWidget {
                     height: 42,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.black.withValues(alpha: 0.32),
-                      border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.7), width: 1.3),
+                      color: Colors.black.withValues(alpha: 0.2),
+                      border: Border.all(
+                        color: AppColors.brassLight.withValues(alpha: 0.44),
+                        width: 1.1,
+                      ),
                     ),
                     child: isLoading
                         ? const Padding(
                             padding: EdgeInsets.all(12),
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ink),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.ink,
+                            ),
                           )
                         : Icon(icon, color: foregroundColor, size: 24),
                   ),
@@ -542,18 +530,26 @@ class _CasinoMenuButton extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: 'RehnCondensed',
                           color: foregroundColor,
-                          fontSize: 35,
+                          fontSize: 31,
                           fontWeight: FontWeight.w900,
                           height: 0.92,
                           letterSpacing: 0,
                           shadows: [
                             Shadow(
-                              color: Colors.white.withValues(alpha: foregroundColor == AppColors.ink ? 0.34 : 0.14),
+                              color: Colors.white.withValues(
+                                alpha: foregroundColor == AppColors.ink
+                                    ? 0.34
+                                    : 0.14,
+                              ),
                               blurRadius: 1,
                               offset: const Offset(0, 1),
                             ),
                             Shadow(
-                              color: Colors.black.withValues(alpha: foregroundColor == AppColors.ivory ? 0.7 : 0.22),
+                              color: Colors.black.withValues(
+                                alpha: foregroundColor == AppColors.ivory
+                                    ? 0.7
+                                    : 0.22,
+                              ),
                               blurRadius: 4,
                               offset: const Offset(0, 2),
                             ),
@@ -562,8 +558,6 @@ class _CasinoMenuButton extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Icon(Icons.auto_awesome_rounded, color: foregroundColor.withValues(alpha: 0.88), size: 17),
                 ],
               ),
             ),
@@ -588,75 +582,12 @@ class _RoundIcon extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.black.withValues(alpha: 0.32),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.7), width: 1.2),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.7),
+          width: 1.2,
+        ),
       ),
       child: Icon(icon, color: color, size: 24),
-    );
-  }
-}
-
-class _FooterMenuButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
-
-  const _FooterMenuButton({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 58,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.feltDark.withValues(alpha: 0.9),
-              AppColors.felt.withValues(alpha: 0.68),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.36), width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.28),
-              blurRadius: 9,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: onPressed,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: AppColors.brassLight, size: 23),
-                const SizedBox(height: 4),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: AppColors.ivory,
-                      fontWeight: FontWeight.w900,
-                      height: 1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

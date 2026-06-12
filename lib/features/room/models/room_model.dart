@@ -47,6 +47,8 @@ class Room {
     };
   }
 
+  bool get canJoinLobby => status == RoomStatus.waiting;
+
   Room copyWith({
     String? id,
     String? code,
