@@ -126,13 +126,10 @@ class PlayerService {
   /// Remove player from room
   Future<void> leaveRoom(String playerId) async {
     try {
+      await setConnected(playerId, false);
       await _client.from('players').delete().eq('id', playerId);
     } catch (_) {
-      try {
-        await setConnected(playerId, false);
-      } catch (_) {
-        // The local app still leaves the lobby; stale rows are filtered out.
-      }
+      // Ignore if delete fails due to RLS or constraints
     }
   }
 
