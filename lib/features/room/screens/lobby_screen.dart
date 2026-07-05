@@ -84,6 +84,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             );
           }
         } else {
+          if (currentPlayer?.isHost == true && kickedPlayerId != null) {
+            ref.read(playerServiceProvider).leaveRoom(kickedPlayerId);
+          }
           _loadPlayers();
         }
       },
@@ -190,9 +193,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         'player_left',
         {'player_id': player.id},
       );
-    }
-    if (room != null) {
-      ref.read(sharedPrefsProvider).remove(_playerMemoryKey(room.id));
     }
     ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     ref.read(currentRoomProvider.notifier).set(null);
