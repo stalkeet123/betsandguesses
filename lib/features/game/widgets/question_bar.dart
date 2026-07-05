@@ -22,6 +22,8 @@ class QuestionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showAnswer = phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 10, 6, 6),
       padding: const EdgeInsets.all(10),
@@ -34,32 +36,37 @@ class QuestionBar extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Container(
-              height: 58,
+              constraints: const BoxConstraints(minHeight: 58),
               alignment: Alignment.centerLeft,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: AppColors.ivory,
+                color: showAnswer ? const Color(0xFFE8F5E9) : AppColors.ivory,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.brass.withValues(alpha: 0.62), width: 1.2),
+                border: Border.all(
+                  color: showAnswer ? AppColors.neonGreen : AppColors.brass.withValues(alpha: 0.62),
+                  width: showAnswer ? 2.0 : 1.2,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
+                    color: (showAnswer ? AppColors.neonGreen : Colors.black).withValues(alpha: 0.25),
                     blurRadius: 12,
                     offset: const Offset(0, 5),
                   ),
                 ],
               ),
               child: Text(
-                question?.textTr ?? 'Question is being shuffled...',
-                maxLines: 2,
+                showAnswer && question != null
+                    ? '${question!.textTr}\n👉 CEVAP: ${question!.answer} ${question!.answerUnit ?? ""}'
+                    : (question?.textTr ?? 'Question is being shuffled...'),
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: AppColors.ink,
+                  color: showAnswer ? const Color(0xFF0F5132) : AppColors.ink,
                   fontWeight: FontWeight.w900,
-                  height: 1.12,
+                  height: 1.2,
                 ),
               ),
-            ).animate(key: ValueKey(question?.id ?? phase.name)).fadeIn(duration: 280.ms),
+            ).animate(key: ValueKey('${question?.id}_${phase.name}')).fadeIn(duration: 280.ms),
           ),
           const SizedBox(width: 10),
           _TimerDial(seconds: timerSeconds),

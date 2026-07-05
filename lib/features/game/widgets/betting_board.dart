@@ -288,8 +288,17 @@ class _BettingLane extends StatelessWidget {
             child: isWinning && phase == RoundPhase.revealAnswer
                 ? lane
                     .animate(onPlay: (controller) => controller.repeat(reverse: true))
-                    .scale(end: const Offset(1.035, 1.035), duration: 760.ms)
-                    .shimmer(color: AppColors.neonGreen.withValues(alpha: 0.25))
+                    .scale(end: const Offset(1.04, 1.04), duration: 500.ms, curve: Curves.easeInOut)
+                    .boxShadow(
+                      begin: const BoxShadow(color: Colors.transparent, blurRadius: 0),
+                      end: const BoxShadow(
+                        color: AppColors.neonGreen,
+                        blurRadius: 28,
+                        spreadRadius: 4,
+                      ),
+                      duration: 500.ms,
+                    )
+                    .shimmer(color: Colors.white.withValues(alpha: 0.45), duration: 1000.ms)
                 : lane,
           ),
         );

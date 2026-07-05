@@ -38,6 +38,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool _isBetOperationInFlight = false;
   bool _isSubmittingGuess = false;
   bool _isRevealingGuesses = false;
+  Set<String> _roundWinners = {};
 
   @override
   void initState() {
@@ -121,8 +122,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           if (questionData != null) {
             gameNotifier.setQuestion(Question.fromJson(questionData));
           }
-          gameNotifier.setGuessSubmitted(false);
-          gameNotifier.setBetsPlaced(false);
+          _roundWinners.clear();
+          gameNotifier.resetForNewRound();
 
           if (phase == RoundPhase.guessing) {
             _guessInput = '';
@@ -188,13 +189,34 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           final oldScores = ref.read(gameStateProvider).scores;
           final currentPlayer = ref.read(currentPlayerProvider);
           final scores = scoresData.map((k, v) => MapEntry(k, v as int));
+          
+          final winners = <String>{};
+          for (final playerId in scores.keys) {
+            final oldScore = oldScores[playerId] ?? 0;
+            final newScore = scores[playerId] ?? 0;
+            if (newScore > oldScore) {
+              winners.add(playerId);
+            }
+          }
+
           if (currentPlayer != null &&
               (scores[currentPlayer.id] ?? 0) >
                   (oldScores[currentPlayer.id] ?? 0)) {
             ref.read(audioServiceProvider).playSuccess();
           }
+
           ref.read(gameStateProvider.notifier).setScores(scores);
-          setState(() {});
+          setState(() {
+            _roundWinners = winners;
+          });
+
+          Timer(const Duration(seconds: 4), () {
+            if (mounted) {
+              setState(() {
+                _roundWinners.clear();
+              });
+            }
+          });
         }
       },
       onAnswerRevealed: (payload) {
@@ -288,10 +310,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     gameNotifier.setQuestion(question);
     gameNotifier.updatePhase(RoundPhase.guessing);
     _syncAudioForPhase(RoundPhase.guessing);
-    gameNotifier.setGuesses([]);
-    gameNotifier.setBets([]);
-    gameNotifier.setGuessSubmitted(false);
-    gameNotifier.setBetsPlaced(false);
+    _roundWinners.clear();
+    gameNotifier.resetForNewRound();
     _guessInput = '';
     _selectedChipValue = null;
     _isSubmittingGuess = false;
@@ -400,6 +420,24 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     gameNotifier.updatePhase(RoundPhase.revealAnswer);
     gameNotifier.setScores(newScores);
     _syncAudioForPhase(RoundPhase.revealAnswer);
+
+    // Extract winners and set temporary visual glow
+    final winners = payouts.entries
+        .where((entry) => entry.value > 0)
+        .map((entry) => entry.key)
+        .toSet();
+
+    setState(() {
+      _roundWinners = winners;
+    });
+
+    Timer(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() {
+          _roundWinners.clear();
+        });
+      }
+    });
 
     final playerService = ref.read(playerServiceProvider);
     await playerService.updateScores(newScores);
@@ -2487,6 +2525,73 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildPlayerProfileTile(Player player, int index, int score) {
     final color = _profileColor(player, index);
+    final isWinner = _roundWinners.contains(player.id);
+
+    Widget avatarWidget = Container(
+      width: 54,
+      height: 54,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            color.withValues(alpha: 0.95),
+            color,
+            AppColors.mahoganyDark.withValues(alpha: 0.64),
+          ],
+        ),
+        border: Border.all(
+          color: isWinner ? AppColors.neonGreen : AppColors.ivory.withValues(alpha: 0.86),
+          width: isWinner ? 3.0 : 2.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.36),
+            blurRadius: 9,
+            spreadRadius: -1,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.36),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          player.name.isNotEmpty
+              ? player.name[0].toUpperCase()
+              : '?',
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 24,
+            height: 1,
+            shadows: [
+              Shadow(
+                color: Colors.black.withValues(alpha: 0.55),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (isWinner) {
+      avatarWidget = avatarWidget
+          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .scale(end: const Offset(1.15, 1.15), duration: 400.ms, curve: Curves.easeInOut)
+          .boxShadow(
+            begin: const BoxShadow(color: Colors.transparent, blurRadius: 0),
+            end: BoxShadow(
+              color: color,
+              blurRadius: 22,
+              spreadRadius: 4,
+            ),
+            duration: 400.ms,
+          );
+    }
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -2497,56 +2602,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        color.withValues(alpha: 0.95),
-                        color,
-                        AppColors.mahoganyDark.withValues(alpha: 0.64),
-                      ],
-                    ),
-                    border: Border.all(
-                      color: AppColors.ivory.withValues(alpha: 0.86),
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withValues(alpha: 0.36),
-                        blurRadius: 9,
-                        spreadRadius: -1,
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.36),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      player.name.isNotEmpty
-                          ? player.name[0].toUpperCase()
-                          : '?',
-                      style: GoogleFonts.outfit(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 24,
-                        height: 1,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black.withValues(alpha: 0.55),
-                            blurRadius: 4,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                avatarWidget,
                 Positioned(
                   left: -5,
                   top: -4,

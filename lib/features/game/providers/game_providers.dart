@@ -104,6 +104,18 @@ class GameStateNotifier extends Notifier<GameState> {
     state = state.nextRound();
   }
 
+  void resetForNewRound() {
+    state = GameState(
+      roomId: state.roomId,
+      roomCode: state.roomCode,
+      currentRound: state.currentRound,
+      maxRounds: state.maxRounds,
+      phase: state.phase,
+      currentQuestion: state.currentQuestion,
+      scores: state.scores,
+    );
+  }
+
   void reset() {
     state = const GameState(roomId: '', roomCode: '');
   }
