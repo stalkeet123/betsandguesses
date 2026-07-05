@@ -12,11 +12,9 @@ class RevenueCatConstants {
   static const dailyPassProductIdentifier = 'com.wordhub.app.dailypass';
   static const lifetimeProductIdentifier = 'com.wordhub.app.lifetimepass';
 
-  static const androidApiKey = String.fromEnvironment(
-    'REVENUECAT_ANDROID_API_KEY',
-  );
-  static const iosApiKey = String.fromEnvironment('REVENUECAT_IOS_API_KEY');
-  static const webApiKey = String.fromEnvironment('REVENUECAT_WEB_API_KEY');
+  static const androidApiKey = '';
+  static const iosApiKey = 'appl_MzoHrbHNfoVGVENeszXsvCofQjG';
+  static const webApiKey = '';
 
   static String get apiKey {
     if (kIsWeb) return webApiKey;

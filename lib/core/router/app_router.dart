@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/room/screens/lobby_screen.dart';
@@ -8,6 +9,10 @@ import '../../features/paywall/screens/paywall_screen.dart';
 /// App router using GoRouter
 final appRouter = GoRouter(
   initialLocation: '/',
+  redirect: (context, state) {
+    if (kIsWeb && state.uri.path == '/premium') return '/';
+    return null;
+  },
   routes: [
     GoRoute(
       path: '/',

@@ -48,6 +48,32 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     super.dispose();
   }
 
+  void _syncAudioForPhase(RoundPhase phase) {
+    final audio = ref.read(audioServiceProvider);
+    switch (phase) {
+      case RoundPhase.idle:
+      case RoundPhase.question:
+      case RoundPhase.guessing:
+        audio.startAmbience();
+        audio.startSuspense();
+        break;
+      case RoundPhase.betting:
+        audio.startAmbience();
+        audio.stopSuspense();
+        break;
+      case RoundPhase.revealGuesses:
+        audio.startAmbience();
+        audio.stopSuspense();
+        break;
+      case RoundPhase.revealAnswer:
+      case RoundPhase.scoring:
+        audio.startAmbience();
+        audio.stopSuspense();
+        audio.playPayout();
+        break;
+    }
+  }
+
   Future<void> _initializeGame() async {
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
@@ -77,12 +103,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     realtimeService.joinRoom(
       widget.roomCode,
       onPhaseChange: (payload) {
-        final phase = RoundPhase.fromString(payload['phase'] as String? ?? 'idle');
+        final phase = RoundPhase.fromString(
+          payload['phase'] as String? ?? 'idle',
+        );
         final round = payload['round'] as int?;
         final gameNotifier = ref.read(gameStateProvider.notifier);
 
         gameNotifier.updatePhase(phase);
         if (round != null) gameNotifier.setRound(round);
+        _syncAudioForPhase(phase);
 
         if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
           final questionData = payload['question'] as Map<String, dynamic>?;
@@ -116,7 +145,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       onGuessesRevealed: (payload) {
         final guessesData = payload['guesses'] as List<dynamic>?;
         if (guessesData != null) {
-          final guesses = guessesData.map((g) => Guess.fromJson(g as Map<String, dynamic>)).toList();
+          final guesses = guessesData
+              .map((g) => Guess.fromJson(g as Map<String, dynamic>))
+              .toList();
           ref.read(gameStateProvider.notifier).setGuesses(guesses);
           setState(() {});
         }
@@ -142,14 +173,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           return;
         }
         if (playerId != null && slotIndex != null) {
-          ref.read(gameStateProvider.notifier).removeBetForSlot(playerId, slotIndex);
+          ref
+              .read(gameStateProvider.notifier)
+              .removeBetForSlot(playerId, slotIndex);
           setState(() {});
         }
       },
       onScoreUpdate: (payload) {
         final scoresData = payload['scores'] as Map<String, dynamic>?;
         if (scoresData != null) {
+          final oldScores = ref.read(gameStateProvider).scores;
+          final currentPlayer = ref.read(currentPlayerProvider);
           final scores = scoresData.map((k, v) => MapEntry(k, v as int));
+          if (currentPlayer != null &&
+              (scores[currentPlayer.id] ?? 0) >
+                  (oldScores[currentPlayer.id] ?? 0)) {
+            ref.read(audioServiceProvider).playSuccess();
+          }
           ref.read(gameStateProvider.notifier).setScores(scores);
           setState(() {});
         }
@@ -158,14 +198,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         final answer = payload['answer'] as int?;
         final winningGuessId = payload['winning_guess_id'] as String?;
         if (answer != null) {
-          ref.read(gameStateProvider.notifier).setCorrectAnswer(answer, winningGuessId);
+          ref
+              .read(gameStateProvider.notifier)
+              .setCorrectAnswer(answer, winningGuessId);
           setState(() {});
         }
       },
       onGameStarted: (_) {},
       onGameEnded: (_) {
         if (mounted) {
-          context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
+          context.goNamed(
+            'results',
+            pathParameters: {'roomCode': widget.roomCode},
+          );
         }
       },
     );
@@ -204,14 +249,42 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
+    final isHost = ref.read(isHostProvider);
 
-    final question = await gameService.getRandomQuestion(room.id, _usedQuestionIds);
+    if (isHost) {
+      final gameState = ref.read(gameStateProvider);
+      final currentScores = Map<String, int>.from(gameState.scores);
+      bool scoresChanged = false;
+
+      for (final player in _players) {
+        final score = currentScores[player.id] ?? player.score;
+        if (score <= 0) {
+          currentScores[player.id] = GameConstants.startingScore;
+          scoresChanged = true;
+        }
+      }
+
+      if (scoresChanged) {
+        final playerService = ref.read(playerServiceProvider);
+        await playerService.updateScores(currentScores);
+        gameNotifier.setScores(currentScores);
+        await realtimeService.broadcast(widget.roomCode, 'score_update', {
+          'scores': currentScores,
+        });
+      }
+    }
+
+    final question = await gameService.getRandomQuestion(
+      room.id,
+      _usedQuestionIds,
+    );
     if (question == null) return;
     _usedQuestionIds.add(question.id);
 
     gameNotifier.setRound(round);
     gameNotifier.setQuestion(question);
     gameNotifier.updatePhase(RoundPhase.guessing);
+    _syncAudioForPhase(RoundPhase.guessing);
     gameNotifier.setGuesses([]);
     gameNotifier.setBets([]);
     gameNotifier.setGuessSubmitted(false);
@@ -241,7 +314,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       final realtimeService = ref.read(realtimeServiceProvider);
       final gameNotifier = ref.read(gameStateProvider.notifier);
 
-      final guesses = await gameService.getGuesses(room.id, gameState.currentRound);
+      final guesses = await gameService.getGuesses(
+        room.id,
+        gameState.currentRound,
+      );
       final enrichedGuesses = guesses.map((guess) {
         final player = _playerById(guess.playerId);
         return guess.copyWith(
@@ -252,15 +328,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
       gameNotifier.setGuesses(enrichedGuesses);
       gameNotifier.updatePhase(RoundPhase.betting);
+      _syncAudioForPhase(RoundPhase.betting);
       _timer?.cancel();
 
       await realtimeService.broadcast(widget.roomCode, 'guesses_revealed', {
-        'guesses': enrichedGuesses.map((g) => {
-          ...g.toJson(),
-          'id': g.id,
-          'player_name': g.playerName,
-          'player_color': g.playerColor,
-        }).toList(),
+        'guesses': enrichedGuesses
+            .map(
+              (g) => {
+                ...g.toJson(),
+                'id': g.id,
+                'player_name': g.playerName,
+                'player_color': g.playerColor,
+              },
+            )
+            .toList(),
       });
 
       await realtimeService.broadcast(widget.roomCode, 'phase_change', {
@@ -286,7 +367,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _timer?.cancel();
 
     final correctAnswer = gameState.currentQuestion!.answer;
-    final winningGuess = gameService.determineWinner(gameState.sortedGuesses, correctAnswer);
+    final winningGuess = gameService.determineWinner(
+      gameState.sortedGuesses,
+      correctAnswer,
+    );
     if (winningGuess != null) {
       await gameService.markWinner(winningGuess.id);
     }
@@ -303,10 +387,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     for (final entry in payouts.entries) {
       newScores[entry.key] = (newScores[entry.key] ?? 0) + entry.value;
     }
+    final currentPlayer = ref.read(currentPlayerProvider);
+    if (currentPlayer != null && (payouts[currentPlayer.id] ?? 0) > 0) {
+      ref.read(audioServiceProvider).playSuccess();
+    }
 
     gameNotifier.setCorrectAnswer(correctAnswer, winningGuess?.id);
     gameNotifier.updatePhase(RoundPhase.revealAnswer);
     gameNotifier.setScores(newScores);
+    _syncAudioForPhase(RoundPhase.revealAnswer);
 
     final playerService = ref.read(playerServiceProvider);
     await playerService.updateScores(newScores);
@@ -315,7 +404,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       'answer': correctAnswer,
       'winning_guess_id': winningGuess?.id,
     });
-    await realtimeService.broadcast(widget.roomCode, 'score_update', {'scores': newScores});
+    await realtimeService.broadcast(widget.roomCode, 'score_update', {
+      'scores': newScores,
+    });
     await realtimeService.broadcast(widget.roomCode, 'phase_change', {
       'phase': RoundPhase.revealAnswer.name,
       'round': gameState.currentRound,
@@ -338,7 +429,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       }
 
       if (mounted) {
-        context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
+        context.goNamed(
+          'results',
+          pathParameters: {'roomCode': widget.roomCode},
+        );
       }
     } else {
       await _startRound(gameState.currentRound + 1);
@@ -366,7 +460,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       );
 
       ref.read(gameStateProvider.notifier).setGuessSubmitted(true);
-      await realtimeService.broadcast(widget.roomCode, 'guess_submitted', {'player_id': player.id});
+      await realtimeService.broadcast(widget.roomCode, 'guess_submitted', {
+        'player_id': player.id,
+      });
       await _maybeAutoRevealGuesses();
     } finally {
       if (mounted) setState(() => _isSubmittingGuess = false);
@@ -377,11 +473,22 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final isHost = ref.read(isHostProvider);
     final room = ref.read(currentRoomProvider);
     final gameState = ref.read(gameStateProvider);
-    if (!isHost || room == null || gameState.phase != RoundPhase.guessing || _isRevealingGuesses) return;
+    if (!isHost ||
+        room == null ||
+        gameState.phase != RoundPhase.guessing ||
+        _isRevealingGuesses) {
+      return;
+    }
 
     final gameService = ref.read(gameServiceProvider);
-    final guesses = await gameService.getGuesses(room.id, gameState.currentRound);
-    final expectedPlayers = max(1, _players.where((player) => player.isConnected).length);
+    final guesses = await gameService.getGuesses(
+      room.id,
+      gameState.currentRound,
+    );
+    final expectedPlayers = max(
+      1,
+      _players.where((player) => player.isConnected).length,
+    );
     if (guesses.length >= expectedPlayers) {
       await _revealGuesses();
     }
@@ -389,7 +496,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   void _appendGuessDigit(String digit) {
     final gameState = ref.read(gameStateProvider);
-    if (gameState.hasSubmittedGuess || _isSubmittingGuess || _guessInput.length >= 10) return;
+    if (gameState.hasSubmittedGuess ||
+        _isSubmittingGuess ||
+        _guessInput.length >= 10) {
+      return;
+    }
     if (_guessInput == '0') {
       setState(() => _guessInput = digit);
     } else {
@@ -399,11 +510,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   void _backspaceGuessDigit() {
     final gameState = ref.read(gameStateProvider);
-    if (gameState.hasSubmittedGuess || _isSubmittingGuess || _guessInput.isEmpty) return;
-    setState(() => _guessInput = _guessInput.substring(0, _guessInput.length - 1));
+    if (gameState.hasSubmittedGuess ||
+        _isSubmittingGuess ||
+        _guessInput.isEmpty) {
+      return;
+    }
+    setState(
+      () => _guessInput = _guessInput.substring(0, _guessInput.length - 1),
+    );
   }
-
-
 
   Future<void> _submitNumpadGuess() async {
     final value = int.tryParse(_guessInput);
@@ -481,7 +596,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _moveBet(Bet sourceBet, int targetSlotIndex, {Offset? position}) async {
+  Future<void> _moveBet(
+    Bet sourceBet,
+    int targetSlotIndex, {
+    Offset? position,
+  }) async {
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
 
@@ -489,18 +608,22 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
 
+    // Locally remove the old bet immediately
     gameNotifier.removeBetById(sourceBet.id);
-    if (mounted) setState(() {});
 
+    // Fire the removal network calls asynchronously
     if (!sourceBet.id.startsWith('local-')) {
-      await gameService.removeBet(sourceBet.id);
-      await realtimeService.broadcast(widget.roomCode, 'bet_removed', {
-        'bet_id': sourceBet.id,
-        'player_id': sourceBet.playerId,
-        'slot_index': sourceBet.slotIndex,
-      });
+      gameService.removeBet(sourceBet.id).catchError((_) {});
+      realtimeService
+          .broadcast(widget.roomCode, 'bet_removed', {
+            'bet_id': sourceBet.id,
+            'player_id': sourceBet.playerId,
+            'slot_index': sourceBet.slotIndex,
+          })
+          .catchError((_) {});
     }
 
+    // Immediately place the new bet locally
     await _placeBet(targetSlotIndex, sourceBet.chips, position: position);
   }
 
@@ -524,7 +647,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   Future<void> _lockBets() async {
-    ref.read(audioServiceProvider).playClink();
+    ref.read(audioServiceProvider).playClick();
     ref.read(gameStateProvider.notifier).setBetsPlaced(true);
     if (mounted) setState(() {});
   }
@@ -555,8 +678,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return entries;
   }
 
-
-
   Widget _buildDraggableChip({
     required String label,
     required Color color,
@@ -565,7 +686,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     bool isScoreChip = false,
     double size = 34,
   }) {
-    final chip = PokerChip(label: label, color: color, size: size, isScoreChip: isScoreChip);
+    final chip = PokerChip(
+      label: label,
+      color: color,
+      size: size,
+      isScoreChip: isScoreChip,
+    );
 
     if (!isAvailable) {
       return Opacity(opacity: 0.2, child: chip);
@@ -581,16 +707,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.42, child: chip),
-      onDragStarted: () => ref.read(audioServiceProvider).playClick(),
+      onDragStarted: () => ref.read(audioServiceProvider).playChip(),
       child: chip,
     );
   }
 
   Widget _buildPortraitLogo() {
-    return const CachedAssetImage(
-      AppAssetPaths.logo,
-      fit: BoxFit.contain,
-    );
+    return const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain);
   }
 
   Widget _buildRoundTimer(GameState gameState) {
@@ -626,7 +749,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           colors: [Color(0xFFFFFBF1), Color(0xFFF6E7C9), Color(0xFFFFFCF4)],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.ivory.withValues(alpha: 0.92), width: 1.4),
+        border: Border.all(
+          color: AppColors.ivory.withValues(alpha: 0.92),
+          width: 1.4,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.brass.withValues(alpha: 0.24),
@@ -644,9 +770,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         children: [
           Row(
             children: [
-              Expanded(child: Container(height: 1, color: AppColors.brass.withValues(alpha: 0.52))),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: AppColors.brass.withValues(alpha: 0.52),
+                ),
+              ),
               const SizedBox(width: 8),
-              const Icon(Icons.auto_awesome_rounded, size: 12, color: AppColors.felt),
+              const Icon(
+                Icons.auto_awesome_rounded,
+                size: 12,
+                color: AppColors.felt,
+              ),
               const SizedBox(width: 8),
               Text(
                 'QUESTION',
@@ -659,15 +794,26 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(Icons.auto_awesome_rounded, size: 12, color: AppColors.felt),
+              const Icon(
+                Icons.auto_awesome_rounded,
+                size: 12,
+                color: AppColors.felt,
+              ),
               const SizedBox(width: 8),
-              Expanded(child: Container(height: 1, color: AppColors.brass.withValues(alpha: 0.52))),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: AppColors.brass.withValues(alpha: 0.52),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
           Expanded(
             child: _AdaptiveQuestionText(
-              text: gameState.currentQuestion?.textTr ?? 'Question will appear here.',
+              text:
+                  gameState.currentQuestion?.textTr ??
+                  'Question will appear here.',
               color: const Color(0xFF0A2C59),
               minFontSize: 20,
               maxFontSize: 34,
@@ -681,20 +827,28 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget _buildChipPicker(Player? currentPlayer, GameState gameState) {
     final myBets = currentPlayer == null
         ? const <Bet>[]
-        : gameState.bets.where((bet) => bet.playerId == currentPlayer.id).toList();
+        : gameState.bets
+              .where((bet) => bet.playerId == currentPlayer.id)
+              .toList();
     final totalOnTable = myBets.fold<int>(0, (sum, bet) => sum + bet.chips);
-    final totalChips = currentPlayer == null ? 0 : gameState.scores[currentPlayer.id] ?? currentPlayer.score;
-    final availableChips = totalChips <= 0 ? 999 : max(0, totalChips - totalOnTable);
+    final totalChips = currentPlayer == null
+        ? 0
+        : gameState.scores[currentPlayer.id] ?? currentPlayer.score;
+    final availableChips = totalChips <= 0
+        ? 999
+        : max(0, totalChips - totalOnTable);
     final bankLabel = totalChips <= 0 ? '--' : '$availableChips';
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final chipSize = min(50.0, max(38.0, constraints.maxWidth * 0.22));
+        final chipSize = 42.0;
 
-        final canReturnBet = gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
+        final canReturnBet =
+            gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
 
         return DragTarget<_ChipDragData>(
-          onWillAcceptWithDetails: (details) => canReturnBet && details.data.sourceBet != null,
+          onWillAcceptWithDetails: (details) =>
+              canReturnBet && details.data.sourceBet != null,
           onAcceptWithDetails: (details) {
             final sourceBet = details.data.sourceBet;
             if (sourceBet != null) _removeBetById(sourceBet);
@@ -707,9 +861,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
-                color: isReturning ? AppColors.feltDark.withValues(alpha: 0.38) : Colors.transparent,
+                color: isReturning
+                    ? AppColors.feltDark.withValues(alpha: 0.38)
+                    : Colors.transparent,
                 border: Border.all(
-                  color: isReturning ? AppColors.brassLight : Colors.transparent,
+                  color: isReturning
+                      ? AppColors.brassLight
+                      : Colors.transparent,
                   width: 1.2,
                 ),
                 boxShadow: [
@@ -725,7 +883,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.52))),
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: AppColors.brassLight.withValues(alpha: 0.52),
+                        ),
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         isReturning ? 'RETURN CHIP' : 'CHOOSE YOUR CHIP',
@@ -738,7 +901,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.52))),
+                      Expanded(
+                        child: Container(
+                          height: 1,
+                          color: AppColors.brassLight.withValues(alpha: 0.52),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -798,7 +966,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   Widget _buildPlaceBetButton(GameState gameState) {
-    final canPlace = gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
+    final canPlace =
+        gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
 
     return SizedBox(
       width: double.infinity,
@@ -809,7 +978,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               ? const LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0xFFFFE58A), Color(0xFFFFB91F), Color(0xFFD88700)],
+                  colors: [
+                    Color(0xFFFFE58A),
+                    Color(0xFFFFB91F),
+                    Color(0xFFD88700),
+                  ],
                 )
               : LinearGradient(
                   begin: Alignment.topCenter,
@@ -820,7 +993,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   ],
                 ),
           borderRadius: BorderRadius.circular(19),
-          border: Border.all(color: AppColors.ivory.withValues(alpha: 0.86), width: 2),
+          border: Border.all(
+            color: AppColors.ivory.withValues(alpha: 0.86),
+            width: 2,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.32),
@@ -828,7 +1004,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               offset: const Offset(0, 7),
             ),
             BoxShadow(
-              color: AppColors.chipGold.withValues(alpha: canPlace ? 0.34 : 0.1),
+              color: AppColors.chipGold.withValues(
+                alpha: canPlace ? 0.34 : 0.1,
+              ),
               blurRadius: 10,
               spreadRadius: -1,
             ),
@@ -866,83 +1044,96 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildGuessingScreen(GameState gameState) {
     final hasSubmitted = gameState.hasSubmittedGuess;
-    final canInput = gameState.phase == RoundPhase.guessing && gameState.currentQuestion != null;
-    final canSubmit = canInput && _guessInput.isNotEmpty && !hasSubmitted && !_isSubmittingGuess;
+    final canInput =
+        gameState.phase == RoundPhase.guessing &&
+        gameState.currentQuestion != null;
+    final canSubmit =
+        canInput &&
+        _guessInput.isNotEmpty &&
+        !hasSubmitted &&
+        !_isSubmittingGuess;
 
     return PopScope(
       canPop: false,
       child: Scaffold(
         body: Stack(
-        children: [
-          Positioned.fill(
-            child: CachedAssetImage(
-              AppAssetPaths.background,
-              fit: BoxFit.cover,
+          children: [
+            Positioned.fill(
+              child: CachedAssetImage(
+                AppAssetPaths.background,
+                fit: BoxFit.cover,
+              ),
             ),
-          ),
-          Positioned.fill(
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final contentWidth = constraints.maxWidth.clamp(0.0, 560.0).toDouble();
-                    final designHeight = constraints.maxHeight.clamp(650.0, 810.0).toDouble();
-                    final isCompact = constraints.maxHeight < 720;
-                    final tightGap = isCompact ? 6.0 : 8.0;
-                    final normalGap = isCompact ? 8.0 : 12.0;
+            Positioned.fill(
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final contentWidth = constraints.maxWidth
+                          .clamp(0.0, 560.0)
+                          .toDouble();
+                      final designHeight = constraints.maxHeight
+                          .clamp(650.0, 810.0)
+                          .toDouble();
+                      final isCompact = constraints.maxHeight < 720;
+                      final tightGap = isCompact ? 6.0 : 8.0;
+                      final normalGap = isCompact ? 8.0 : 12.0;
 
-                    return Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: contentWidth,
-                          height: designHeight,
-                          child: Column(
-                            children: [
-                              Expanded(
-                                flex: isCompact ? 10 : 12,
-                                child: _buildPortraitLogo(),
-                              ),
-                              SizedBox(height: tightGap),
-                              SizedBox(
-                                height: isCompact ? 42 : 46,
-                                child: _buildRoundTimer(gameState),
-                              ),
-                              SizedBox(height: normalGap),
-                              Expanded(
-                                flex: isCompact ? 31 : 29,
-                                child: _buildGuessQuestionCard(gameState),
-                              ),
-                              SizedBox(height: normalGap),
-                              _buildGuessSectionTitle(),
-                              SizedBox(height: tightGap),
-                              _buildGuessDisplay(gameState),
-                              SizedBox(height: isCompact ? 8 : 10),
-                              Expanded(
-                                flex: isCompact ? 40 : 38,
-                                child: _buildGuessNumpad(
-                                  canInput: canInput,
-                                  hasSubmitted: hasSubmitted,
+                      return Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.topCenter,
+                          child: SizedBox(
+                            width: contentWidth,
+                            height: designHeight,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  flex: isCompact ? 10 : 12,
+                                  child: _buildPortraitLogo(),
                                 ),
-                              ),
-                              SizedBox(height: isCompact ? 8 : 10),
-                              SizedBox(
-                                height: isCompact ? 54 : 58,
-                                child: _buildSubmitGuessButton(canSubmit: canSubmit, hasSubmitted: hasSubmitted),
-                              ),
-                            ],
+                                SizedBox(height: tightGap),
+                                SizedBox(
+                                  height: isCompact ? 42 : 46,
+                                  child: _buildRoundTimer(gameState),
+                                ),
+                                SizedBox(height: normalGap),
+                                Expanded(
+                                  flex: isCompact ? 31 : 29,
+                                  child: _buildGuessQuestionCard(gameState),
+                                ),
+                                SizedBox(height: normalGap),
+                                _buildGuessSectionTitle(),
+                                SizedBox(height: tightGap),
+                                _buildGuessDisplay(gameState),
+                                SizedBox(height: isCompact ? 8 : 10),
+                                Expanded(
+                                  flex: isCompact ? 40 : 38,
+                                  child: _buildGuessNumpad(
+                                    canInput: canInput,
+                                    hasSubmitted: hasSubmitted,
+                                  ),
+                                ),
+                                SizedBox(height: isCompact ? 8 : 10),
+                                SizedBox(
+                                  height: isCompact ? 54 : 58,
+                                  child: _buildSubmitGuessButton(
+                                    canSubmit: canSubmit,
+                                    hasSubmitted: hasSubmitted,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -959,7 +1150,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           colors: [Color(0xFFFFFBF1), Color(0xFFF4E0B4), Color(0xFFFFFCF4)],
         ),
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.78), width: 2),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.78),
+          width: 2,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.32),
@@ -977,9 +1171,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         children: [
           Row(
             children: [
-              Expanded(child: Container(height: 1, color: AppColors.brass.withValues(alpha: 0.52))),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: AppColors.brass.withValues(alpha: 0.52),
+                ),
+              ),
               const SizedBox(width: 9),
-              const Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.brass),
+              const Icon(
+                Icons.auto_awesome_rounded,
+                size: 13,
+                color: AppColors.brass,
+              ),
               const SizedBox(width: 9),
               Text(
                 'QUESTION',
@@ -992,15 +1195,26 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 ),
               ),
               const SizedBox(width: 9),
-              const Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.brass),
+              const Icon(
+                Icons.auto_awesome_rounded,
+                size: 13,
+                color: AppColors.brass,
+              ),
               const SizedBox(width: 9),
-              Expanded(child: Container(height: 1, color: AppColors.brass.withValues(alpha: 0.52))),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: AppColors.brass.withValues(alpha: 0.52),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Expanded(
             child: _AdaptiveQuestionText(
-              text: gameState.currentQuestion?.textTr ?? 'Question will appear here.',
+              text:
+                  gameState.currentQuestion?.textTr ??
+                  'Question will appear here.',
               color: AppColors.feltDark,
               minFontSize: 22,
               maxFontSize: 46,
@@ -1014,9 +1228,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget _buildGuessSectionTitle() {
     return Row(
       children: [
-        Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.45))),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: AppColors.brassLight.withValues(alpha: 0.45),
+          ),
+        ),
         const SizedBox(width: 10),
-        const Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.brassLight),
+        const Icon(
+          Icons.auto_awesome_rounded,
+          size: 13,
+          color: AppColors.brassLight,
+        ),
         const SizedBox(width: 10),
         Text(
           'YOUR GUESS',
@@ -1029,9 +1252,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ),
         ),
         const SizedBox(width: 10),
-        const Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.brassLight),
+        const Icon(
+          Icons.auto_awesome_rounded,
+          size: 13,
+          color: AppColors.brassLight,
+        ),
         const SizedBox(width: 10),
-        Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.45))),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: AppColors.brassLight.withValues(alpha: 0.45),
+          ),
+        ),
       ],
     );
   }
@@ -1051,62 +1283,69 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       canPop: false,
       child: Scaffold(
         body: Stack(
-        children: [
-          Positioned.fill(
-            child: CachedAssetImage(
-              AppAssetPaths.background,
-              fit: BoxFit.cover,
+          children: [
+            Positioned.fill(
+              child: CachedAssetImage(
+                AppAssetPaths.background,
+                fit: BoxFit.cover,
+              ),
             ),
-          ),
-          Positioned.fill(
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isPortrait = constraints.maxHeight > constraints.maxWidth;
-                    final header = _buildRoundResultHero(gameState, winningGuess);
-                    final board = _buildRoundLeaderboardList(entries);
+            Positioned.fill(
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isPortrait =
+                          constraints.maxHeight > constraints.maxWidth;
+                      final header = _buildRoundResultHero(
+                        gameState,
+                        winningGuess,
+                      );
+                      final board = _buildRoundLeaderboardList(entries);
 
-                    if (isPortrait) {
-                      return Column(
+                      if (isPortrait) {
+                        return Column(
+                          children: [
+                            _buildRoundResultHeader(gameState),
+                            const SizedBox(height: 8),
+                            header,
+                            const SizedBox(height: 10),
+                            Expanded(child: board),
+                            const SizedBox(height: 10),
+                            _buildRoundLeaderboardAction(gameState, isHost),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildRoundResultHeader(gameState),
-                          const SizedBox(height: 8),
-                          header,
-                          const SizedBox(height: 10),
-                          Expanded(child: board),
-                          const SizedBox(height: 10),
-                          _buildRoundLeaderboardAction(gameState, isHost),
+                          Expanded(
+                            flex: 44,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  flex: 34,
+                                  child: _buildRoundResultHeader(gameState),
+                                ),
+                                const SizedBox(height: 12),
+                                header,
+                                const SizedBox(height: 12),
+                                _buildRoundLeaderboardAction(gameState, isHost),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(flex: 56, child: board),
                         ],
                       );
-                    }
-
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          flex: 44,
-                          child: Column(
-                            children: [
-                              Expanded(flex: 34, child: _buildRoundResultHeader(gameState)),
-                              const SizedBox(height: 12),
-                              header,
-                              const SizedBox(height: 12),
-                              _buildRoundLeaderboardAction(gameState, isHost),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(flex: 56, child: board),
-                      ],
-                    );
-                  },
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -1115,7 +1354,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget _buildRoundResultHero(GameState gameState, Guess? winningGuess) {
     final answer = gameState.correctAnswer;
     final winnerName = winningGuess?.playerName ?? 'Player';
-    final winnerPlayer = winningGuess == null ? null : _playerById(winningGuess.playerId);
+    final winnerPlayer = winningGuess == null
+        ? null
+        : _playerById(winningGuess.playerId);
     final winnerColor = winnerPlayer?.color ?? AppColors.brass;
 
     return Container(
@@ -1132,14 +1373,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.72), width: 1.5),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.72),
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.36),
             blurRadius: 18,
             offset: const Offset(0, 9),
           ),
-          BoxShadow(color: AppColors.brass.withValues(alpha: 0.12), blurRadius: 18),
+          BoxShadow(
+            color: AppColors.brass.withValues(alpha: 0.12),
+            blurRadius: 18,
+          ),
         ],
       ),
       child: Column(
@@ -1148,9 +1395,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFFFFE58A), Color(0xFFFFB91F), Color(0xFFD88700)]),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFFFFE58A),
+                  Color(0xFFFFB91F),
+                  Color(0xFFD88700),
+                ],
+              ),
               borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: AppColors.ivory.withValues(alpha: 0.72), width: 1.2),
+              border: Border.all(
+                color: AppColors.ivory.withValues(alpha: 0.72),
+                width: 1.2,
+              ),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -1159,7 +1415,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 SizedBox(width: 7),
                 Text(
                   'ROUND WINNER',
-                  style: TextStyle(color: AppColors.ink, fontSize: 16, fontWeight: FontWeight.w900, height: 1),
+                  style: TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
                 ),
                 SizedBox(width: 7),
                 Icon(Icons.star_rounded, color: AppColors.ink, size: 17),
@@ -1175,13 +1436,28 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: RadialGradient(colors: [winnerColor.withValues(alpha: 0.94), winnerColor.withValues(alpha: 0.46)]),
+                  gradient: RadialGradient(
+                    colors: [
+                      winnerColor.withValues(alpha: 0.94),
+                      winnerColor.withValues(alpha: 0.46),
+                    ],
+                  ),
                   border: Border.all(color: AppColors.brassLight, width: 3),
-                  boxShadow: [BoxShadow(color: AppColors.brass.withValues(alpha: 0.36), blurRadius: 18)],
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.brass.withValues(alpha: 0.36),
+                      blurRadius: 18,
+                    ),
+                  ],
                 ),
                 child: Text(
                   winnerName.isNotEmpty ? winnerName[0].toUpperCase() : '?',
-                  style: const TextStyle(color: AppColors.ivory, fontSize: 34, fontWeight: FontWeight.w900, height: 1),
+                  style: const TextStyle(
+                    color: AppColors.ivory,
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -1199,12 +1475,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                         fontWeight: FontWeight.w900,
                         height: 1,
                         letterSpacing: 0,
-                        shadows: const [Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 3))],
+                        shadows: const [
+                          Shadow(
+                            color: Colors.black87,
+                            blurRadius: 8,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      winningGuess == null ? 'Waiting for scores' : 'Guess ${_formatGuessInput('${winningGuess.value}')}',
+                      winningGuess == null
+                          ? 'Waiting for scores'
+                          : 'Guess ${_formatGuessInput('${winningGuess.value}')}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.outfit(
@@ -1228,7 +1512,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.46))),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: AppColors.brassLight.withValues(alpha: 0.46),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 5),
@@ -1245,7 +1534,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           fontWeight: FontWeight.w900,
                           height: 0.9,
                           letterSpacing: 0,
-                          shadows: [Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 3))],
+                          shadows: [
+                            Shadow(
+                              color: Colors.black87,
+                              blurRadius: 8,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1267,12 +1562,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         const SizedBox(height: 4),
         Row(
           children: [
-            Expanded(child: Container(height: 1.5, color: AppColors.brassLight.withValues(alpha: 0.44))),
+            Expanded(
+              child: Container(
+                height: 1.5,
+                color: AppColors.brassLight.withValues(alpha: 0.44),
+              ),
+            ),
             const SizedBox(width: 8),
-            const Icon(Icons.auto_awesome_rounded, color: AppColors.brassLight, size: 22),
+            const Icon(
+              Icons.auto_awesome_rounded,
+              color: AppColors.brassLight,
+              size: 22,
+            ),
             const SizedBox(width: 8),
             Text(
-              gameState.currentRound >= gameState.maxRounds ? 'GAME OVER!' : 'ROUND OVER!',
+              gameState.currentRound >= gameState.maxRounds
+                  ? 'GAME OVER!'
+                  : 'ROUND OVER!',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'RehnCondensed',
@@ -1282,15 +1588,28 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 height: 0.9,
                 letterSpacing: 1.1,
                 shadows: [
-                  Shadow(color: Colors.black87, blurRadius: 10, offset: Offset(0, 3)),
+                  Shadow(
+                    color: Colors.black87,
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
                   Shadow(color: AppColors.brass, blurRadius: 8),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(Icons.auto_awesome_rounded, color: AppColors.brassLight, size: 22),
+            const Icon(
+              Icons.auto_awesome_rounded,
+              color: AppColors.brassLight,
+              size: 22,
+            ),
             const SizedBox(width: 8),
-            Expanded(child: Container(height: 1.5, color: AppColors.brassLight.withValues(alpha: 0.44))),
+            Expanded(
+              child: Container(
+                height: 1.5,
+                color: AppColors.brassLight.withValues(alpha: 0.44),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 3),
@@ -1301,7 +1620,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             fontSize: 14,
             fontWeight: FontWeight.w800,
             height: 1,
-            shadows: const [Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2))],
+            shadows: const [
+              Shadow(
+                color: Colors.black54,
+                blurRadius: 6,
+                offset: Offset(0, 2),
+              ),
+            ],
           ),
         ),
       ],
@@ -1322,7 +1647,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.28), width: 1.4),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.28),
+          width: 1.4,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.36),
@@ -1335,7 +1663,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.workspace_premium_rounded, color: AppColors.brassLight, size: 22),
+              const Icon(
+                Icons.workspace_premium_rounded,
+                color: AppColors.brassLight,
+                size: 22,
+              ),
               const SizedBox(width: 8),
               Text(
                 'LEADERBOARD',
@@ -1366,13 +1698,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 ? Center(
                     child: Text(
                       'Scores will appear here.',
-                      style: GoogleFonts.outfit(color: AppColors.ivory.withValues(alpha: 0.74)),
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: 0.74),
+                      ),
                     ),
                   )
                 : ListView.separated(
                     itemCount: entries.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) => _buildRoundLeaderboardRow(entries[index], index),
+                    itemBuilder: (context, index) =>
+                        _buildRoundLeaderboardRow(entries[index], index),
                   ),
           ),
         ],
@@ -1393,10 +1728,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       height: 58,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: isPodium ? AppColors.ivory.withValues(alpha: 0.94) : Colors.black.withValues(alpha: 0.22),
+        color: isPodium
+            ? AppColors.ivory.withValues(alpha: 0.94)
+            : Colors.black.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isPodium ? rankColor.withValues(alpha: 0.72) : Colors.white.withValues(alpha: 0.08),
+          color: isPodium
+              ? rankColor.withValues(alpha: 0.72)
+              : Colors.white.withValues(alpha: 0.08),
           width: isPodium ? 1.4 : 1,
         ),
       ),
@@ -1422,11 +1761,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: entry.color,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.82), width: 2),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.82),
+                width: 2,
+              ),
             ),
             child: Text(
               entry.name.isNotEmpty ? entry.name[0].toUpperCase() : '?',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -1471,7 +1817,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               ? const LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0xFFFFE58A), Color(0xFFFFB91F), Color(0xFFD88700)],
+                  colors: [
+                    Color(0xFFFFE58A),
+                    Color(0xFFFFB91F),
+                    Color(0xFFD88700),
+                  ],
                 )
               : LinearGradient(
                   colors: [
@@ -1480,7 +1830,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   ],
                 ),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.ivory.withValues(alpha: isHost ? 0.88 : 0.28), width: 1.6),
+          border: Border.all(
+            color: AppColors.ivory.withValues(alpha: isHost ? 0.88 : 0.28),
+            width: 1.6,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.3),
@@ -1496,7 +1849,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             onTap: isHost ? _nextRound : null,
             child: Center(
               child: Text(
-                isHost ? (isLastRound ? 'FINAL RESULTS' : 'NEXT ROUND') : 'WAITING FOR HOST',
+                isHost
+                    ? (isLastRound ? 'FINAL RESULTS' : 'NEXT ROUND')
+                    : 'WAITING FOR HOST',
                 style: GoogleFonts.outfit(
                   color: isHost ? AppColors.ink : AppColors.ivory,
                   fontSize: 20,
@@ -1514,7 +1869,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildGuessDisplay(GameState gameState) {
     final hasSubmitted = gameState.hasSubmittedGuess;
-    final display = switch ((hasSubmitted, gameState.currentQuestion == null, _guessInput.isEmpty)) {
+    final display = switch ((
+      hasSubmitted,
+      gameState.currentQuestion == null,
+      _guessInput.isEmpty,
+    )) {
       (true, _, _) => 'LOCKED',
       (_, true, _) => 'WAITING FOR QUESTION',
       (_, _, true) => 'ENTER YOUR GUESS',
@@ -1532,7 +1891,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           colors: [Color(0xFF042F1E), Color(0xFF062817), Color(0xFF01170E)],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.86), width: 1.8),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.86),
+          width: 1.8,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.34),
@@ -1571,7 +1933,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   ],
                 ),
               ),
-              if (!hasSubmitted && gameState.currentQuestion != null && _guessInput.isNotEmpty)
+              if (!hasSubmitted &&
+                  gameState.currentQuestion != null &&
+                  _guessInput.isNotEmpty)
                 Container(
                   width: 2,
                   height: 48,
@@ -1608,7 +1972,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     Expanded(
                       child: _buildNumpadKey(
                         key,
-                        disabled: !canInput || hasSubmitted || _isSubmittingGuess,
+                        disabled:
+                            !canInput || hasSubmitted || _isSubmittingGuess,
                       ),
                     ),
                     if (key != row.last) const SizedBox(width: 8),
@@ -1672,18 +2037,33 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: isBack
-                        ? const [Color(0xFF0C6D41), Color(0xFF073D27), Color(0xFF021B11)]
-                        : const [Color(0xFFFFFFF6), Color(0xFFF8E5B8), Color(0xFFE9BF69), Color(0xFFFFF9E6)],
-                    stops: isBack ? const [0.0, 0.62, 1.0] : const [0.0, 0.46, 0.82, 1.0],
+                        ? const [
+                            Color(0xFF0C6D41),
+                            Color(0xFF073D27),
+                            Color(0xFF021B11),
+                          ]
+                        : const [
+                            Color(0xFFFFFFF6),
+                            Color(0xFFF8E5B8),
+                            Color(0xFFE9BF69),
+                            Color(0xFFFFF9E6),
+                          ],
+                    stops: isBack
+                        ? const [0.0, 0.62, 1.0]
+                        : const [0.0, 0.46, 0.82, 1.0],
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.white.withValues(alpha: isBack ? 0.06 : 0.54),
+                      color: Colors.white.withValues(
+                        alpha: isBack ? 0.06 : 0.54,
+                      ),
                       blurRadius: 5,
                       offset: const Offset(-1, -1),
                     ),
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isBack ? 0.24 : 0.12),
+                      color: Colors.black.withValues(
+                        alpha: isBack ? 0.24 : 0.12,
+                      ),
                       blurRadius: 6,
                       offset: const Offset(1, 2),
                     ),
@@ -1711,14 +2091,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           child: Container(
                             height: 1,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: isBack ? 0.16 : 0.64),
+                              color: Colors.white.withValues(
+                                alpha: isBack ? 0.16 : 0.64,
+                              ),
                               borderRadius: BorderRadius.circular(99),
                             ),
                           ),
                         ),
                         Center(
                           child: isBack
-                              ? const Icon(Icons.backspace_outlined, color: AppColors.brassLight, size: 25)
+                              ? const Icon(
+                                  Icons.backspace_outlined,
+                                  color: AppColors.brassLight,
+                                  size: 25,
+                                )
                               : Text(
                                   key,
                                   style: TextStyle(
@@ -1730,12 +2116,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                                     letterSpacing: 0,
                                     shadows: [
                                       Shadow(
-                                        color: Colors.white.withValues(alpha: 0.78),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.78,
+                                        ),
                                         blurRadius: 1.5,
                                         offset: const Offset(0, 1),
                                       ),
                                       Shadow(
-                                        color: Colors.black.withValues(alpha: 0.14),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.14,
+                                        ),
                                         blurRadius: 2,
                                         offset: const Offset(0, 1.4),
                                       ),
@@ -1755,14 +2145,22 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  Widget _buildSubmitGuessButton({required bool canSubmit, required bool hasSubmitted}) {
+  Widget _buildSubmitGuessButton({
+    required bool canSubmit,
+    required bool hasSubmitted,
+  }) {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFFF6C6), Color(0xFFC47A12), Color(0xFFFFE48B), Color(0xFF8D520B)],
+          colors: [
+            Color(0xFFFFF6C6),
+            Color(0xFFC47A12),
+            Color(0xFFFFE48B),
+            Color(0xFF8D520B),
+          ],
           stops: [0.0, 0.34, 0.72, 1.0],
         ),
         boxShadow: [
@@ -1772,7 +2170,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             offset: const Offset(0, 7),
           ),
           BoxShadow(
-            color: AppColors.brassLight.withValues(alpha: canSubmit ? 0.32 : 0.12),
+            color: AppColors.brassLight.withValues(
+              alpha: canSubmit ? 0.32 : 0.12,
+            ),
             blurRadius: 14,
             spreadRadius: -1,
           ),
@@ -1784,11 +2184,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(21),
             gradient: hasSubmitted
-                ? const LinearGradient(colors: [Color(0xFF72E66F), Color(0xFF1F8D44)])
+                ? const LinearGradient(
+                    colors: [Color(0xFF72E66F), Color(0xFF1F8D44)],
+                  )
                 : const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Color(0xFFFFF0A8), Color(0xFFFFC42E), Color(0xFFD88700), Color(0xFFFFD867)],
+                    colors: [
+                      Color(0xFFFFF0A8),
+                      Color(0xFFFFC42E),
+                      Color(0xFFD88700),
+                      Color(0xFFFFD867),
+                    ],
                     stops: [0.0, 0.44, 0.78, 1.0],
                   ),
             boxShadow: [
@@ -1822,7 +2229,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.auto_awesome_rounded, color: AppColors.mahoganyDark, size: 21),
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: AppColors.mahoganyDark,
+                          size: 21,
+                        ),
                         const SizedBox(width: 14),
                         Flexible(
                           child: FittedBox(
@@ -1831,8 +2242,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                               hasSubmitted
                                   ? 'GUESS SENT'
                                   : _isSubmittingGuess
-                                      ? 'SENDING...'
-                                      : 'SUBMIT GUESS',
+                                  ? 'SENDING...'
+                                  : 'SUBMIT GUESS',
                               maxLines: 1,
                               style: const TextStyle(
                                 fontFamily: 'RehnCondensed',
@@ -1846,7 +2257,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           ),
                         ),
                         const SizedBox(width: 14),
-                        const Icon(Icons.auto_awesome_rounded, color: AppColors.mahoganyDark, size: 21),
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: AppColors.mahoganyDark,
+                          size: 21,
+                        ),
                       ],
                     ),
                   ),
@@ -1876,7 +2291,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       decoration: BoxDecoration(
         color: AppColors.feltDark.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brass.withValues(alpha: 0.42), width: 1.6),
+        border: Border.all(
+          color: AppColors.brass.withValues(alpha: 0.42),
+          width: 1.6,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.28),
@@ -1889,7 +2307,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         children: [
           Row(
             children: [
-              Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.34))),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: AppColors.brassLight.withValues(alpha: 0.34),
+                ),
+              ),
               const SizedBox(width: 8),
               Text(
                 'PLAYERS',
@@ -1902,7 +2325,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(child: Container(height: 1, color: AppColors.brassLight.withValues(alpha: 0.34))),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: AppColors.brassLight.withValues(alpha: 0.34),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -1918,7 +2346,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   );
                 }
 
-                final tileWidth = ((constraints.maxWidth - 18) / 4).clamp(58.0, 82.0).toDouble();
+                final tileWidth = ((constraints.maxWidth - 18) / 4)
+                    .clamp(58.0, 82.0)
+                    .toDouble();
                 final sortedPlayers = [..._players]
                   ..sort((a, b) {
                     final scoreA = gameState.scores[a.id] ?? a.score;
@@ -1937,10 +2367,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           child: _buildPlayerProfileTile(
                             sortedPlayers[i],
                             i,
-                            gameState.scores[sortedPlayers[i].id] ?? sortedPlayers[i].score,
+                            gameState.scores[sortedPlayers[i].id] ??
+                                sortedPlayers[i].score,
                           ),
                         ),
-                        if (i != sortedPlayers.length - 1) const SizedBox(width: 6),
+                        if (i != sortedPlayers.length - 1)
+                          const SizedBox(width: 6),
                       ],
                     ],
                   ),
@@ -1977,7 +2409,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                         AppColors.mahoganyDark.withValues(alpha: 0.64),
                       ],
                     ),
-                    border: Border.all(color: AppColors.ivory.withValues(alpha: 0.86), width: 2),
+                    border: Border.all(
+                      color: AppColors.ivory.withValues(alpha: 0.86),
+                      width: 2,
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: color.withValues(alpha: 0.36),
@@ -1993,7 +2428,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   ),
                   child: Center(
                     child: Text(
-                      player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
+                      player.name.isNotEmpty
+                          ? player.name[0].toUpperCase()
+                          : '?',
                       style: GoogleFonts.outfit(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
@@ -2020,7 +2457,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: color,
-                      border: Border.all(color: AppColors.brassLight, width: 1.2),
+                      border: Border.all(
+                        color: AppColors.brassLight,
+                        width: 1.2,
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.34),
@@ -2082,6 +2522,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
+  Color _getChipColor(int value) {
+    switch (value) {
+      case 5:
+        return AppColors.feltLight;
+      case 10:
+        return AppColors.neonBlue;
+      case 50:
+        return AppColors.burgundy;
+      case 100:
+        return AppColors.neonPurple;
+      default:
+        return AppColors.chipGold;
+    }
+  }
+
   Color _profileColor(Player player, int index) {
     const fallbackColors = [
       Color(0xFF44D65F),
@@ -2096,13 +2551,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       Color(0xFF6D7CFF),
     ];
 
-    return player.avatarColor.isEmpty ? fallbackColors[index % fallbackColors.length] : player.color;
+    return player.avatarColor.isEmpty
+        ? fallbackColors[index % fallbackColors.length]
+        : player.color;
   }
 
   Widget _buildBettingBoardAsset() {
     final gameState = ref.watch(gameStateProvider);
     final currentPlayer = ref.watch(currentPlayerProvider);
-    final canBet = gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
+    final canBet =
+        gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2118,11 +2576,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           child: DragTarget<_ChipDragData>(
             onWillAcceptWithDetails: (_) => canBet,
             onAcceptWithDetails: (details) {
-              final box = boardKey.currentContext?.findRenderObject() as RenderBox?;
+              final box =
+                  boardKey.currentContext?.findRenderObject() as RenderBox?;
               if (box == null) return;
 
               final boardSize = box.size;
-              final chipCenter = details.offset + Offset(details.data.size / 2, details.data.size / 2);
+              final chipCenter =
+                  details.offset +
+                  Offset(details.data.size / 2, details.data.size / 2);
               final local = box.globalToLocal(chipCenter);
               final targetSlot = _slotAtBoardPosition(local, boardSize);
               if (targetSlot == null) return;
@@ -2132,7 +2593,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               if (sourceBet != null) {
                 _moveBet(sourceBet, targetSlot.index, position: position);
               } else {
-                _placeBet(targetSlot.index, details.data.value, position: position);
+                _placeBet(
+                  targetSlot.index,
+                  details.data.value,
+                  position: position,
+                );
               }
             },
             builder: (context, candidateData, rejectedData) {
@@ -2150,12 +2615,17 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                       height: spec.rect.height * size.height,
                       child: _buildCodedBetSlot(
                         spec: spec,
-                        bets: gameState.bets.where((bet) => bet.slotIndex == spec.index).toList(),
                         currentPlayerId: currentPlayer?.id,
                         canDrag: canBet,
                         isBoardHovering: isHovering,
                       ),
                     ),
+                  _buildAllPlacedChips(
+                    gameState.bets,
+                    size,
+                    currentPlayer?.id,
+                    canDrag: canBet,
+                  ),
                 ],
               );
             },
@@ -2167,7 +2637,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildCodedBetSlot({
     required _BetSlotSpec spec,
-    required List<Bet> bets,
     required String? currentPlayerId,
     required bool canDrag,
     required bool isBoardHovering,
@@ -2178,18 +2647,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned.fill(child: _BetSlotSurface(spec: spec, isHovering: isBoardHovering)),
-          _buildBetSlotLabel(spec),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return _buildPlacedChips(
-                bets,
-                Size(constraints.maxWidth, constraints.maxHeight),
-                currentPlayerId,
-                canDrag: canDrag,
-              );
-            },
+          Positioned.fill(
+            child: _BetSlotSurface(spec: spec, isHovering: isBoardHovering),
           ),
+          _buildBetSlotLabel(spec),
         ],
       ),
     );
@@ -2198,7 +2659,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   _BetSlotSpec? _slotAtBoardPosition(Offset local, Size boardSize) {
     if (boardSize.isEmpty) return null;
 
-    final percent = Offset(local.dx / boardSize.width, local.dy / boardSize.height);
+    final percent = Offset(
+      local.dx / boardSize.width,
+      local.dy / boardSize.height,
+    );
     final hitTestSlots = [
       ..._betSlots.where((slot) => slot.isSweetSpot),
       ..._betSlots.where((slot) => !slot.isSweetSpot).toList().reversed,
@@ -2210,13 +2674,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return null;
   }
 
-  Offset _slotLocalPosition(_BetSlotSpec slot, Offset boardLocal, Size boardSize) {
+  Offset _slotLocalPosition(
+    _BetSlotSpec slot,
+    Offset boardLocal,
+    Size boardSize,
+  ) {
     if (boardSize.isEmpty) return const Offset(0.5, 0.5);
 
-    final percent = Offset(boardLocal.dx / boardSize.width, boardLocal.dy / boardSize.height);
+    final percent = Offset(
+      boardLocal.dx / boardSize.width,
+      boardLocal.dy / boardSize.height,
+    );
     return Offset(
-      ((percent.dx - slot.rect.left) / slot.rect.width).clamp(0.02, 0.98).toDouble(),
-      ((percent.dy - slot.rect.top) / slot.rect.height).clamp(0.04, 0.96).toDouble(),
+      (percent.dx - slot.rect.left) / slot.rect.width,
+      (percent.dy - slot.rect.top) / slot.rect.height,
     );
   }
 
@@ -2248,10 +2719,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isSweetSpot
-                ? const [Color(0xFFFFF3B6), Color(0xFFFFC84D), Color(0xFF8C5C18)]
-                : const [Color(0xFF2B1710), Color(0xFF0A0706), Color(0xFF3A2115)],
+                ? const [
+                    Color(0xFFFFF3B6),
+                    Color(0xFFFFC84D),
+                    Color(0xFF8C5C18),
+                  ]
+                : const [
+                    Color(0xFF2B1710),
+                    Color(0xFF0A0706),
+                    Color(0xFF3A2115),
+                  ],
           ),
-          border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.72), width: 1),
+          border: Border.all(
+            color: AppColors.brassLight.withValues(alpha: 0.72),
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: isSweetSpot ? 0.22 : 0.45),
@@ -2286,14 +2768,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 '${slot.odds}:1',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.outfit(
-                  color: isSweetSpot ? AppColors.mahoganyDark : AppColors.brassLight,
+                  color: isSweetSpot
+                      ? AppColors.mahoganyDark
+                      : AppColors.brassLight,
                   fontSize: isSweetSpot ? 11.5 : 11,
                   fontWeight: FontWeight.w900,
                   height: 1,
                   letterSpacing: 0,
                   shadows: [
                     Shadow(
-                      color: isSweetSpot ? Colors.white.withValues(alpha: 0.55) : Colors.black,
+                      color: isSweetSpot
+                          ? Colors.white.withValues(alpha: 0.55)
+                          : Colors.black,
                       blurRadius: isSweetSpot ? 1 : 2,
                       offset: const Offset(0, 0.6),
                     ),
@@ -2329,7 +2815,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   foreground: Paint()
                     ..style = PaintingStyle.stroke
                     ..strokeWidth = isSweetSpot ? 2.6 : 3.2
-                    ..color = strokeColor.withValues(alpha: isSweetSpot ? 0.72 : 0.78),
+                    ..color = strokeColor.withValues(
+                      alpha: isSweetSpot ? 0.72 : 0.78,
+                    ),
                   fontSize: isSweetSpot ? 24 : 31,
                   fontWeight: FontWeight.w400,
                   height: 1,
@@ -2348,7 +2836,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   letterSpacing: 0,
                   shadows: [
                     Shadow(
-                      color: Colors.black.withValues(alpha: isSweetSpot ? 0.28 : 0.75),
+                      color: Colors.black.withValues(
+                        alpha: isSweetSpot ? 0.28 : 0.75,
+                      ),
                       blurRadius: isSweetSpot ? 2 : 7,
                       offset: const Offset(0, 1.4),
                     ),
@@ -2367,27 +2857,33 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  Widget _buildPlacedChips(
+  Widget _buildAllPlacedChips(
     List<Bet> bets,
-    Size slotSize,
+    Size boardSize,
     String? currentPlayerId, {
     required bool canDrag,
   }) {
     if (bets.isEmpty) return const SizedBox.shrink();
 
-    final myBets = bets.where((bet) => bet.playerId == currentPlayerId).toList();
-    final otherBets = bets.where((bet) => bet.playerId != currentPlayerId).toList();
-    final chipSize = min(40.0, max(26.0, min(slotSize.width, slotSize.height) * 0.36));
+    final myBets = bets
+        .where((bet) => bet.playerId == currentPlayerId)
+        .toList();
+    final otherBets = bets
+        .where((bet) => bet.playerId != currentPlayerId)
+        .toList();
+    // Use fixed physical chip size
+    final chipSize = 42.0;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        if (otherBets.isNotEmpty) _buildOtherBetMarkers(otherBets, slotSize),
+        if (otherBets.isNotEmpty)
+          _buildOtherBetMarkersGlobal(otherBets, boardSize),
         for (var i = 0; i < myBets.length; i++)
           _positionedBetChip(
             myBets[i],
             i,
-            slotSize,
+            boardSize,
             chipSize,
             canDrag: canDrag,
             onTap: canDrag ? () => _removeBetById(myBets[i]) : null,
@@ -2396,26 +2892,62 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  Widget _buildOtherBetMarkers(List<Bet> bets, Size slotSize) {
-    final groupedBets = _groupBetsByPlayer(bets).take(4).toList();
-    if (groupedBets.isEmpty) return const SizedBox.shrink();
-
-    final markerHeight = min(24.0, max(18.0, slotSize.height * 0.2));
-    final markerWidth = min(54.0, max(38.0, slotSize.width * 0.24));
-    final rowWidth = groupedBets.length * markerWidth + max(0, groupedBets.length - 1) * 4;
-    final startLeft = ((slotSize.width - rowWidth) / 2).clamp(4.0, max(4.0, slotSize.width - rowWidth)).toDouble();
-    final top = (slotSize.height - markerHeight - 6).clamp(4.0, max(4.0, slotSize.height - markerHeight)).toDouble();
+  Widget _buildOtherBetMarkersGlobal(List<Bet> bets, Size boardSize) {
+    // For other bets, we just group them per slot and render them globally.
+    // To keep things simple, we'll iterate through slots and position markers based on slot rects.
+    final slotsWithBets = <int, List<Bet>>{};
+    for (final bet in bets) {
+      slotsWithBets.putIfAbsent(bet.slotIndex, () => []).add(bet);
+    }
 
     return Stack(
       children: [
-        for (var i = 0; i < groupedBets.length; i++)
-          Positioned(
-            left: startLeft + i * (markerWidth + 4),
-            top: top,
-            child: _OtherBetMarker(bet: groupedBets[i], width: markerWidth, height: markerHeight),
-          ),
+        for (final entry in slotsWithBets.entries)
+          ..._buildOtherBetMarkersForSlot(entry.key, entry.value, boardSize),
       ],
     );
+  }
+
+  List<Widget> _buildOtherBetMarkersForSlot(
+    int slotIndex,
+    List<Bet> bets,
+    Size boardSize,
+  ) {
+    final spec = _betSlots.firstWhere((s) => s.index == slotIndex);
+    final slotSize = Size(
+      spec.rect.width * boardSize.width,
+      spec.rect.height * boardSize.height,
+    );
+    final groupedBets = _groupBetsByPlayer(bets).take(4).toList();
+    if (groupedBets.isEmpty) return [];
+
+    final markerHeight = min(24.0, max(18.0, slotSize.height * 0.2));
+    final markerWidth = min(54.0, max(38.0, slotSize.width * 0.24));
+    final rowWidth =
+        groupedBets.length * markerWidth + max(0, groupedBets.length - 1) * 4;
+
+    final localLeft = ((slotSize.width - rowWidth) / 2)
+        .clamp(4.0, max(4.0, slotSize.width - rowWidth))
+        .toDouble();
+    final localTop = (slotSize.height - markerHeight - 6)
+        .clamp(4.0, max(4.0, slotSize.height - markerHeight))
+        .toDouble();
+
+    final globalLeft = spec.rect.left * boardSize.width + localLeft;
+    final globalTop = spec.rect.top * boardSize.height + localTop;
+
+    return [
+      for (var i = 0; i < groupedBets.length; i++)
+        Positioned(
+          left: globalLeft + i * (markerWidth + 4),
+          top: globalTop,
+          child: _OtherBetMarker(
+            bet: groupedBets[i],
+            width: markerWidth,
+            height: markerHeight,
+          ),
+        ),
+    ];
   }
 
   List<_GroupedPlayerBet> _groupBetsByPlayer(List<Bet> bets) {
@@ -2427,8 +2959,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       colors[bet.playerId] ??= bet.playerColor;
     }
 
-    final grouped =
-        totals.entries.map((entry) => _GroupedPlayerBet(playerColor: colors[entry.key], total: entry.value)).toList();
+    final grouped = totals.entries
+        .map(
+          (entry) => _GroupedPlayerBet(
+            playerColor: colors[entry.key],
+            total: entry.value,
+          ),
+        )
+        .toList();
     grouped.sort((a, b) => b.total.compareTo(a.total));
     return grouped;
   }
@@ -2436,39 +2974,57 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget _positionedBetChip(
     Bet bet,
     int index,
-    Size slotSize,
+    Size boardSize,
     double chipSize, {
     bool canDrag = false,
     VoidCallback? onTap,
   }) {
     final fallbackX = 0.5 + ((index % 3) - 1) * 0.14;
     final fallbackY = 0.52 + ((index ~/ 3) % 2) * 0.16;
-    final x = (bet.positionX ?? fallbackX).clamp(0.0, 1.0).toDouble();
-    final y = (bet.positionY ?? fallbackY).clamp(0.0, 1.0).toDouble();
-    final left = (x * slotSize.width - chipSize / 2).clamp(2.0, slotSize.width - chipSize - 2).toDouble();
-    final top = (y * slotSize.height - chipSize / 2).clamp(2.0, slotSize.height - chipSize - 2).toDouble();
+    final slotLocalX = bet.positionX ?? fallbackX;
+    final slotLocalY = bet.positionY ?? fallbackY;
+
+    final spec = _betSlots.firstWhere((s) => s.index == bet.slotIndex);
+
+    final slotWidth = spec.rect.width * boardSize.width;
+    final slotHeight = spec.rect.height * boardSize.height;
+
+    // No clamping so the chip stays physically exactly where dropped
+    final globalLeft =
+        spec.rect.left * boardSize.width +
+        (slotLocalX * slotWidth - chipSize / 2);
+    final globalTop =
+        spec.rect.top * boardSize.height +
+        (slotLocalY * slotHeight - chipSize / 2);
 
     final chip = PokerChip(
       label: '${bet.chips}',
-      color: bet.playerColor != null ? Color(Helpers.colorFromHex(bet.playerColor!)) : AppColors.chipGold,
+      color: _getChipColor(bet.chips),
       size: chipSize,
-      isScoreChip: bet.playerColor == null,
+      isScoreChip: false,
     );
 
     final child = GestureDetector(onTap: onTap, child: chip);
 
-    return Positioned(
-      left: left,
-      top: top,
+    return AnimatedPositioned(
+      key: ValueKey(bet.id),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      left: globalLeft,
+      top: globalTop,
       child: canDrag
           ? Draggable<_ChipDragData>(
-              data: _ChipDragData(value: bet.chips, size: chipSize, sourceBet: bet),
+              data: _ChipDragData(
+                value: bet.chips,
+                size: chipSize,
+                sourceBet: bet,
+              ),
               feedback: Material(
                 color: Colors.transparent,
                 child: IgnorePointer(child: chip),
               ),
               childWhenDragging: Opacity(opacity: 0.18, child: child),
-              onDragStarted: () => ref.read(audioServiceProvider).playClick(),
+              onDragStarted: () => ref.read(audioServiceProvider).playChip(),
               child: child,
             )
           : child,
@@ -2486,7 +3042,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return _buildGuessingScreen(gameState);
     }
 
-    if (gameState.phase == RoundPhase.revealAnswer || gameState.phase == RoundPhase.scoring) {
+    if (gameState.phase == RoundPhase.revealAnswer ||
+        gameState.phase == RoundPhase.scoring) {
       return _buildRoundLeaderboardScreen(gameState);
     }
 
@@ -2494,61 +3051,64 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       canPop: false,
       child: Scaffold(
         body: Stack(
-        children: [
-          Positioned.fill(
-            child: CachedAssetImage(
-              AppAssetPaths.background,
-              fit: BoxFit.cover,
+          children: [
+            Positioned.fill(
+              child: CachedAssetImage(
+                AppAssetPaths.background,
+                fit: BoxFit.cover,
+              ),
             ),
-          ),
-          Positioned.fill(
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      flex: 50,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
-                        child: Column(
-                          children: [
-                            Expanded(
-                              flex: 24,
-                              child: _buildPortraitLogo(),
-                            ),
-                            const SizedBox(height: 4),
-                            SizedBox(height: 42, child: _buildRoundTimer(gameState)),
-                            const SizedBox(height: 10),
-                            Expanded(
-                              flex: 28,
-                              child: _buildQuestionCard(context, gameState),
-                            ),
-                            const SizedBox(height: 12),
-                            SizedBox(height: 108, child: _buildChipPicker(currentPlayer, gameState)),
-                            const SizedBox(height: 12),
-                            _buildPlaceBetButton(gameState),
-                            const SizedBox(height: 12),
-                            Expanded(
-                              flex: 22,
-                              child: _buildPlayersStrip(gameState),
-                            ),
-                          ],
+            Positioned.fill(
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 50,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+                          child: Column(
+                            children: [
+                              Expanded(flex: 24, child: _buildPortraitLogo()),
+                              const SizedBox(height: 4),
+                              SizedBox(
+                                height: 42,
+                                child: _buildRoundTimer(gameState),
+                              ),
+                              const SizedBox(height: 10),
+                              Expanded(
+                                flex: 28,
+                                child: _buildQuestionCard(context, gameState),
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                height: 108,
+                                child: _buildChipPicker(
+                                  currentPlayer,
+                                  gameState,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildPlaceBetButton(gameState),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                flex: 22,
+                                child: _buildPlayersStrip(gameState),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      flex: 50,
-                      child: _buildBettingBoardAsset(),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Expanded(flex: 50, child: _buildBettingBoardAsset()),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -2556,13 +3116,55 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 }
 
 const List<_BetSlotSpec> _betSlots = [
-  _BetSlotSpec(6, 'LARGER', 6, _BetSlotTone.green, Rect.fromLTWH(0.055, 0.018, 0.890, 0.130)),
-  _BetSlotSpec(5, 'OVER', 4, _BetSlotTone.black, Rect.fromLTWH(0.055, 0.153, 0.890, 0.142)),
-  _BetSlotSpec(4, 'JUST OVER', 3, _BetSlotTone.black, Rect.fromLTWH(0.055, 0.300, 0.890, 0.142)),
-  _BetSlotSpec(3, 'SWEET SPOT', 2, _BetSlotTone.gold, Rect.fromLTWH(-0.010, 0.430, 1.020, 0.136)),
-  _BetSlotSpec(2, 'JUST UNDER', 3, _BetSlotTone.red, Rect.fromLTWH(0.055, 0.560, 0.890, 0.142)),
-  _BetSlotSpec(1, 'UNDER', 4, _BetSlotTone.red, Rect.fromLTWH(0.055, 0.705, 0.890, 0.142)),
-  _BetSlotSpec(0, 'SMALLER', 6, _BetSlotTone.green, Rect.fromLTWH(0.055, 0.852, 0.890, 0.130)),
+  _BetSlotSpec(
+    6,
+    'LARGER',
+    6,
+    _BetSlotTone.green,
+    Rect.fromLTWH(0.055, 0.018, 0.890, 0.130),
+  ),
+  _BetSlotSpec(
+    5,
+    'OVER',
+    4,
+    _BetSlotTone.black,
+    Rect.fromLTWH(0.055, 0.153, 0.890, 0.142),
+  ),
+  _BetSlotSpec(
+    4,
+    'JUST OVER',
+    3,
+    _BetSlotTone.black,
+    Rect.fromLTWH(0.055, 0.300, 0.890, 0.142),
+  ),
+  _BetSlotSpec(
+    3,
+    'SWEET SPOT',
+    2,
+    _BetSlotTone.gold,
+    Rect.fromLTWH(-0.010, 0.430, 1.020, 0.136),
+  ),
+  _BetSlotSpec(
+    2,
+    'JUST UNDER',
+    3,
+    _BetSlotTone.red,
+    Rect.fromLTWH(0.055, 0.560, 0.890, 0.142),
+  ),
+  _BetSlotSpec(
+    1,
+    'UNDER',
+    4,
+    _BetSlotTone.red,
+    Rect.fromLTWH(0.055, 0.705, 0.890, 0.142),
+  ),
+  _BetSlotSpec(
+    0,
+    'SMALLER',
+    6,
+    _BetSlotTone.green,
+    Rect.fromLTWH(0.055, 0.852, 0.890, 0.130),
+  ),
 ];
 
 enum _BetSlotTone { green, black, gold, red }
@@ -2572,17 +3174,18 @@ class _ChipDragData {
   final double size;
   final Bet? sourceBet;
 
-  const _ChipDragData({required this.value, required this.size, this.sourceBet});
+  const _ChipDragData({
+    required this.value,
+    required this.size,
+    this.sourceBet,
+  });
 }
 
 class _GroupedPlayerBet {
   final String? playerColor;
   final int total;
 
-  const _GroupedPlayerBet({
-    required this.playerColor,
-    required this.total,
-  });
+  const _GroupedPlayerBet({required this.playerColor, required this.total});
 }
 
 class _LeaderboardEntry {
@@ -2672,7 +3275,12 @@ class _AdaptiveQuestionText extends StatelessWidget {
 
     for (var i = 0; i < 10; i++) {
       final mid = (low + high) / 2;
-      if (_fits(text: text, fontSize: mid, maxWidth: maxWidth, maxHeight: maxHeight)) {
+      if (_fits(
+        text: text,
+        fontSize: mid,
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+      )) {
         low = mid;
       } else {
         high = mid;
@@ -2749,11 +3357,17 @@ class _OtherBetMarker extends StatelessWidget {
   final double width;
   final double height;
 
-  const _OtherBetMarker({required this.bet, required this.width, required this.height});
+  const _OtherBetMarker({
+    required this.bet,
+    required this.width,
+    required this.height,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final color = bet.playerColor != null ? Color(Helpers.colorFromHex(bet.playerColor!)) : AppColors.brass;
+    final color = bet.playerColor != null
+        ? Color(Helpers.colorFromHex(bet.playerColor!))
+        : AppColors.brass;
 
     return Container(
       width: width,
@@ -2781,7 +3395,10 @@ class _OtherBetMarker extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: color,
-              border: Border.all(color: AppColors.ivory.withValues(alpha: 0.72), width: 0.8),
+              border: Border.all(
+                color: AppColors.ivory.withValues(alpha: 0.72),
+                width: 0.8,
+              ),
             ),
           ),
           const SizedBox(width: 4),
@@ -2811,10 +3428,7 @@ class _BetSlotSurface extends StatelessWidget {
   final _BetSlotSpec spec;
   final bool isHovering;
 
-  const _BetSlotSurface({
-    required this.spec,
-    required this.isHovering,
-  });
+  const _BetSlotSurface({required this.spec, required this.isHovering});
 
   @override
   Widget build(BuildContext context) {
@@ -2847,7 +3461,9 @@ class _BetSlotSurface extends StatelessWidget {
           padding: EdgeInsets.all(spec.isSweetSpot ? 3 : 2),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(spec.isSweetSpot ? 15 : 8),
-            color: spec.isSweetSpot ? AppColors.chipGold.withValues(alpha: 0.35) : AppColors.ivory,
+            color: spec.isSweetSpot
+                ? AppColors.chipGold.withValues(alpha: 0.35)
+                : AppColors.ivory,
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(spec.isSweetSpot ? 12 : 6),
@@ -2862,10 +3478,14 @@ class _BetSlotSurface extends StatelessWidget {
                 DecoratedBox(
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: spec.isSweetSpot ? 0.34 : 0.16),
+                      color: Colors.white.withValues(
+                        alpha: spec.isSweetSpot ? 0.34 : 0.16,
+                      ),
                       width: spec.isSweetSpot ? 1.2 : 1,
                     ),
-                    borderRadius: BorderRadius.circular(spec.isSweetSpot ? 12 : 6),
+                    borderRadius: BorderRadius.circular(
+                      spec.isSweetSpot ? 12 : 6,
+                    ),
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -2923,7 +3543,10 @@ class _InfoPill extends StatelessWidget {
           ],
         ),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.22), width: 1.2),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.22),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.28),

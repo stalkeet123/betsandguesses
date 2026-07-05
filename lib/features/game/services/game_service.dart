@@ -13,30 +13,38 @@ class GameService {
 
   // ── Questions ──
 
+  List<Question>? _cachedQuestions;
+
+  /// Fetch all questions once and cache them
+  Future<void> prefetchQuestions() async {
+    if (_cachedQuestions != null) return;
+    try {
+      final response = await _client.from('questions').select();
+      _cachedQuestions = (response as List).map((e) => Question.fromJson(e)).toList();
+    } catch (e) {
+      // Ignore, we will try again
+    }
+  }
+
   /// Get a random question not yet used in this room
   Future<Question?> getRandomQuestion(String roomId, List<String> usedQuestionIds) async {
-    var query = _client.from('questions').select();
+    await prefetchQuestions();
 
-    if (usedQuestionIds.isNotEmpty) {
-      // Fetch all and filter client-side (Supabase doesn't support NOT IN easily)
+    if (_cachedQuestions == null || _cachedQuestions!.isEmpty) {
+      // Fallback: fetch directly if cache failed or is empty
+      var query = _client.from('questions').select();
       final response = await query;
-      final allQuestions = (response as List)
-          .map((e) => Question.fromJson(e))
-          .where((q) => !usedQuestionIds.contains(q.id))
-          .toList();
-
-      if (allQuestions.isEmpty) return null;
-      allQuestions.shuffle(Random());
-      return allQuestions.first;
-    } else {
-      final response = await query;
-      final allQuestions = (response as List)
-          .map((e) => Question.fromJson(e))
-          .toList();
-      if (allQuestions.isEmpty) return null;
-      allQuestions.shuffle(Random());
-      return allQuestions.first;
+      _cachedQuestions = (response as List).map((e) => Question.fromJson(e)).toList();
+      if (_cachedQuestions!.isEmpty) return null;
     }
+
+    final available = _cachedQuestions!
+        .where((q) => !usedQuestionIds.contains(q.id))
+        .toList();
+
+    if (available.isEmpty) return null;
+    available.shuffle(Random());
+    return available.first;
   }
 
   // ── Guesses ──

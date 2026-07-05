@@ -7,13 +7,34 @@ class PlayerService {
 
   PlayerService(this._client);
 
-  /// Add a player to a room
+  /// Add a player to a room, or revive the same local player if they rejoin.
   Future<Player> joinRoom({
     required String roomId,
     required String name,
     required String avatarColor,
     bool isHost = false,
+    String? previousPlayerId,
   }) async {
+    final previousPlayer = await _findReusablePlayer(
+      roomId: roomId,
+      playerId: previousPlayerId,
+      name: name,
+    );
+
+    if (previousPlayer != null) {
+      final response = await _client
+          .from('players')
+          .update({
+            'name': name,
+            'avatar_color': previousPlayer.avatarColor,
+            'is_connected': true,
+          })
+          .eq('id', previousPlayer.id)
+          .select()
+          .single();
+      return Player.fromJson(response);
+    }
+
     final response = await _client
         .from('players')
         .insert({
@@ -27,6 +48,39 @@ class PlayerService {
         .select()
         .single();
     return Player.fromJson(response);
+  }
+
+  Future<Player?> _findReusablePlayer({
+    required String roomId,
+    required String? playerId,
+    required String name,
+  }) async {
+    if (playerId != null && playerId.trim().isNotEmpty) {
+      final response = await _client
+          .from('players')
+          .select()
+          .eq('id', playerId)
+          .eq('room_id', roomId)
+          .maybeSingle();
+
+      if (response != null) {
+        return Player.fromJson(response);
+      }
+    }
+
+    final inactiveByName = await _client
+        .from('players')
+        .select()
+        .eq('room_id', roomId)
+        .eq('name', name)
+        .eq('is_host', false)
+        .eq('is_connected', false)
+        .order('joined_at', ascending: false)
+        .limit(1);
+
+    final rows = inactiveByName as List;
+    if (rows.isEmpty) return null;
+    return Player.fromJson(rows.first as Map<String, dynamic>);
   }
 
   /// Get all players in a room
@@ -57,10 +111,7 @@ class PlayerService {
 
   /// Update score
   Future<void> updateScore(String playerId, int score) async {
-    await _client
-        .from('players')
-        .update({'score': score})
-        .eq('id', playerId);
+    await _client.from('players').update({'score': score}).eq('id', playerId);
   }
 
   /// Update multiple player scores at once
@@ -75,7 +126,15 @@ class PlayerService {
 
   /// Remove player from room
   Future<void> leaveRoom(String playerId) async {
-    await _client.from('players').delete().eq('id', playerId);
+    try {
+      await _client.from('players').delete().eq('id', playerId);
+    } catch (_) {
+      try {
+        await setConnected(playerId, false);
+      } catch (_) {
+        // The local app still leaves the lobby; stale rows are filtered out.
+      }
+    }
   }
 
   /// Set connection status

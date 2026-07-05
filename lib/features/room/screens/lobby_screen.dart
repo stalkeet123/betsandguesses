@@ -24,6 +24,10 @@ class LobbyScreen extends ConsumerStatefulWidget {
 class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   List<Player> _players = [];
   bool _isStarting = false;
+  bool _isReadyLoading = false;
+
+  List<Player> get _activePlayers =>
+      _players.where((player) => player.isConnected).toList();
 
   @override
   void initState() {
@@ -51,7 +55,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       onAnswerRevealed: (_) {},
       onGameStarted: (_) {
         if (mounted) {
-          context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
+          context.goNamed(
+            'game',
+            pathParameters: {'roomCode': widget.roomCode},
+          );
         }
       },
       onGameEnded: (_) {},
@@ -69,12 +76,19 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   Future<void> _toggleReady() async {
     final player = ref.read(currentPlayerProvider);
-    if (player == null) return;
+    if (player == null || _isReadyLoading) return;
 
-    final playerService = ref.read(playerServiceProvider);
-    await playerService.toggleReady(player.id, !player.isReady);
-    ref.read(currentPlayerProvider.notifier).set(player.copyWith(isReady: !player.isReady));
-    _loadPlayers();
+    setState(() => _isReadyLoading = true);
+    try {
+      final playerService = ref.read(playerServiceProvider);
+      await playerService.toggleReady(player.id, !player.isReady);
+      ref
+          .read(currentPlayerProvider.notifier)
+          .set(player.copyWith(isReady: !player.isReady));
+      await _loadPlayers();
+    } finally {
+      if (mounted) setState(() => _isReadyLoading = false);
+    }
   }
 
   Future<void> _startGame() async {
@@ -89,14 +103,18 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       await roomService.startGame(room.id);
 
       final realtimeService = ref.read(realtimeServiceProvider);
-      await realtimeService.broadcast(widget.roomCode, 'game_started', {'room_id': room.id});
+      await realtimeService.broadcast(widget.roomCode, 'game_started', {
+        'room_id': room.id,
+      });
 
       if (mounted) {
         context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Game could not start: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Game could not start: $e')));
       }
     } finally {
       if (mounted) setState(() => _isStarting = false);
@@ -106,31 +124,42 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   bool get _canStart {
     final isHost = ref.read(isHostProvider);
     if (!isHost) return false;
-    if (_players.length < GameConstants.minPlayers) return false;
-    return _players.where((p) => !p.isHost).every((p) => p.isReady);
+    final players = _activePlayers;
+    if (players.length < GameConstants.minPlayers) return false;
+    return players.where((p) => !p.isHost).every((p) => p.isReady);
   }
 
   String get _inviteLink {
     if (kIsWeb) {
       final uri = Uri.base;
-      final origin = '${uri.scheme}://${uri.host}${uri.port != 80 && uri.port != 443 && uri.port != 0 ? ":${uri.port}" : ""}';
+      final origin =
+          '${uri.scheme}://${uri.host}${uri.port != 80 && uri.port != 443 && uri.port != 0 ? ":${uri.port}" : ""}';
       return '$origin/#/?room=${widget.roomCode}';
     }
 
-    const webAppUrl = String.fromEnvironment('WEB_APP_URL', defaultValue: 'https://stalkeet123.github.io/betsandguesses');
+    const webAppUrl = String.fromEnvironment(
+      'WEB_APP_URL',
+      defaultValue: 'https://stalkeet123.github.io/betsandguesses',
+    );
     return '$webAppUrl/#/?room=${widget.roomCode}';
   }
 
   Future<void> _copyText(String text, String message) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _leaveLobby() async {
+    final room = ref.read(currentRoomProvider);
     final player = ref.read(currentPlayerProvider);
     if (player != null) {
       await ref.read(playerServiceProvider).leaveRoom(player.id);
+    }
+    if (room != null) {
+      ref.read(sharedPrefsProvider).remove(_playerMemoryKey(room.id));
     }
     ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     ref.read(currentRoomProvider.notifier).set(null);
@@ -138,11 +167,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     if (mounted) context.goNamed('home');
   }
 
+  String _playerMemoryKey(String roomId) => 'lobby_player_id_$roomId';
+
   @override
   Widget build(BuildContext context) {
     final room = ref.watch(currentRoomProvider);
     final currentPlayer = ref.watch(currentPlayerProvider);
     final isHost = ref.watch(isHostProvider);
+    final activePlayers = _activePlayers;
 
     if (room != null) {
       ref.listen(playersStreamProvider(room.id), (prev, next) {
@@ -184,7 +216,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             child: SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final contentWidth = constraints.maxWidth.clamp(0.0, 560.0).toDouble();
+                  final contentWidth = constraints.maxWidth
+                      .clamp(0.0, 560.0)
+                      .toDouble();
 
                   return Center(
                     child: FittedBox(
@@ -202,7 +236,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                               const SizedBox(height: 6),
                               _buildRoomInfoPanel(),
                               const SizedBox(height: 10),
-                              _buildPlayersPanel(),
+                              _buildPlayersPanel(activePlayers),
                               const SizedBox(height: 10),
                               _buildActionsPanel(isHost, currentPlayer),
                             ],
@@ -241,7 +275,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   height: 0.9,
                   letterSpacing: 1.6,
                   shadows: [
-                    Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2)),
+                    Shadow(
+                      color: Colors.black54,
+                      blurRadius: 10,
+                      offset: Offset(0, 2),
+                    ),
                     Shadow(color: AppColors.brass, blurRadius: 8),
                   ],
                 ),
@@ -258,8 +296,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 color: AppColors.brassLight,
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.feltDark.withValues(alpha: 0.82),
-                  side: BorderSide(color: AppColors.brassLight.withValues(alpha: 0.72), width: 1.2),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(
+                    color: AppColors.brassLight.withValues(alpha: 0.72),
+                    width: 1.2,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -298,7 +341,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                         height: 0.9,
                         letterSpacing: 0,
                         shadows: [
-                          Shadow(color: Colors.black54, blurRadius: 8, offset: Offset(0, 2)),
+                          Shadow(
+                            color: Colors.black54,
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
                         ],
                       ),
                     ),
@@ -311,9 +358,16 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.18),
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.58), width: 1.4),
+                    border: Border.all(
+                      color: AppColors.brassLight.withValues(alpha: 0.58),
+                      width: 1.4,
+                    ),
                   ),
-                  child: const Icon(Icons.copy_rounded, color: AppColors.brassLight, size: 20),
+                  child: const Icon(
+                    Icons.copy_rounded,
+                    color: AppColors.brassLight,
+                    size: 20,
+                  ),
                 ),
               ],
             ),
@@ -339,14 +393,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.78), width: 1.6),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.78),
+          width: 1.6,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.34),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
-          BoxShadow(color: AppColors.brass.withValues(alpha: 0.14), blurRadius: 18),
+          BoxShadow(
+            color: AppColors.brass.withValues(alpha: 0.14),
+            blurRadius: 18,
+          ),
         ],
       ),
       child: Column(
@@ -357,12 +417,23 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             decoration: BoxDecoration(
               color: AppColors.ivory,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.88), width: 2),
+              border: Border.all(
+                color: AppColors.brassLight.withValues(alpha: 0.88),
+                width: 2,
+              ),
               boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 14, offset: const Offset(0, 6)),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
               ],
             ),
-            child: QrImageView(data: qrData, version: QrVersions.auto, size: 132),
+            child: QrImageView(
+              data: qrData,
+              version: QrVersions.auto,
+              size: 132,
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -371,12 +442,18 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               _buildSpark(),
               const SizedBox(width: 10),
               Text(
-                'Scan to join',
+                'SHARE TO INVITE',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: AppColors.ivory,
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  shadows: const [Shadow(color: Colors.black54, blurRadius: 7, offset: Offset(0, 2))],
+                  shadows: const [
+                    Shadow(
+                      color: Colors.black54,
+                      blurRadius: 7,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 10),
@@ -395,10 +472,16 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.brass,
                 foregroundColor: AppColors.ink,
-                textStyle: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.6),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.6,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(11),
-                  side: BorderSide(color: AppColors.ivory.withValues(alpha: 0.72), width: 1.2),
+                  side: BorderSide(
+                    color: AppColors.ivory.withValues(alpha: 0.72),
+                    width: 1.2,
+                  ),
                 ),
                 elevation: 5,
                 shadowColor: Colors.black54,
@@ -411,7 +494,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     );
   }
 
-  Widget _buildPlayersPanel() {
+  Widget _buildPlayersPanel(List<Player> players) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       decoration: _darkGoldDecoration(radius: 16),
@@ -422,12 +505,19 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 42, vertical: 4),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [
-                  AppColors.feltDark.withValues(alpha: 0.98),
-                  AppColors.felt.withValues(alpha: 0.95),
-                ]),
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-                border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.72), width: 1.1),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.feltDark.withValues(alpha: 0.98),
+                    AppColors.felt.withValues(alpha: 0.95),
+                  ],
+                ),
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(12),
+                ),
+                border: Border.all(
+                  color: AppColors.brassLight.withValues(alpha: 0.72),
+                  width: 1.1,
+                ),
               ),
               child: const Text(
                 'PLAYERS',
@@ -443,12 +533,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          if (_players.isEmpty)
+          if (players.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 28),
               child: Text(
                 'Waiting for players...',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
               ),
             )
           else
@@ -457,13 +549,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               child: ListView.separated(
                 padding: EdgeInsets.zero,
                 shrinkWrap: true,
-                itemCount: _players.length,
+                itemCount: players.length,
                 separatorBuilder: (_, __) => Divider(
                   height: 1,
                   thickness: 1,
                   color: AppColors.brassLight.withValues(alpha: 0.12),
                 ),
-                itemBuilder: (context, index) => _buildPlayerRow(_players[index], index),
+                itemBuilder: (context, index) =>
+                    _buildPlayerRow(players[index], index),
               ),
             ),
         ],
@@ -483,18 +576,28 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             height: 38,
             decoration: BoxDecoration(
               gradient: RadialGradient(
-                colors: [player.color.withValues(alpha: 0.86), player.color.withValues(alpha: 0.5)],
+                colors: [
+                  player.color.withValues(alpha: 0.86),
+                  player.color.withValues(alpha: 0.5),
+                ],
               ),
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.brassLight, width: 1.7),
               boxShadow: [
-                BoxShadow(color: player.color.withValues(alpha: 0.44), blurRadius: 10),
+                BoxShadow(
+                  color: player.color.withValues(alpha: 0.44),
+                  blurRadius: 10,
+                ),
               ],
             ),
             child: Center(
               child: Text(
                 player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
-                style: const TextStyle(color: AppColors.ivory, fontWeight: FontWeight.w900, fontSize: 16),
+                style: const TextStyle(
+                  color: AppColors.ivory,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
               ),
             ),
           ),
@@ -511,7 +614,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                       color: AppColors.ivory,
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
-                      shadows: const [Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2))],
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black54,
+                          blurRadius: 6,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -530,10 +639,17 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Widget _buildActionsPanel(bool isHost, Player? currentPlayer) {
-    final isPlayerReady = currentPlayer?.isReady == true || currentPlayer?.isHost == true;
-    final primaryEnabled = isHost ? (_canStart && !_isStarting) : currentPlayer != null;
-    final primaryLabel = isHost ? 'START GAME' : (isPlayerReady ? 'READY' : 'MARK READY');
-    final primaryIcon = isHost ? Icons.workspace_premium_rounded : (isPlayerReady ? Icons.check_rounded : Icons.circle_outlined);
+    final isPlayerReady =
+        currentPlayer?.isReady == true || currentPlayer?.isHost == true;
+    final primaryEnabled = isHost
+        ? (_canStart && !_isStarting)
+        : currentPlayer != null;
+    final primaryLabel = isHost
+        ? 'START GAME'
+        : (isPlayerReady ? 'READY' : 'MARK READY');
+    final primaryIcon = isHost
+        ? Icons.workspace_premium_rounded
+        : (isPlayerReady ? Icons.check_rounded : Icons.circle_outlined);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -553,11 +669,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                       }
                     }
                   : null,
-              icon: _isStarting
+              icon: (_isStarting || _isReadyLoading)
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.ink),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: AppColors.ink,
+                      ),
                     )
                   : Icon(primaryIcon, size: 27),
               label: FittedBox(
@@ -565,9 +684,15 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 child: Text(primaryLabel),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: primaryEnabled ? AppColors.brass : AppColors.surfaceLight,
-                foregroundColor: primaryEnabled ? AppColors.ink : AppColors.textMuted,
-                disabledBackgroundColor: AppColors.surfaceLight.withValues(alpha: 0.68),
+                backgroundColor: primaryEnabled
+                    ? AppColors.brass
+                    : AppColors.surfaceLight,
+                foregroundColor: primaryEnabled
+                    ? AppColors.ink
+                    : AppColors.textMuted,
+                disabledBackgroundColor: AppColors.surfaceLight.withValues(
+                  alpha: 0.68,
+                ),
                 disabledForegroundColor: AppColors.textMuted,
                 elevation: primaryEnabled ? 9 : 0,
                 shadowColor: Colors.black.withValues(alpha: 0.42),
@@ -580,7 +705,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: AppColors.ivory.withValues(alpha: 0.76), width: 1.4),
+                  side: BorderSide(
+                    color: AppColors.ivory.withValues(alpha: 0.76),
+                    width: 1.4,
+                  ),
                 ),
               ),
             ),
@@ -601,15 +729,28 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               : [const Color(0xFF53606A), const Color(0xFF27313A)],
         ),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: isReady ? 0.2 : 0.28), width: 1),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.22), blurRadius: 8, offset: const Offset(0, 3))],
+        border: Border.all(
+          color: Colors.white.withValues(alpha: isReady ? 0.2 : 0.28),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            isReady ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-            color: isReady ? const Color(0xFFD4F5BC) : AppColors.ivory.withValues(alpha: 0.84),
+            isReady
+                ? Icons.check_circle_rounded
+                : Icons.radio_button_unchecked_rounded,
+            color: isReady
+                ? const Color(0xFFD4F5BC)
+                : AppColors.ivory.withValues(alpha: 0.84),
             size: 17,
           ),
           const SizedBox(width: 6),
@@ -633,17 +774,29 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.72), width: 1),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.72),
+          width: 1,
+        ),
       ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             'HOST',
-            style: TextStyle(color: AppColors.brassLight, fontWeight: FontWeight.w900, fontSize: 11, height: 1),
+            style: TextStyle(
+              color: AppColors.brassLight,
+              fontWeight: FontWeight.w900,
+              fontSize: 11,
+              height: 1,
+            ),
           ),
           SizedBox(width: 4),
-          Icon(Icons.workspace_premium_rounded, color: AppColors.brassLight, size: 14),
+          Icon(
+            Icons.workspace_premium_rounded,
+            color: AppColors.brassLight,
+            size: 14,
+          ),
         ],
       ),
     );
@@ -665,7 +818,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Widget _buildSpark() {
-    return const Icon(Icons.auto_awesome_rounded, color: AppColors.brassLight, size: 18);
+    return const Icon(
+      Icons.auto_awesome_rounded,
+      color: AppColors.brassLight,
+      size: 18,
+    );
   }
 
   BoxDecoration _darkGoldDecoration({required double radius}) {
@@ -680,10 +837,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ],
       ),
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.74), width: 1.45),
+      border: Border.all(
+        color: AppColors.brassLight.withValues(alpha: 0.74),
+        width: 1.45,
+      ),
       boxShadow: [
-        BoxShadow(color: Colors.black.withValues(alpha: 0.38), blurRadius: 18, offset: const Offset(0, 9)),
-        BoxShadow(color: AppColors.brass.withValues(alpha: 0.12), blurRadius: 18),
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.38),
+          blurRadius: 18,
+          offset: const Offset(0, 9),
+        ),
+        BoxShadow(
+          color: AppColors.brass.withValues(alpha: 0.12),
+          blurRadius: 18,
+        ),
       ],
     );
   }

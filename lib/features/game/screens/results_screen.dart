@@ -28,8 +28,14 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 5));
+    _confettiController = ConfettiController(
+      duration: const Duration(seconds: 5),
+    );
     _confettiController.play();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(audioServiceProvider).startAmbience();
+      ref.read(audioServiceProvider).playSuccess();
+    });
     _loadResults();
   }
 
@@ -61,7 +67,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final room = ref.read(currentRoomProvider);
     if (room != null) {
       await ref.read(roomServiceProvider).resetToLobby(room.id);
-      ref.read(currentRoomProvider.notifier).set(
+      ref
+          .read(currentRoomProvider.notifier)
+          .set(
             room.copyWith(
               status: RoomStatus.waiting,
               currentRound: 0,
@@ -79,15 +87,25 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final lines = _sortedPlayers
         .asMap()
         .entries
-        .map((entry) => '${entry.key + 1}. ${entry.value.name}: ${_formatScore(entry.value.score)}')
+        .map(
+          (entry) =>
+              '${entry.key + 1}. ${entry.value.name}: ${_formatScore(entry.value.score)}',
+        )
         .join('\n');
-    await Clipboard.setData(ClipboardData(text: 'Bets & Guesses results\n$lines'));
+    await Clipboard.setData(
+      ClipboardData(text: 'Bets & Guesses results\n$lines'),
+    );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Results copied.')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Results copied.')));
   }
 
   String _formatScore(int value) {
-    return value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (match) => ',');
+    return value.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (match) => ',',
+    );
   }
 
   @override
@@ -144,7 +162,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               child: SafeArea(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final contentWidth = constraints.maxWidth.clamp(0.0, 560.0).toDouble();
+                    final contentWidth = constraints.maxWidth
+                        .clamp(0.0, 560.0)
+                        .toDouble();
 
                     return Center(
                       child: FittedBox(
@@ -188,17 +208,18 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       children: [
         SizedBox(
           height: 104,
-          child: CachedAssetImage(
-            AppAssetPaths.logo,
-            fit: BoxFit.contain,
-          ),
+          child: CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
         ),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(child: _buildGoldRule()),
             const SizedBox(width: 10),
-            const Icon(Icons.auto_awesome_rounded, color: AppColors.brassLight, size: 26),
+            const Icon(
+              Icons.auto_awesome_rounded,
+              color: AppColors.brassLight,
+              size: 26,
+            ),
             const SizedBox(width: 8),
             const Text(
               'GAME OVER!',
@@ -211,13 +232,21 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 height: 0.9,
                 letterSpacing: 1.1,
                 shadows: [
-                  Shadow(color: Colors.black87, blurRadius: 10, offset: Offset(0, 3)),
+                  Shadow(
+                    color: Colors.black87,
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
                   Shadow(color: AppColors.brass, blurRadius: 8),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(Icons.auto_awesome_rounded, color: AppColors.brassLight, size: 26),
+            const Icon(
+              Icons.auto_awesome_rounded,
+              color: AppColors.brassLight,
+              size: 26,
+            ),
             const SizedBox(width: 10),
             Expanded(child: _buildGoldRule()),
           ],
@@ -229,7 +258,13 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
             color: AppColors.ivory,
             fontWeight: FontWeight.w800,
-            shadows: const [Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2))],
+            shadows: const [
+              Shadow(
+                color: Colors.black54,
+                blurRadius: 6,
+                offset: Offset(0, 2),
+              ),
+            ],
           ),
         ),
       ],
@@ -245,7 +280,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           ? Center(
               child: Text(
                 'No results yet',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppColors.ivory),
+                style: Theme.of(
+                  context,
+                ).textTheme.headlineSmall?.copyWith(color: AppColors.ivory),
               ),
             )
           : Row(
@@ -261,17 +298,32 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: RadialGradient(
-                            colors: [winner.color.withValues(alpha: 0.92), winner.color.withValues(alpha: 0.45)],
+                            colors: [
+                              winner.color.withValues(alpha: 0.92),
+                              winner.color.withValues(alpha: 0.45),
+                            ],
                           ),
-                          border: Border.all(color: AppColors.brassLight, width: 4),
+                          border: Border.all(
+                            color: AppColors.brassLight,
+                            width: 4,
+                          ),
                           boxShadow: [
-                            BoxShadow(color: AppColors.brass.withValues(alpha: 0.55), blurRadius: 28),
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8)),
+                            BoxShadow(
+                              color: AppColors.brass.withValues(alpha: 0.55),
+                              blurRadius: 28,
+                            ),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8),
+                            ),
                           ],
                         ),
                         child: Center(
                           child: Text(
-                            winner.name.isNotEmpty ? winner.name[0].toUpperCase() : '?',
+                            winner.name.isNotEmpty
+                                ? winner.name[0].toUpperCase()
+                                : '?',
                             style: const TextStyle(
                               color: AppColors.ivory,
                               fontSize: 58,
@@ -283,7 +335,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                       ),
                       const Positioned(
                         top: 0,
-                        child: Icon(Icons.workspace_premium_rounded, color: AppColors.brassLight, size: 54),
+                        child: Icon(
+                          Icons.workspace_premium_rounded,
+                          color: AppColors.brassLight,
+                          size: 54,
+                        ),
                       ),
                     ],
                   ),
@@ -300,11 +356,18 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                          color: AppColors.ivory,
-                          fontWeight: FontWeight.w900,
-                          shadows: const [Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 3))],
-                        ),
+                        style: Theme.of(context).textTheme.displaySmall
+                            ?.copyWith(
+                              color: AppColors.ivory,
+                              fontWeight: FontWeight.w900,
+                              shadows: const [
+                                Shadow(
+                                  color: Colors.black87,
+                                  blurRadius: 8,
+                                  offset: Offset(0, 3),
+                                ),
+                              ],
+                            ),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -326,7 +389,13 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                           fontWeight: FontWeight.w900,
                           height: 0.9,
                           letterSpacing: 0,
-                          shadows: [Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 3))],
+                          shadows: [
+                            Shadow(
+                              color: Colors.black87,
+                              blurRadius: 8,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -350,7 +419,10 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               children: [
                 SizedBox(width: 52, child: _buildBoardHeader('#')),
                 Expanded(child: _buildBoardHeader('PLAYER')),
-                SizedBox(width: 122, child: _buildBoardHeader('FINAL SCORE', alignRight: true)),
+                SizedBox(
+                  width: 122,
+                  child: _buildBoardHeader('FINAL SCORE', alignRight: true),
+                ),
               ],
             ),
           ),
@@ -360,7 +432,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 ? Center(
                     child: Text(
                       'Scores will appear here.',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.ivory),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(color: AppColors.ivory),
                     ),
                   )
                 : ListView.separated(
@@ -371,7 +445,8 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                       thickness: 1,
                       color: AppColors.brassLight.withValues(alpha: 0.18),
                     ),
-                    itemBuilder: (context, index) => _buildScoreRow(_sortedPlayers[index], index),
+                    itemBuilder: (context, index) =>
+                        _buildScoreRow(_sortedPlayers[index], index),
                   ),
           ),
         ],
@@ -394,11 +469,22 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         gradient: isWinner
-            ? const LinearGradient(colors: [Color(0xFFFFE58A), Color(0xFFFFB91F), Color(0xFFE2A317)])
+            ? const LinearGradient(
+                colors: [
+                  Color(0xFFFFE58A),
+                  Color(0xFFFFB91F),
+                  Color(0xFFE2A317),
+                ],
+              )
             : null,
         color: isWinner ? null : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isWinner ? AppColors.ivory.withValues(alpha: 0.72) : Colors.transparent, width: 1.1),
+        border: Border.all(
+          color: isWinner
+              ? AppColors.ivory.withValues(alpha: 0.72)
+              : Colors.transparent,
+          width: 1.1,
+        ),
       ),
       child: Row(
         children: [
@@ -407,7 +493,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             child: Row(
               children: [
                 Icon(
-                  index < 3 ? Icons.military_tech_rounded : Icons.circle_rounded,
+                  index < 3
+                      ? Icons.military_tech_rounded
+                      : Icons.circle_rounded,
                   color: rankColor,
                   size: index < 3 ? 28 : 18,
                 ),
@@ -430,11 +518,19 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: player.color,
-              border: Border.all(color: isWinner ? AppColors.ink.withValues(alpha: 0.52) : AppColors.brassLight, width: 1.8),
+              border: Border.all(
+                color: isWinner
+                    ? AppColors.ink.withValues(alpha: 0.52)
+                    : AppColors.brassLight,
+                width: 1.8,
+              ),
             ),
             child: Text(
               player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
-              style: const TextStyle(color: AppColors.ivory, fontWeight: FontWeight.w900),
+              style: const TextStyle(
+                color: AppColors.ivory,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -456,7 +552,15 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               fontSize: 25,
               fontWeight: FontWeight.w900,
               height: 1,
-              shadows: isWinner ? null : const [Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 2))],
+              shadows: isWinner
+                  ? null
+                  : const [
+                      Shadow(
+                        color: Colors.black54,
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
             ),
           ),
         ],
@@ -477,8 +581,17 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           colors: [Color(0xFFFFFAEE), Color(0xFFF2D9A4), Color(0xFFFFFDF6)],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.84), width: 1.5),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.28), blurRadius: 16, offset: const Offset(0, 8))],
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.84),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -559,7 +672,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           onPressed: _goHome,
           icon: const Icon(Icons.home_rounded, size: 18),
           label: const Text('HOME'),
-          style: TextButton.styleFrom(foregroundColor: AppColors.ivory.withValues(alpha: 0.82)),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.ivory.withValues(alpha: 0.82),
+          ),
         ),
       ],
     );
@@ -569,9 +684,14 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 7),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFFFFE58A), Color(0xFFFFB91F), Color(0xFFD88700)]),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFE58A), Color(0xFFFFB91F), Color(0xFFD88700)],
+        ),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.ivory.withValues(alpha: 0.72), width: 1.2),
+        border: Border.all(
+          color: AppColors.ivory.withValues(alpha: 0.72),
+          width: 1.2,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -580,7 +700,12 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           const SizedBox(width: 8),
           Text(
             label,
-            style: const TextStyle(color: AppColors.ink, fontSize: 18, fontWeight: FontWeight.w900, height: 1),
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
           ),
           const SizedBox(width: 8),
           const Icon(Icons.star_rounded, color: AppColors.ink, size: 18),
@@ -603,7 +728,12 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
   }
 
-  Widget _buildHighlightCell({required IconData icon, required String label, required String name, required String value}) {
+  Widget _buildHighlightCell({
+    required IconData icon,
+    required String label,
+    required String name,
+    required String value,
+  }) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -611,7 +741,12 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: AppColors.felt, fontSize: 12, fontWeight: FontWeight.w900, height: 1),
+          style: const TextStyle(
+            color: AppColors.felt,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
         const SizedBox(height: 5),
         Icon(icon, color: AppColors.mahogany, size: 27),
@@ -620,14 +755,24 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: AppColors.felt, fontSize: 15, fontWeight: FontWeight.w900, height: 1),
+          style: const TextStyle(
+            color: AppColors.felt,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
         const SizedBox(height: 2),
         Text(
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: AppColors.mahogany, fontSize: 13, fontWeight: FontWeight.w900, height: 1),
+          style: const TextStyle(
+            color: AppColors.mahogany,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
       ],
     );
@@ -660,7 +805,10 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(compact ? 14 : 16),
-            side: BorderSide(color: AppColors.ivory.withValues(alpha: isGold ? 0.7 : 0.42), width: 1.2),
+            side: BorderSide(
+              color: AppColors.ivory.withValues(alpha: isGold ? 0.7 : 0.42),
+              width: 1.2,
+            ),
           ),
         ),
       ),
@@ -703,10 +851,20 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
         ],
       ),
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.72), width: 1.5),
+      border: Border.all(
+        color: AppColors.brassLight.withValues(alpha: 0.72),
+        width: 1.5,
+      ),
       boxShadow: [
-        BoxShadow(color: Colors.black.withValues(alpha: 0.36), blurRadius: 18, offset: const Offset(0, 9)),
-        BoxShadow(color: AppColors.brass.withValues(alpha: 0.12), blurRadius: 18),
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.36),
+          blurRadius: 18,
+          offset: const Offset(0, 9),
+        ),
+        BoxShadow(
+          color: AppColors.brass.withValues(alpha: 0.12),
+          blurRadius: 18,
+        ),
       ],
     );
   }

@@ -42,7 +42,10 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
   Future<void> _join() async {
     final code = _codeController.text.trim().toUpperCase();
     if (code.length != GameConstants.roomCodeLength) {
-      setState(() => _error = 'Room code must be ${GameConstants.roomCodeLength} characters.');
+      setState(
+        () => _error =
+            'Room code must be ${GameConstants.roomCodeLength} characters.',
+      );
       return;
     }
 
@@ -66,6 +69,31 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
       }
 
       final existingPlayers = await playerService.getPlayers(room.id);
+      final previousPlayerId = _rememberedPlayerForRoom(room.id);
+      final activePlayers = existingPlayers
+          .where((player) => player.isConnected)
+          .toList();
+      final isReturningPlayer = activePlayers.any(
+        (player) => player.id == previousPlayerId,
+      );
+
+      if (!isReturningPlayer &&
+          activePlayers.length >= GameConstants.maxPlayers) {
+        setState(() => _error = 'That table is full.');
+        return;
+      }
+
+      final normalizedName = widget.playerName.trim().toLowerCase();
+      final nameTaken = activePlayers.any(
+        (player) =>
+            player.id != previousPlayerId &&
+            player.name.trim().toLowerCase() == normalizedName,
+      );
+      if (nameTaken) {
+        setState(() => _error = 'That name is already taken in this lobby.');
+        return;
+      }
+
       final usedColors = existingPlayers.map((p) => p.avatarColor).toSet();
       final availableColor = _pickAvatarColor(usedColors);
 
@@ -73,7 +101,9 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
         roomId: room.id,
         name: widget.playerName,
         avatarColor: availableColor,
+        previousPlayerId: previousPlayerId,
       );
+      _rememberPlayerForRoom(room.id, player.id);
 
       ref.read(currentPlayerProvider.notifier).set(player);
       ref.read(currentRoomProvider.notifier).set(room);
@@ -89,9 +119,25 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
     }
   }
 
+  String? _rememberedPlayerForRoom(String roomId) {
+    final prefs = ref.read(sharedPrefsProvider);
+    return prefs.getString(_playerMemoryKey(roomId));
+  }
+
+  void _rememberPlayerForRoom(String roomId, String playerId) {
+    final prefs = ref.read(sharedPrefsProvider);
+    prefs.setString(_playerMemoryKey(roomId), playerId);
+  }
+
+  String _playerMemoryKey(String roomId) => 'lobby_player_id_$roomId';
+
   String _pickAvatarColor(Set<String> usedColors) {
-    final availableColors = GameConstants.avatarColors.where((color) => !usedColors.contains(color)).toList();
-    final palette = availableColors.isEmpty ? GameConstants.avatarColors : availableColors;
+    final availableColors = GameConstants.avatarColors
+        .where((color) => !usedColors.contains(color))
+        .toList();
+    final palette = availableColors.isEmpty
+        ? GameConstants.avatarColors
+        : availableColors;
     return palette[_random.nextInt(palette.length)];
   }
 
@@ -109,7 +155,10 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
             colors: [Color(0xFFFFFAEC), Color(0xFFEBCB82), Color(0xFFFFF8DE)],
           ),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.ivory.withValues(alpha: 0.88), width: 1.5),
+          border: Border.all(
+            color: AppColors.ivory.withValues(alpha: 0.88),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.38),
@@ -123,10 +172,7 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
           children: [
             SizedBox(
               height: 86,
-              child: CachedAssetImage(
-                AppAssetPaths.logo,
-                fit: BoxFit.contain,
-              ),
+              child: CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
             ),
             const SizedBox(height: 8),
             Text(
@@ -182,7 +228,10 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ink),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.ink,
+                        ),
                       )
                     : const Text('JOIN TABLE'),
               ),

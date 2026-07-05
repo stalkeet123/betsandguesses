@@ -17,7 +17,7 @@ class BettingBoard extends StatelessWidget {
   final String? winningGuessId;
   final String currentPlayerId;
   final bool isLocked;
-  final Function(int slotIndex, int chips) onPlaceBet;
+  final Function(int slotIndex, int chips, {Offset? position}) onPlaceBet;
   final Function(int slotIndex) onRemoveBet;
 
   const BettingBoard({
@@ -179,7 +179,7 @@ class _BettingLane extends StatelessWidget {
   final bool isWinning;
   final bool hasMyBet;
   final String currentPlayerId;
-  final Function(int slotIndex, int chips) onPlaceBet;
+  final Function(int slotIndex, int chips, {Offset? position}) onPlaceBet;
   final Function(int slotIndex) onRemoveBet;
 
   const _BettingLane({
@@ -206,7 +206,7 @@ class _BettingLane extends StatelessWidget {
 
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => canBet,
-      onAcceptWithDetails: (details) => onPlaceBet(slot.index, details.data),
+      onAcceptWithDetails: (details) => onPlaceBet(slot.index, details.data, position: details.offset),
       builder: (context, candidateData, rejectedData) {
         final hovering = candidateData.isNotEmpty;
         final lane = AnimatedContainer(
@@ -419,10 +419,23 @@ class _ChipPit extends StatelessWidget {
     );
   }
 
+  Color _getChipColor(int value) {
+    switch (value) {
+      case 5:
+        return AppColors.feltLight;
+      case 10:
+        return AppColors.neonBlue;
+      case 50:
+        return AppColors.burgundy;
+      case 100:
+        return AppColors.neonPurple;
+      default:
+        return AppColors.chipGold;
+    }
+  }
+
   Widget _positionedChip(Bet bet, int index, Size size) {
-    final color = bet.playerColor != null
-        ? Color(Helpers.colorFromHex(bet.playerColor!))
-        : AppColors.chipGold;
+    final color = _getChipColor(bet.chips);
     final hash = bet.id.hashCode.abs();
     final dx = ((hash % 23) - 11).toDouble();
     final dy = (((hash ~/ 23) % 21) - 10).toDouble();
@@ -437,7 +450,7 @@ class _ChipPit extends StatelessWidget {
           label: '${bet.chips}',
           color: color,
           size: chipSize,
-          isScoreChip: bet.playerColor == null,
+          isScoreChip: false,
         ),
       ),
     );

@@ -10,7 +10,7 @@ class GameConstants {
   static const int maxRounds = 12;
 
   static const int freeChipsPerRound = 2;
-  static const int startingScore = 0;
+  static const int startingScore = 15;
   static const int guessBonus = 3;
 
   // Slot layout: [Smaller] [g1] [g2] [g3] [g4] [g5] [Larger]

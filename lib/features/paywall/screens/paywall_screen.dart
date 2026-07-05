@@ -32,6 +32,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       upperBound: 1.0,
     )..repeat(reverse: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(audioServiceProvider).startAmbience();
       _loadRevenueCat();
     });
   }
@@ -137,12 +138,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final contentWidth = constraints.maxWidth
-                    .clamp(300.0, 520.0)
+                    .clamp(320.0, 560.0)
                     .toDouble();
                 final designHeight = constraints.maxHeight
-                    .clamp(580.0, 760.0)
+                    .clamp(720.0, 900.0)
                     .toDouble();
-                final horizontalPadding = contentWidth < 380 ? 10.0 : 14.0;
+                final horizontalPadding = contentWidth < 380 ? 14.0 : 20.0;
 
                 return Center(
                   child: FittedBox(
@@ -154,32 +155,33 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
-                          4,
-                          horizontalPadding,
                           8,
+                          horizontalPadding,
+                          14,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _buildTopBar(context),
+                            const SizedBox(height: 4),
                             const SizedBox(
-                              height: 72,
+                              height: 100,
                               child: CachedAssetImage(
                                 AppAssetPaths.logo,
                                 fit: BoxFit.contain,
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            _buildTitle(),
-                            const SizedBox(height: 5),
-                            _buildCurrentPlanStrip(),
-                            const SizedBox(height: 6),
-                            _buildBenefitStrip(),
                             const SizedBox(height: 8),
+                            _buildTitle(),
+                            const SizedBox(height: 8),
+                            _buildCurrentPlanStrip(),
+                            const SizedBox(height: 10),
+                            _buildBenefitStrip(),
+                            const SizedBox(height: 14),
                             Expanded(child: _buildPlans(context)),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 12),
                             _buildBottomBanner(),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 10),
                             _buildFooter(),
                           ],
                         ),
@@ -245,34 +247,36 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   Widget _buildBenefitStrip() {
     return Container(
-      height: 56,
-      decoration: _darkPanel(radius: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: _BenefitItem(
-              icon: Icons.groups_rounded,
-              title: 'BIGGER LOBBIES',
-              subtitle: 'Up to 10 players',
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: _darkPanel(radius: 14),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            Expanded(
+              child: _BenefitItem(
+                icon: Icons.groups_rounded,
+                title: 'BIGGER LOBBIES',
+                subtitle: 'Up to 10 players',
+              ),
             ),
-          ),
-          _verticalRule(),
-          Expanded(
-            child: _BenefitItem(
-              icon: Icons.all_inclusive_rounded,
-              title: 'UNLIMITED GAMES',
-              subtitle: 'No daily limits',
+            _verticalRule(),
+            Expanded(
+              child: _BenefitItem(
+                icon: Icons.all_inclusive_rounded,
+                title: 'UNLIMITED GAMES',
+                subtitle: 'No daily limits',
+              ),
             ),
-          ),
-          _verticalRule(),
-          Expanded(
-            child: _BenefitItem(
-              icon: Icons.block_rounded,
-              title: 'NO ADS',
-              subtitle: 'Pure fun',
+            _verticalRule(),
+            Expanded(
+              child: _BenefitItem(
+                icon: Icons.block_rounded,
+                title: 'NO ADS',
+                subtitle: 'Pure fun',
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -322,11 +326,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               colors: [Color(0xFF5F2477), Color(0xFF271127), Color(0xFF14071C)],
             ),
             features: const [
+              _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
               _PlanFeature(Icons.groups_2_rounded, 'Unlimited lobbies'),
               _PlanFeature(Icons.groups_rounded, 'Up to 10 players'),
               _PlanFeature(Icons.alarm_rounded, '8-12 rounds'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
-              _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
             ],
             price: '₺59,99',
             displayPrice:
@@ -371,7 +375,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           children: [
             for (var index = 0; index < cards.length; index++) ...[
               Expanded(child: cards[index]),
-              if (index != cards.length - 1) const SizedBox(width: 12),
+              if (index != cards.length - 1) const SizedBox(width: 14),
             ],
           ],
         );
@@ -381,9 +385,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   Widget _buildBottomBanner() {
     return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: _darkPanel(radius: 12).copyWith(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: _darkPanel(radius: 14).copyWith(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -393,25 +396,25 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       child: Row(
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: AppColors.goldGradient,
               boxShadow: [
                 BoxShadow(
                   color: AppColors.brass.withValues(alpha: 0.38),
-                  blurRadius: 14,
+                  blurRadius: 18,
                 ),
               ],
             ),
             child: const Icon(
               Icons.workspace_premium_rounded,
               color: AppColors.ink,
-              size: 22,
+              size: 24,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -423,19 +426,19 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppColors.brassLight,
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: FontWeight.w900,
                     height: 1,
                   ),
                 ),
-                SizedBox(height: 3),
+                SizedBox(height: 5),
                 Text(
                   'Perfect for game nights, parties & events!',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppColors.ivory,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     height: 1,
                   ),
@@ -451,13 +454,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   Future<void> _launchURL(String urlString) async {
     final url = Uri.parse(urlString);
     try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        _showSnack('Could not open link: $urlString');
-      }
+      await launchUrl(url, mode: LaunchMode.externalApplication);
     } catch (e) {
-      _showSnack('Error opening link: $e');
+      _showSnack('Could not open link.');
     }
   }
 
@@ -498,7 +497,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   Widget _verticalRule() {
     return Container(
       width: 1,
-      height: 42,
+      margin: const EdgeInsets.symmetric(vertical: 4),
       color: AppColors.brassLight.withValues(alpha: 0.22),
     );
   }
@@ -552,8 +551,8 @@ class _BenefitItem extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: AppColors.brassLight, size: 22),
-        const SizedBox(height: 4),
+        Icon(icon, color: AppColors.brassLight, size: 30),
+        const SizedBox(height: 7),
         Text(
           title,
           maxLines: 1,
@@ -561,12 +560,12 @@ class _BenefitItem extends StatelessWidget {
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: AppColors.brassLight,
-            fontSize: 9.5,
+            fontSize: 11,
             fontWeight: FontWeight.w900,
             height: 1,
           ),
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 5),
         Text(
           subtitle,
           maxLines: 1,
@@ -574,7 +573,7 @@ class _BenefitItem extends StatelessWidget {
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: AppColors.ivory,
-            fontSize: 8.5,
+            fontSize: 10,
             fontWeight: FontWeight.w700,
             height: 1,
           ),
@@ -627,13 +626,16 @@ class _PlanCard extends StatelessWidget {
     final isGlowing = glowValue > 0;
     final glow = isGlowing ? 0.26 + (glowValue * 0.46) : 0.0;
 
+    // Badge height so both cards align at the same top level
+    const badgeOverlap = 14.0;
+
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
         Container(
-          margin: EdgeInsets.only(top: badge == null ? 10 : 20),
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+          margin: const EdgeInsets.only(top: badgeOverlap),
+          padding: const EdgeInsets.fromLTRB(12, 20, 12, 12),
           decoration: BoxDecoration(
             gradient:
                 background ??
@@ -689,9 +691,9 @@ class _PlanCard extends StatelessWidget {
               Icon(
                 Icons.workspace_premium_rounded,
                 color: crownColor,
-                size: 22,
+                size: 24,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 title,
                 maxLines: 2,
@@ -700,7 +702,7 @@ class _PlanCard extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'RehnCondensed',
                   color: badge == null ? AppColors.ivory : AppColors.brassLight,
-                  fontSize: title.length > 8 ? 17 : 21,
+                  fontSize: title.length > 8 ? 18 : 22,
                   fontWeight: FontWeight.w900,
                   height: 0.95,
                   shadows: const [
@@ -712,7 +714,7 @@ class _PlanCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 4),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
@@ -720,29 +722,30 @@ class _PlanCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.ivory,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   height: 1,
                 ),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 10),
               Container(
                 height: 1,
                 color: AppColors.brassLight.withValues(alpha: 0.26),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 10),
               Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     for (var index = 0; index < features.length; index++) ...[
                       _FeatureRow(feature: features[index]),
                       if (index != features.length - 1)
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 7),
                     ],
                   ],
                 ),
               ),
+              const SizedBox(height: 8),
               if (price != null) ...[
                 _PriceButton(
                   price: displayPrice ?? price!,
@@ -750,7 +753,7 @@ class _PlanCard extends StatelessWidget {
                   isLoading: isLoading,
                   onTap: onTap,
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
               ],
               _PlanFooter(label: footer),
             ],
@@ -801,7 +804,7 @@ class _FeatureRow extends StatelessWidget {
     return Row(
       children: [
         Icon(feature.icon, color: AppColors.brassLight, size: 14),
-        const SizedBox(width: 5),
+        const SizedBox(width: 6),
         Expanded(
           child: Text(
             feature.label,
@@ -811,7 +814,7 @@ class _FeatureRow extends StatelessWidget {
               color: AppColors.ivory,
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              height: 1,
+              height: 1.1,
             ),
           ),
         ),
@@ -837,16 +840,16 @@ class _PriceButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 36,
+      height: 40,
       child: ElevatedButton(
         onPressed: isLoading ? null : onTap,
         style: ElevatedButton.styleFrom(
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           backgroundColor: isGreen ? AppColors.feltLight : AppColors.brass,
           foregroundColor: isGreen ? AppColors.ivory : AppColors.ink,
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             side: BorderSide(
               color: AppColors.ivory.withValues(alpha: 0.56),
               width: 1,
@@ -867,7 +870,10 @@ class _PriceButton extends StatelessWidget {
             : FittedBox(
                 child: Text(
                   price,
-                  style: const TextStyle(fontFamily: 'RehnCondensed'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 20,
+                  ),
                 ),
               ),
       ),
@@ -883,7 +889,7 @@ class _PlanFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.18),

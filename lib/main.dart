@@ -24,10 +24,12 @@ Future<void> main() async {
   ]);
 
   // Full-screen immersive
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+    ),
+  );
 
   // Initialize Supabase
   await Supabase.initialize(
@@ -41,22 +43,20 @@ Future<void> main() async {
 
   runApp(
     ProviderScope(
-      overrides: [
-        sharedPrefsProvider.overrideWithValue(prefs),
-      ],
+      overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
       child: const TahminApp(),
     ),
   );
 }
 
-class TahminApp extends StatefulWidget {
+class TahminApp extends ConsumerStatefulWidget {
   const TahminApp({super.key});
 
   @override
-  State<TahminApp> createState() => _TahminAppState();
+  ConsumerState<TahminApp> createState() => _TahminAppState();
 }
 
-class _TahminAppState extends State<TahminApp> {
+class _TahminAppState extends ConsumerState<TahminApp> {
   bool _didWarmUpImages = false;
 
   @override
@@ -67,6 +67,7 @@ class _TahminAppState extends State<TahminApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       AppAssetPaths.warmUpImages(context).catchError((_) {});
+      ref.read(audioServiceProvider).startAmbience();
     });
   }
 
@@ -79,11 +80,21 @@ class _TahminAppState extends State<TahminApp> {
       routerConfig: appRouter,
       builder: (context, child) {
         return Container(
-          color: const Color(0xFF0F0805), // Dark luxury casino leather background for desktop borders
+          color: const Color(
+            0xFF0F0805,
+          ), // Dark luxury casino leather background for desktop borders
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 460),
-              child: child != null ? ClipRect(child: child) : const SizedBox.shrink(),
+              child: child != null
+                  ? Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: (_) {
+                        ref.read(audioServiceProvider).startAmbience();
+                      },
+                      child: ClipRect(child: child),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
         );

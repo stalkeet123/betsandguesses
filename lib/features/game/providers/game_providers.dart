@@ -50,6 +50,8 @@ class GameStateNotifier extends Notifier<GameState> {
   }
 
   void addBet(Bet bet) {
+    if (bet.roundNumber != state.currentRound) return;
+
     final existingIndex = state.bets.indexWhere((b) => b.id == bet.id);
     if (existingIndex == -1) {
       state = state.copyWith(bets: [...state.bets, bet]);

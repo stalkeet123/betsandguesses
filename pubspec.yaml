@@ -45,3 +45,4 @@ flutter:
         - asset: assets/Rehn Condensed W03 ExtraBold.ttf
   assets:
     - assets/
+    - assets/sound/
