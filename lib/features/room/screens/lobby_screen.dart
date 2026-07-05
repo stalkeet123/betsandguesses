@@ -579,6 +579,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   Widget _buildPlayerRow(Player player, int index) {
     final isReady = player.isReady || player.isHost;
+    final isHost = ref.read(isHostProvider);
 
     return SizedBox(
       height: 46,
@@ -646,6 +647,27 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ),
           const SizedBox(width: 10),
           _buildReadyBadge(isReady),
+          if (isHost && !player.isHost) ...[
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Kick player',
+              icon: const Icon(
+                Icons.remove_circle_outline_rounded,
+                color: AppColors.neonRed,
+                size: 20,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () async {
+                await ref.read(playerServiceProvider).leaveRoom(player.id);
+                await ref.read(realtimeServiceProvider).broadcast(
+                  widget.roomCode,
+                  'player_left',
+                  {'player_id': player.id},
+                );
+              },
+            ),
+          ],
         ],
       ),
     ).animate().fadeIn(delay: (55 * index).ms).slideX(begin: 0.03);
