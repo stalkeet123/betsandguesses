@@ -33,6 +33,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _roomCodeController.text = _prefilledRoomCode!;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final skipAutoJoin = ref.read(skipAutoJoinProvider);
+      if (skipAutoJoin) {
+        ref.read(skipAutoJoinProvider.notifier).set(false);
+        final savedName = ref.read(playerNameProvider);
+        if (savedName.isNotEmpty) {
+          _nameController.text = savedName;
+        }
+        ref.read(audioServiceProvider).startAmbience();
+        ref.read(gameServiceProvider).prefetchQuestions();
+        return;
+      }
+
       final savedName = ref.read(playerNameProvider);
       if (savedName.isNotEmpty) {
         _nameController.text = savedName;

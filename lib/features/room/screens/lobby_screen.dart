@@ -65,8 +65,27 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       onPlayerJoined: (_) {
         _loadPlayers();
       },
-      onPlayerLeft: (_) {
-        _loadPlayers();
+      onPlayerLeft: (payload) {
+        final kickedPlayerId = payload['player_id'] as String?;
+        final currentPlayer = ref.read(currentPlayerProvider);
+        if (kickedPlayerId != null &&
+            currentPlayer != null &&
+            kickedPlayerId == currentPlayer.id) {
+          ref.read(skipAutoJoinProvider.notifier).set(true);
+          ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
+          ref.read(currentRoomProvider.notifier).set(null);
+          ref.read(currentPlayerProvider.notifier).set(null);
+          if (mounted) {
+            context.goNamed('home');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('You have been removed from the lobby.'),
+              ),
+            );
+          }
+        } else {
+          _loadPlayers();
+        }
       },
     );
   }
@@ -161,6 +180,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   Future<void> _leaveLobby() async {
     final room = ref.read(currentRoomProvider);
     final player = ref.read(currentPlayerProvider);
+    ref.read(skipAutoJoinProvider.notifier).set(true);
     if (player != null) {
       await ref.read(playerServiceProvider).leaveRoom(player.id);
     }

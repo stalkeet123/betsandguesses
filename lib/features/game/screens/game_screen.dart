@@ -190,7 +190,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           final oldScores = ref.read(gameStateProvider).scores;
           final currentPlayer = ref.read(currentPlayerProvider);
           final scores = scoresData.map((k, v) => MapEntry(k, v as int));
-          
+
           final winners = <String>{};
           for (final playerId in scores.keys) {
             final oldScore = oldScores[playerId] ?? 0;
@@ -2541,7 +2541,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ],
         ),
         border: Border.all(
-          color: isWinner ? AppColors.neonGreen : AppColors.ivory.withValues(alpha: 0.86),
+          color: isWinner
+              ? AppColors.neonGreen
+              : AppColors.ivory.withValues(alpha: 0.86),
           width: isWinner ? 3.0 : 2.0,
         ),
         boxShadow: [
@@ -2559,9 +2561,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       ),
       child: Center(
         child: Text(
-          player.name.isNotEmpty
-              ? player.name[0].toUpperCase()
-              : '?',
+          player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
           style: GoogleFonts.outfit(
             color: Colors.white,
             fontWeight: FontWeight.w900,
@@ -2582,14 +2582,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (isWinner) {
       avatarWidget = avatarWidget
           .animate(onPlay: (controller) => controller.repeat(reverse: true))
-          .scale(end: const Offset(1.15, 1.15), duration: 400.ms, curve: Curves.easeInOut)
+          .scale(
+            end: const Offset(1.15, 1.15),
+            duration: 400.ms,
+            curve: Curves.easeInOut,
+          )
           .boxShadow(
             begin: const BoxShadow(color: Colors.transparent, blurRadius: 0),
-            end: BoxShadow(
-              color: color,
-              blurRadius: 22,
-              spreadRadius: 4,
-            ),
+            end: BoxShadow(color: color, blurRadius: 22, spreadRadius: 4),
             duration: 400.ms,
           );
     }
