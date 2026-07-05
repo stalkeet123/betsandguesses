@@ -211,7 +211,6 @@ class _BettingLane extends StatelessWidget {
         final hovering = candidateData.isNotEmpty;
         final lane = AnimatedContainer(
           duration: const Duration(milliseconds: 220),
-          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: isWinning
                 ? AppColors.neonGreen.withValues(alpha: 0.18)
@@ -228,35 +227,47 @@ class _BettingLane extends StatelessWidget {
               width: isWinning || hovering ? 2 : 1,
             ),
           ),
-          child: Column(
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              _OddsMedallion(odds: slot.odds, color: oddsColor),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      child: _GuessPlaque(
-                        slot: slot,
-                        showGuesses: showGuesses,
-                        isWinning: isWinning,
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: _ChipPit(bets: bets, isLocked: isLocked),
-                    ),
-                  ],
+              // 1. The Guess Plaque in the center zone of the slot
+              Positioned(
+                left: 6,
+                right: 6,
+                top: 54,
+                bottom: 40,
+                child: Center(
+                  child: _GuessPlaque(
+                    slot: slot,
+                    showGuesses: showGuesses,
+                    isWinning: isWinning,
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              _LaneFooter(
-                canBet: canBet,
-                hasMyBet: hasMyBet,
-                myTotal: myTotal,
-                isLocked: isLocked,
+
+              // 2. Chip Pit overlay covering the slot to stack chips on center
+              Positioned.fill(
+                child: _ChipPit(bets: bets, isLocked: isLocked),
+              ),
+
+              // 3. Odds Medallion positioned at top-left
+              Positioned(
+                left: 8,
+                top: 8,
+                child: _OddsMedallion(odds: slot.odds, color: oddsColor),
+              ),
+
+              // 4. Lane Footer at the bottom
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: _LaneFooter(
+                  canBet: canBet,
+                  hasMyBet: hasMyBet,
+                  myTotal: myTotal,
+                  isLocked: isLocked,
+                ),
               ),
             ],
           ),
@@ -296,7 +307,8 @@ class _OddsMedallion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 44,
+      width: 42,
+      height: 42,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
@@ -315,7 +327,7 @@ class _OddsMedallion extends StatelessWidget {
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
           color: AppColors.ink,
           fontWeight: FontWeight.w900,
-          fontSize: 13,
+          fontSize: 12,
         ),
       ),
     );
