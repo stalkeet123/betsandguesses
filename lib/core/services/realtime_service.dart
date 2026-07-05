@@ -9,7 +9,8 @@ class RealtimeService {
   RealtimeService(this._client);
 
   /// Join a broadcast channel for a room
-  RealtimeChannel joinRoom(String roomCode, {
+  RealtimeChannel joinRoom(
+    String roomCode, {
     required void Function(Map<String, dynamic> payload) onPhaseChange,
     required void Function(Map<String, dynamic> payload) onGuessSubmitted,
     required void Function(Map<String, dynamic> payload) onGuessesRevealed,
@@ -19,6 +20,8 @@ class RealtimeService {
     required void Function(Map<String, dynamic> payload) onAnswerRevealed,
     required void Function(Map<String, dynamic> payload) onGameStarted,
     required void Function(Map<String, dynamic> payload) onGameEnded,
+    void Function(Map<String, dynamic> payload)? onPlayerJoined,
+    void Function(Map<String, dynamic> payload)? onPlayerLeft,
   }) {
     final channelName = 'room:$roomCode';
 
@@ -30,41 +33,84 @@ class RealtimeService {
     final channel = _client.channel(channelName);
 
     channel
-      .onBroadcast(event: 'phase_change', callback: (payload) {
-        onPhaseChange(payload);
-      })
-      .onBroadcast(event: 'guess_submitted', callback: (payload) {
-        onGuessSubmitted(payload);
-      })
-      .onBroadcast(event: 'guesses_revealed', callback: (payload) {
-        onGuessesRevealed(payload);
-      })
-      .onBroadcast(event: 'bet_placed', callback: (payload) {
-        onBetPlaced(payload);
-      })
-      .onBroadcast(event: 'bet_removed', callback: (payload) {
-        onBetRemoved(payload);
-      })
-      .onBroadcast(event: 'score_update', callback: (payload) {
-        onScoreUpdate(payload);
-      })
-      .onBroadcast(event: 'answer_revealed', callback: (payload) {
-        onAnswerRevealed(payload);
-      })
-      .onBroadcast(event: 'game_started', callback: (payload) {
-        onGameStarted(payload);
-      })
-      .onBroadcast(event: 'game_ended', callback: (payload) {
-        onGameEnded(payload);
-      })
-      .subscribe();
+        .onBroadcast(
+          event: 'phase_change',
+          callback: (payload) {
+            onPhaseChange(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'guess_submitted',
+          callback: (payload) {
+            onGuessSubmitted(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'guesses_revealed',
+          callback: (payload) {
+            onGuessesRevealed(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'bet_placed',
+          callback: (payload) {
+            onBetPlaced(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'bet_removed',
+          callback: (payload) {
+            onBetRemoved(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'score_update',
+          callback: (payload) {
+            onScoreUpdate(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'answer_revealed',
+          callback: (payload) {
+            onAnswerRevealed(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'game_started',
+          callback: (payload) {
+            onGameStarted(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'game_ended',
+          callback: (payload) {
+            onGameEnded(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'player_joined',
+          callback: (payload) {
+            onPlayerJoined?.call(payload);
+          },
+        )
+        .onBroadcast(
+          event: 'player_left',
+          callback: (payload) {
+            onPlayerLeft?.call(payload);
+          },
+        )
+        .subscribe();
 
     _channels[channelName] = channel;
     return channel;
   }
 
   /// Broadcast an event to the room
-  Future<void> broadcast(String roomCode, String event, Map<String, dynamic> payload) async {
+  Future<void> broadcast(
+    String roomCode,
+    String event,
+    Map<String, dynamic> payload,
+  ) async {
     final channelName = 'room:$roomCode';
     final channel = _channels[channelName];
     if (channel != null) {

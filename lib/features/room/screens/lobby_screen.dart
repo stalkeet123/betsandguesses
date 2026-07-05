@@ -62,6 +62,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         }
       },
       onGameEnded: (_) {},
+      onPlayerJoined: (_) {
+        _loadPlayers();
+      },
+      onPlayerLeft: (_) {
+        _loadPlayers();
+      },
     );
   }
 
@@ -157,6 +163,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final player = ref.read(currentPlayerProvider);
     if (player != null) {
       await ref.read(playerServiceProvider).leaveRoom(player.id);
+    }
+    if (player != null) {
+      await ref.read(realtimeServiceProvider).broadcast(
+        widget.roomCode,
+        'player_left',
+        {'player_id': player.id},
+      );
     }
     if (room != null) {
       ref.read(sharedPrefsProvider).remove(_playerMemoryKey(room.id));

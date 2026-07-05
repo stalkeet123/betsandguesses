@@ -170,6 +170,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         previousPlayerId: previousPlayerId,
       );
       _rememberPlayerForRoom(room.id, player.id);
+      await ref.read(realtimeServiceProvider).broadcast(
+        room.code,
+        'player_joined',
+        {'player_id': player.id},
+      );
 
       ref.read(currentPlayerProvider.notifier).set(player);
       ref.read(currentRoomProvider.notifier).set(room);
