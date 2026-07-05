@@ -40,6 +40,8 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
   }
 
   Future<void> _join() async {
+    if (_isLoading || ref.read(currentPlayerProvider) != null) return;
+
     final code = _codeController.text.trim().toUpperCase();
     if (code.length != GameConstants.roomCodeLength) {
       setState(

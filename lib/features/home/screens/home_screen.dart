@@ -56,6 +56,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _createRoom() async {
+    if (_isLoading) return;
+
     if (kIsWeb) {
       _showSnack('Web version is player-only.');
       return;
@@ -102,6 +104,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _joinRoom() async {
+    if (_isLoading || ref.read(currentPlayerProvider) != null) return;
+
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       _showSnack('Enter your name first.');

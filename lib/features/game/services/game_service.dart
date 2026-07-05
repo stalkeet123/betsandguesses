@@ -20,21 +20,28 @@ class GameService {
     if (_cachedQuestions != null) return;
     try {
       final response = await _client.from('questions').select();
-      _cachedQuestions = (response as List).map((e) => Question.fromJson(e)).toList();
+      _cachedQuestions = (response as List)
+          .map((e) => Question.fromJson(e))
+          .toList();
     } catch (e) {
       // Ignore, we will try again
     }
   }
 
   /// Get a random question not yet used in this room
-  Future<Question?> getRandomQuestion(String roomId, List<String> usedQuestionIds) async {
+  Future<Question?> getRandomQuestion(
+    String roomId,
+    List<String> usedQuestionIds,
+  ) async {
     await prefetchQuestions();
 
     if (_cachedQuestions == null || _cachedQuestions!.isEmpty) {
       // Fallback: fetch directly if cache failed or is empty
       var query = _client.from('questions').select();
       final response = await query;
-      _cachedQuestions = (response as List).map((e) => Question.fromJson(e)).toList();
+      _cachedQuestions = (response as List)
+          .map((e) => Question.fromJson(e))
+          .toList();
       if (_cachedQuestions!.isEmpty) return null;
     }
 
@@ -85,7 +92,8 @@ class GameService {
   /// Determine the winning guess (closest without going over)
   Guess? determineWinner(List<Guess> guesses, int correctAnswer) {
     // Sort ascending
-    final sorted = List<Guess>.from(guesses)..sort((a, b) => a.value.compareTo(b.value));
+    final sorted = List<Guess>.from(guesses)
+      ..sort((a, b) => a.value.compareTo(b.value));
 
     // Find closest without going over
     Guess? winner;
@@ -115,22 +123,89 @@ class GameService {
     required String? targetGuessId,
     required int slotIndex,
     required int chips,
+    double? positionX,
+    double? positionY,
   }) async {
     final multiplier = GameConstants.boardOdds[slotIndex];
-    final response = await _client
-        .from('bets')
-        .insert({
-          'room_id': roomId,
-          'round_number': roundNumber,
-          'player_id': playerId,
-          'target_guess_id': targetGuessId,
-          'slot_index': slotIndex,
-          'chips': chips,
-          'payout_multiplier': multiplier,
-        })
-        .select()
-        .single();
+    final payload = {
+      'room_id': roomId,
+      'round_number': roundNumber,
+      'player_id': playerId,
+      'target_guess_id': targetGuessId,
+      'slot_index': slotIndex,
+      'chips': chips,
+      'payout_multiplier': multiplier,
+      if (positionX != null) 'position_x': positionX,
+      if (positionY != null) 'position_y': positionY,
+    };
+
+    final response = await _insertBetWithPositionFallback(payload);
     return Bet.fromJson(response);
+  }
+
+  /// Move an existing bet without creating duplicate bet rows.
+  Future<Bet> updateBet({
+    required String betId,
+    required String? targetGuessId,
+    required int slotIndex,
+    required double? positionX,
+    required double? positionY,
+  }) async {
+    final multiplier = GameConstants.boardOdds[slotIndex];
+    final payload = {
+      'target_guess_id': targetGuessId,
+      'slot_index': slotIndex,
+      'payout_multiplier': multiplier,
+      'position_x': positionX,
+      'position_y': positionY,
+    };
+
+    final response = await _updateBetWithPositionFallback(betId, payload);
+    return Bet.fromJson(response);
+  }
+
+  Future<Map<String, dynamic>> _insertBetWithPositionFallback(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      return await _client.from('bets').insert(payload).select().single();
+    } on PostgrestException catch (error) {
+      if (!_isMissingPositionColumn(error)) rethrow;
+      final fallbackPayload = Map<String, dynamic>.from(payload)
+        ..remove('position_x')
+        ..remove('position_y');
+      return await _client.from('bets').insert(fallbackPayload).select().single();
+    }
+  }
+
+  Future<Map<String, dynamic>> _updateBetWithPositionFallback(
+    String betId,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      return await _client
+          .from('bets')
+          .update(payload)
+          .eq('id', betId)
+          .select()
+          .single();
+    } on PostgrestException catch (error) {
+      if (!_isMissingPositionColumn(error)) rethrow;
+      final fallbackPayload = Map<String, dynamic>.from(payload)
+        ..remove('position_x')
+        ..remove('position_y');
+      return await _client
+          .from('bets')
+          .update(fallbackPayload)
+          .eq('id', betId)
+          .select()
+          .single();
+    }
+  }
+
+  bool _isMissingPositionColumn(PostgrestException error) {
+    final message = error.message.toLowerCase();
+    return message.contains('position_x') || message.contains('position_y');
   }
 
   /// Get all bets for a round
@@ -149,7 +224,11 @@ class GameService {
   }
 
   /// Remove all bets for a player in a round
-  Future<void> removePlayerBets(String roomId, int roundNumber, String playerId) async {
+  Future<void> removePlayerBets(
+    String roomId,
+    int roundNumber,
+    String playerId,
+  ) async {
     await _client
         .from('bets')
         .delete()
@@ -159,7 +238,12 @@ class GameService {
   }
 
   /// Remove all bets for a player on a specific slot in a round
-  Future<void> removePlayerBetForSlot(String roomId, int roundNumber, String playerId, int slotIndex) async {
+  Future<void> removePlayerBetForSlot(
+    String roomId,
+    int roundNumber,
+    String playerId,
+    int slotIndex,
+  ) async {
     await _client
         .from('bets')
         .delete()
@@ -187,7 +271,8 @@ class GameService {
       // All guesses were too high → slot 0 ("Smaller") wins
       winningSlotIndex = 0;
     } else {
-      final sortedGuesses = List<Guess>.from(guesses)..sort((a, b) => a.value.compareTo(b.value));
+      final sortedGuesses = List<Guess>.from(guesses)
+        ..sort((a, b) => a.value.compareTo(b.value));
       final idx = sortedGuesses.indexWhere((g) => g.id == winningGuess.id);
       if (idx >= 0) {
         // Slot mapping: slot 0 = "Smaller", slots 1-N = guesses, last slot = "Larger"
