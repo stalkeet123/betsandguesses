@@ -68,17 +68,16 @@ class PlayerService {
       }
     }
 
-    final inactiveByName = await _client
+    final existingByName = await _client
         .from('players')
         .select()
         .eq('room_id', roomId)
         .eq('name', name)
         .eq('is_host', false)
-        .eq('is_connected', false)
         .order('joined_at', ascending: false)
         .limit(1);
 
-    final rows = inactiveByName as List;
+    final rows = existingByName as List;
     if (rows.isEmpty) return null;
     return Player.fromJson(rows.first as Map<String, dynamic>);
   }
