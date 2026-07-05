@@ -2860,7 +2860,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildGuessCard(Guess guess) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 50, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
       child: Center(
         child: FittedBox(
           fit: BoxFit.scaleDown,
