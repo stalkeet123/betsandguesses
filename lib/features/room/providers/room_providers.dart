@@ -36,16 +36,3 @@ final playersStreamProvider = StreamProvider.family<List<Map<String, dynamic>>, 
   return playerService.streamPlayers(roomId);
 });
 
-// ── Skip Auto-Join Flag ──
-final skipAutoJoinProvider = NotifierProvider<SkipAutoJoinNotifier, bool>(() {
-  return SkipAutoJoinNotifier();
-});
-
-class SkipAutoJoinNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void set(bool val) {
-    state = val;
-  }
-}

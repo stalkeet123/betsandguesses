@@ -71,7 +71,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         if (kickedPlayerId != null &&
             currentPlayer != null &&
             kickedPlayerId == currentPlayer.id) {
-          ref.read(skipAutoJoinProvider.notifier).set(true);
           ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
           ref.read(currentRoomProvider.notifier).set(null);
           ref.read(currentPlayerProvider.notifier).set(null);
@@ -180,7 +179,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   Future<void> _leaveLobby() async {
     final room = ref.read(currentRoomProvider);
     final player = ref.read(currentPlayerProvider);
-    ref.read(skipAutoJoinProvider.notifier).set(true);
     if (player != null) {
       await ref.read(playerServiceProvider).leaveRoom(player.id);
     }
