@@ -674,10 +674,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   String? _targetGuessIdForSlot(int slotIndex, GameState gameState) {
-    if (slotIndex > 0 && slotIndex <= gameState.sortedGuesses.length) {
-      return gameState.sortedGuesses[slotIndex - 1].id;
-    }
-    return null;
+    return _boardGuessesBySlot(gameState)[slotIndex]?.id;
   }
 
   Future<void> _removeBetById(Bet bet) async {
@@ -2668,6 +2665,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final boardGuessesBySlot = _boardGuessesBySlot(gameState);
         final orderedSlots = [
           ..._betSlots.where((slot) => !slot.isSweetSpot),
           ..._betSlots.where((slot) => slot.isSweetSpot),
@@ -2690,6 +2688,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               final local = box.globalToLocal(chipCenter);
               final targetSlot = _slotAtBoardPosition(local, boardSize);
               if (targetSlot == null) return;
+              if (!_canPlaceBetOnSlot(targetSlot, boardGuessesBySlot)) return;
 
               final position = _slotLocalPosition(targetSlot, local, boardSize);
               final sourceBet = details.data.sourceBet;
@@ -2718,7 +2717,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                       height: spec.rect.height * size.height,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTapDown: kIsWeb && canBet
+                        onTapDown:
+                            kIsWeb &&
+                                canBet &&
+                                _canPlaceBetOnSlot(spec, boardGuessesBySlot)
                             ? (details) => _placeSelectedChipOnSlot(
                                 spec,
                                 details.localPosition,
@@ -2730,6 +2732,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                             : null,
                         child: _buildCodedBetSlot(
                           spec: spec,
+                          guess: boardGuessesBySlot[spec.index],
                           currentPlayerId: currentPlayer?.id,
                           canDrag: canBet,
                           isBoardHovering: isHovering,
@@ -2751,6 +2754,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
+  Map<int, Guess> _boardGuessesBySlot(GameState gameState) {
+    return ref
+        .read(gameServiceProvider)
+        .boardGuessesBySlot(gameState.sortedGuesses);
+  }
+
+  bool _canPlaceBetOnSlot(_BetSlotSpec spec, Map<int, Guess> guessesBySlot) {
+    return spec.isSweetSpot ||
+        spec.isEndSlot ||
+        guessesBySlot[spec.index] != null;
+  }
+
   Future<void> _placeSelectedChipOnSlot(
     _BetSlotSpec spec,
     Offset localPosition,
@@ -2770,6 +2785,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildCodedBetSlot({
     required _BetSlotSpec spec,
+    required Guess? guess,
     required String? currentPlayerId,
     required bool canDrag,
     required bool isBoardHovering,
@@ -2783,7 +2799,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           Positioned.fill(
             child: _BetSlotSurface(spec: spec, isHovering: isBoardHovering),
           ),
-          _buildBetSlotLabel(spec),
+          _buildBetSlotLabel(spec, guess),
         ],
       ),
     );
@@ -2824,13 +2840,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  Widget _buildBetSlotLabel(_BetSlotSpec slot) {
-    final showTitle = slot.isEndSlot || slot.isSweetSpot;
+  Widget _buildBetSlotLabel(_BetSlotSpec slot, Guess? guess) {
+    final showTitle = guess == null && (slot.isEndSlot || slot.isSweetSpot);
 
     return IgnorePointer(
       child: Stack(
         children: [
           if (showTitle) Positioned.fill(child: _buildCasinoSlotTitle(slot)),
+          if (guess != null) Positioned.fill(child: _buildGuessCard(guess)),
           Positioned(
             top: slot.isSweetSpot ? 7 : 6,
             right: slot.isSweetSpot ? 12 : 8,
@@ -2838,6 +2855,45 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildGuessCard(Guess guess) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 50, 6),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            _formatGuessValue(guess.value),
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'RehnCondensed',
+              color: Colors.white,
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+              height: 0.9,
+              letterSpacing: 0,
+              shadows: [
+                Shadow(
+                  color: Colors.black,
+                  blurRadius: 7,
+                  offset: Offset(0, 2),
+                ),
+                Shadow(color: Color(0x55FFF0A8), blurRadius: 6),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatGuessValue(int value) {
+    return value.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (match) => ',',
     );
   }
 

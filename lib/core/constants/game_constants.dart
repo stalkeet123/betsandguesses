@@ -13,15 +13,16 @@ class GameConstants {
   static const int startingScore = 15;
   static const int guessBonus = 3;
 
-  // Slot layout: [Smaller] [g1] [g2] [g3] [g4] [g5] [Larger]
+  // Visual slot layout: [Smaller] [g1] [g2] [Sweet spot] [g3] [g4] [Larger]
   static const List<int> boardOdds = [5, 4, 3, 2, 3, 4, 5];
+  static const List<int> boardGuessSlotIndices = [1, 2, 4, 5];
   static const String slotSmaller = 'SMALLER';
   static const String slotLarger = 'LARGER';
 
   static const int guessTimerSeconds = 45;
   static const int betTimerSeconds = 60;
 
-  static const int maxGuessSlots = 5;
+  static const int maxGuessSlots = 4;
 
   static const List<String> avatarColors = [
     '#44D65F',

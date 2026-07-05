@@ -91,9 +91,7 @@ class GameService {
 
   /// Determine the winning guess (closest without going over)
   Guess? determineWinner(List<Guess> guesses, int correctAnswer) {
-    // Sort ascending
-    final sorted = List<Guess>.from(guesses)
-      ..sort((a, b) => a.value.compareTo(b.value));
+    final sorted = selectBoardGuesses(guesses);
 
     // Find closest without going over
     Guess? winner;
@@ -106,6 +104,102 @@ class GameService {
 
     // If all guesses are above the answer, the "Smaller" slot wins (no guess wins)
     return winner;
+  }
+
+  int? determineWinningBetSlotIndex(List<Guess> guesses, int correctAnswer) {
+    final boardBySlot = boardGuessesBySlot(guesses);
+    final visibleGuesses = boardBySlot.entries.toList()
+      ..sort((a, b) => a.value.value.compareTo(b.value.value));
+
+    if (visibleGuesses.isEmpty) return null;
+
+    if (correctAnswer < visibleGuesses.first.value.value) return 0;
+    if (correctAnswer > visibleGuesses.last.value.value) return 6;
+
+    final lowerSweetGuess = boardBySlot[2];
+    final upperSweetGuess = boardBySlot[4];
+    if (lowerSweetGuess != null &&
+        upperSweetGuess != null &&
+        correctAnswer > lowerSweetGuess.value &&
+        correctAnswer < upperSweetGuess.value) {
+      return 3;
+    }
+
+    MapEntry<int, Guess>? winner;
+    for (final entry in visibleGuesses) {
+      if (entry.value.value <= correctAnswer) {
+        winner = entry;
+      } else {
+        break;
+      }
+    }
+
+    return winner?.key;
+  }
+
+  /// Select up to four guesses to display on the betting board.
+  List<Guess> selectBoardGuesses(List<Guess> guesses) {
+    final sorted = List<Guess>.from(guesses)
+      ..sort((a, b) {
+        final byValue = a.value.compareTo(b.value);
+        if (byValue != 0) return byValue;
+        return a.id.compareTo(b.id);
+      });
+
+    if (sorted.length <= GameConstants.maxGuessSlots) return sorted;
+
+    if (sorted.length == GameConstants.maxGuessSlots + 1) {
+      final lowGap = sorted[1].value - sorted[0].value;
+      final highGap =
+          sorted[sorted.length - 1].value - sorted[sorted.length - 2].value;
+      if (highGap > lowGap) {
+        return sorted.take(GameConstants.maxGuessSlots).toList();
+      }
+      return sorted.skip(1).toList();
+    }
+
+    final last = sorted.length - 1;
+    final selectedIndices = const [0.2, 0.4, 0.6, 0.8]
+        .map((percentile) => (last * percentile).round().clamp(1, last - 1))
+        .toSet()
+        .toList();
+
+    selectedIndices.sort();
+    return selectedIndices
+        .take(GameConstants.maxGuessSlots)
+        .map((index) => sorted[index])
+        .toList();
+  }
+
+  /// Map visible guesses to the board's physical guess slots.
+  ///
+  /// The center slot is kept free for the sweet spot, so two guesses bracket it.
+  /// With three guesses, the largest adjacent gap is placed around sweet spot.
+  Map<int, Guess> boardGuessesBySlot(List<Guess> guesses) {
+    final selectedGuesses = selectBoardGuesses(guesses);
+    final slots = guessSlotIndicesForSelectedGuesses(selectedGuesses);
+
+    return {
+      for (var i = 0; i < selectedGuesses.length && i < slots.length; i++)
+        slots[i]: selectedGuesses[i],
+    };
+  }
+
+  List<int> guessSlotIndicesForSelectedGuesses(List<Guess> selectedGuesses) {
+    switch (selectedGuesses.length) {
+      case 0:
+        return const [];
+      case 1:
+        return const [4];
+      case 2:
+        return const [2, 4];
+      case 3:
+        final lowerGap = selectedGuesses[1].value - selectedGuesses[0].value;
+        final upperGap = selectedGuesses[2].value - selectedGuesses[1].value;
+        return lowerGap > upperGap ? const [2, 4, 5] : const [1, 2, 4];
+      default:
+        return const [1, 2, 4, 5];
+    }
   }
 
   /// Mark the winning guess in DB
@@ -174,7 +268,11 @@ class GameService {
       final fallbackPayload = Map<String, dynamic>.from(payload)
         ..remove('position_x')
         ..remove('position_y');
-      return await _client.from('bets').insert(fallbackPayload).select().single();
+      return await _client
+          .from('bets')
+          .insert(fallbackPayload)
+          .select()
+          .single();
     }
   }
 
@@ -265,20 +363,10 @@ class GameService {
   }) {
     final payouts = <String, int>{};
 
-    // Find the winning slot index
-    int? winningSlotIndex;
-    if (winningGuess == null) {
-      // All guesses were too high → slot 0 ("Smaller") wins
-      winningSlotIndex = 0;
-    } else {
-      final sortedGuesses = List<Guess>.from(guesses)
-        ..sort((a, b) => a.value.compareTo(b.value));
-      final idx = sortedGuesses.indexWhere((g) => g.id == winningGuess.id);
-      if (idx >= 0) {
-        // Slot mapping: slot 0 = "Smaller", slots 1-N = guesses, last slot = "Larger"
-        winningSlotIndex = idx + 1; // +1 because slot 0 is "Smaller"
-      }
-    }
+    final winningSlotIndex = determineWinningBetSlotIndex(
+      guesses,
+      correctAnswer,
+    );
 
     // Calculate bet payouts
     for (final bet in bets) {

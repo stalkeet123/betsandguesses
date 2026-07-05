@@ -233,13 +233,23 @@ class _BettingLane extends StatelessWidget {
               _OddsMedallion(odds: slot.odds, color: oddsColor),
               const SizedBox(height: 8),
               Expanded(
-                flex: 4,
-                child: _GuessPlaque(slot: slot, showGuesses: showGuesses, isWinning: isWinning),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                flex: 5,
-                child: _ChipPit(bets: bets, isLocked: isLocked),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      child: _GuessPlaque(
+                        slot: slot,
+                        showGuesses: showGuesses,
+                        isWinning: isWinning,
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: _ChipPit(bets: bets, isLocked: isLocked),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 8),
               _LaneFooter(
@@ -331,19 +341,27 @@ class _GuessPlaque extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.ivory.withValues(alpha: slot.isEdge ? 0.1 : 0.93),
+        color: isWinning
+            ? AppColors.neonGreen.withValues(alpha: 0.16)
+            : slot.isEdge
+                ? Colors.black.withValues(alpha: 0.22)
+                : AppColors.ivory.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isWinning ? AppColors.neonGreen : AppColors.brass.withValues(alpha: 0.38),
+          color: isWinning
+              ? AppColors.neonGreen
+              : slot.isEdge
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : AppColors.brassLight.withValues(alpha: 0.24),
           width: isWinning ? 2 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -356,9 +374,20 @@ class _GuessPlaque extends StatelessWidget {
               showGuesses || slot.isEdge ? slot.label : '???',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: slot.isEdge ? AppColors.ivory : AppColors.ink,
+                color: isWinning
+                    ? AppColors.neonGreen
+                    : slot.isEdge
+                        ? AppColors.ivory.withValues(alpha: 0.5)
+                        : AppColors.ivory,
                 fontWeight: FontWeight.w900,
                 fontSize: slot.isEdge ? 13 : 22,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1.5),
+                  ),
+                ],
               ),
             ),
           ),
@@ -369,9 +398,16 @@ class _GuessPlaque extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: slot.isEdge ? AppColors.textSecondary : guessColor,
+              color: slot.isEdge ? AppColors.textSecondary.withValues(alpha: 0.5) : guessColor,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.4,
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
             ),
           ),
         ],
@@ -390,21 +426,9 @@ class _ChipPit extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
+      color: Colors.transparent,
       child: bets.isEmpty
-          ? Center(
-              child: Text(
-                'drop zone',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppColors.ivory.withValues(alpha: 0.32),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            )
+          ? const SizedBox.shrink()
           : LayoutBuilder(
               builder: (context, constraints) {
                 return Stack(
