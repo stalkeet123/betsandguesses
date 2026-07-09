@@ -3386,8 +3386,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   winningSlotIndex,
                   gameState.bets,
                 ),
-              if (_showWinnerBadge && _roundWinners.isNotEmpty)
-                _buildWinnerOverlayCard(size),
+              if (_showWinnerBadge && winningSlotIndex != null)
+                _buildWinnerOverlayCard(size, winningSlotIndex),
             ],
           ),
         );
@@ -3717,8 +3717,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return IgnorePointer(
       child: Stack(
         children: [
-          if (slot.title.isNotEmpty)
-            Positioned.fill(child: _buildCasinoSlotTitle(slot, boundaries)),
+          Positioned.fill(child: _buildCasinoSlotTitle(slot, boundaries)),
           Positioned(
             top: 0,
             right: slot.isSweetSpot ? 16 : 12,
@@ -3803,45 +3802,46 @@ class _GameScreenState extends ConsumerState<GameScreen>
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    slot.title,
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.rye(
-                      foreground: Paint()
-                        ..style = PaintingStyle.stroke
-                        ..strokeWidth = isSweetSpot ? 2.6 : 3.2
-                        ..color = strokeColor.withValues(
-                          alpha: isSweetSpot ? 0.72 : 0.78,
-                        ),
-                      fontSize: fontSize,
-                      fontWeight: FontWeight.w400,
-                      height: 1,
-                      letterSpacing: 0,
+                  if (slot.title.isNotEmpty)
+                    Text(
+                      slot.title,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.rye(
+                        foreground: Paint()
+                          ..style = PaintingStyle.stroke
+                          ..strokeWidth = isSweetSpot ? 2.6 : 3.2
+                          ..color = strokeColor.withValues(
+                            alpha: isSweetSpot ? 0.72 : 0.78,
+                          ),
+                        fontSize: fontSize,
+                        fontWeight: FontWeight.w400,
+                        height: 1,
+                        letterSpacing: 0,
+                      ),
                     ),
-                  ),
                   if (slot.index == 1 && boundaries.length >= 2)
                     Text(
-                      'BETWEEN ${boundaries[0]} AND ${boundaries[1]}\n(INCLUSIVE)',
+                      'BETWEEN\n${boundaries[0]} & ${boundaries[1]}\n(INCLUSIVE)',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
-                        color: AppColors.ivory.withValues(alpha: 0.50),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                        letterSpacing: 0.4,
+                        color: AppColors.ivory.withValues(alpha: 0.35),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        letterSpacing: 1.8,
                       ),
                     ),
                   if (slot.index == 3 && boundaries.length >= 4)
                     Text(
-                      'BETWEEN ${boundaries[2]} AND ${boundaries[3]}\n(INCLUSIVE)',
+                      'BETWEEN\n${boundaries[2]} & ${boundaries[3]}\n(INCLUSIVE)',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
-                        color: AppColors.ivory.withValues(alpha: 0.50),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                        letterSpacing: 0.4,
+                        color: AppColors.ivory.withValues(alpha: 0.35),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        letterSpacing: 1.8,
                       ),
                     ),
                 ],
@@ -3849,54 +3849,57 @@ class _GameScreenState extends ConsumerState<GameScreen>
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    slot.title,
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.rye(
-                      color: textColor,
-                      fontSize: fontSize,
-                      fontWeight: FontWeight.w400,
-                      height: 1,
-                      letterSpacing: 0,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black.withValues(
-                            alpha: isSweetSpot ? 0.28 : 0.75,
-                          ),
-                          blurRadius: isSweetSpot ? 2 : 7,
-                          offset: const Offset(0, 2),
-                        ),
-                        if (isSweetSpot)
+                  if (slot.title.isNotEmpty)
+                    Text(
+                      slot.title,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.rye(
+                        color: textColor,
+                        fontSize: fontSize,
+                        fontWeight: FontWeight.w400,
+                        height: 1,
+                        letterSpacing: 0,
+                        shadows: [
                           Shadow(
-                            color: AppColors.brassLight.withValues(alpha: 0.34),
-                            blurRadius: 9,
+                            color: Colors.black.withValues(
+                              alpha: isSweetSpot ? 0.28 : 0.75,
+                            ),
+                            blurRadius: isSweetSpot ? 2 : 7,
+                            offset: const Offset(0, 2),
                           ),
-                      ],
+                          if (isSweetSpot)
+                            Shadow(
+                              color: AppColors.brassLight.withValues(
+                                alpha: 0.34,
+                              ),
+                              blurRadius: 9,
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
                   if (slot.index == 1 && boundaries.length >= 2)
                     Text(
-                      'BETWEEN ${boundaries[0]} AND ${boundaries[1]}\n(INCLUSIVE)',
+                      'BETWEEN\n${boundaries[0]} & ${boundaries[1]}\n(INCLUSIVE)',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
-                        color: AppColors.ivory.withValues(alpha: 0.50),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                        letterSpacing: 0.4,
+                        color: AppColors.ivory.withValues(alpha: 0.35),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        letterSpacing: 1.8,
                       ),
                     ),
                   if (slot.index == 3 && boundaries.length >= 4)
                     Text(
-                      'BETWEEN ${boundaries[2]} AND ${boundaries[3]}\n(INCLUSIVE)',
+                      'BETWEEN\n${boundaries[2]} & ${boundaries[3]}\n(INCLUSIVE)',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
-                        color: AppColors.ivory.withValues(alpha: 0.50),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                        letterSpacing: 0.4,
+                        color: AppColors.ivory.withValues(alpha: 0.35),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        letterSpacing: 1.8,
                       ),
                     ),
                 ],
@@ -3908,101 +3911,99 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
-  Widget _buildWinnerOverlayCard(Size boardSize) {
+  Widget _buildWinnerOverlayCard(Size boardSize, int winningSlotIndex) {
+    final spec = _betSlotSpecFor(winningSlotIndex);
+    if (spec == null) return const SizedBox.shrink();
+
     final winnerIds = _roundWinners;
     final winners = _players.where((p) => winnerIds.contains(p.id)).toList();
 
-    return Positioned.fill(
-      child: ClipRect(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child:
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 12,
-                    horizontal: 24,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.feltDark.withValues(alpha: 0.96),
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(16),
+    return Positioned(
+      left: spec.rect.left * boardSize.width,
+      width: spec.rect.width * boardSize.width,
+      top: spec.rect.top * boardSize.height,
+      height: spec.rect.height * boardSize.height,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child:
+              Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 12,
                     ),
-                    border: Border(
-                      left: BorderSide(
-                        color: AppColors.brassLight.withValues(alpha: 0.6),
+                    decoration: BoxDecoration(
+                      color: AppColors.feltDark.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.brassLight.withValues(alpha: 0.8),
                         width: 1.5,
                       ),
-                      right: BorderSide(
-                        color: AppColors.brassLight.withValues(alpha: 0.6),
-                        width: 1.5,
-                      ),
-                      bottom: BorderSide(
-                        color: AppColors.brassLight.withValues(alpha: 0.6),
-                        width: 1.5,
-                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (winners.isEmpty)
-                        Text(
-                          'NOBODY WON',
-                          style: GoogleFonts.outfit(
-                            color: AppColors.ivory.withValues(alpha: 0.7),
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.0,
-                          ),
-                        )
-                      else
-                        ...winners.map((player) {
-                          final payout = _roundPayouts[player.id] ?? 0;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  player.name,
-                                  style: GoogleFonts.outfit(
-                                    color: AppColors.ivory,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Text(
-                                  '+$payout',
-                                  style: GoogleFonts.outfit(
-                                    color: AppColors.neonGreen,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (winners.isEmpty)
+                          Text(
+                            'NOBODY WON',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.outfit(
+                              color: AppColors.ivory.withValues(alpha: 0.8),
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
                             ),
-                          );
-                        }),
-                    ],
+                          )
+                        else
+                          ...winners.map((player) {
+                            final payout = _roundPayouts[player.id] ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      player.name,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.outfit(
+                                        color: AppColors.ivory,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '+$payout',
+                                    style: GoogleFonts.outfit(
+                                      color: AppColors.neonGreen,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                      ],
+                    ),
+                  )
+                  .animate(delay: 1100.ms)
+                  .fadeIn(duration: 400.ms)
+                  .scale(
+                    begin: const Offset(0.85, 0.85),
+                    curve: Curves.easeOutBack,
+                    duration: 500.ms,
                   ),
-                ).animate(delay: 1100.ms)
-                .slideY(
-                  begin: -1.1, // Start completely above the top edge
-                  end: 0,
-                  duration: 560.ms,
-                  curve: Curves.easeOutBack,
-                ),
-          ),
         ),
       ),
     );
