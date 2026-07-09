@@ -735,7 +735,7 @@ class _PlanCard extends StatelessWidget {
               const SizedBox(height: 10),
               Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     for (var index = 0; index < features.length; index++) ...[
                       _FeatureRow(feature: features[index]),
