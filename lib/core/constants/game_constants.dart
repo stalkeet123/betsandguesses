@@ -13,9 +13,8 @@ class GameConstants {
   static const int startingScore = 15;
   static const int guessBonus = 3;
 
-  // Visual slot layout: [Smaller] [g1] [g2] [Sweet spot] [g3] [g4] [Larger]
-  static const List<int> boardOdds = [5, 4, 3, 2, 3, 4, 5];
-  static const List<int> boardGuessSlotIndices = [1, 2, 4, 5];
+  // Visual slot layout: [Smaller] [Low range] [Sweet spot] [High range] [Larger]
+  static const List<int> boardOdds = [4, 3, 2, 3, 4];
   static const String slotSmaller = 'SMALLER';
   static const String slotLarger = 'LARGER';
 

@@ -181,7 +181,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Future<void> _leaveLobby() async {
-    final room = ref.read(currentRoomProvider);
     final player = ref.read(currentPlayerProvider);
     ref.read(skipAutoJoinProvider.notifier).set(true);
     if (player != null) {
@@ -199,8 +198,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     ref.read(currentPlayerProvider.notifier).set(null);
     if (mounted) context.goNamed('home');
   }
-
-  String _playerMemoryKey(String roomId) => 'lobby_player_id_$roomId';
 
   @override
   Widget build(BuildContext context) {

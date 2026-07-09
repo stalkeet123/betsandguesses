@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/helpers.dart';
 import '../models/bet_model.dart';
 import '../models/guess_model.dart';
 import 'poker_chip.dart';
@@ -36,59 +35,67 @@ class BettingBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canBet = phase == RoundPhase.betting && !isLocked;
-    final showGuesses = phase == RoundPhase.betting ||
+    final showGuesses =
+        phase == RoundPhase.betting ||
         phase == RoundPhase.revealAnswer ||
         phase == RoundPhase.scoring;
     final slots = _buildSlots();
 
     return Stack(
-      children: [
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: AppColors.tableDecoration(borderRadius: 34),
-            child: CustomPaint(painter: _FeltPatternPainter()),
-          ),
-        ),
-        Positioned.fill(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-            child: Column(
-              children: [
-                _buildBoardHeader(context),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < slots.length; i++) ...[
-                        Expanded(
-                          child: _BettingLane(
-                            slot: slots[i],
-                            bets: bets.where((b) => b.slotIndex == slots[i].index).toList(),
-                            phase: phase,
-                            canBet: canBet,
-                            showGuesses: showGuesses,
-                            isLocked: isLocked,
-                            isWinning: _isWinningSlot(slots[i].index),
-                            hasMyBet: bets.any(
-                              (b) => b.slotIndex == slots[i].index && b.playerId == currentPlayerId,
-                            ),
-                            currentPlayerId: currentPlayerId,
-                            onPlaceBet: onPlaceBet,
-                            onRemoveBet: onRemoveBet,
-                          ),
-                        ),
-                        if (i != slots.length - 1) const SizedBox(width: 8),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: AppColors.tableDecoration(borderRadius: 34),
+                child: CustomPaint(painter: _FeltPatternPainter()),
+              ),
             ),
-          ),
-        ),
-      ],
-    ).animate().fadeIn(duration: 420.ms).scale(begin: const Offset(0.985, 0.985));
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                child: Column(
+                  children: [
+                    _buildBoardHeader(context),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (var i = 0; i < slots.length; i++) ...[
+                            Expanded(
+                              child: _BettingLane(
+                                slot: slots[i],
+                                bets: bets
+                                    .where((b) => b.slotIndex == slots[i].index)
+                                    .toList(),
+                                phase: phase,
+                                canBet: canBet,
+                                showGuesses: showGuesses,
+                                isLocked: isLocked,
+                                isWinning: _isWinningSlot(slots[i].index),
+                                hasMyBet: bets.any(
+                                  (b) =>
+                                      b.slotIndex == slots[i].index &&
+                                      b.playerId == currentPlayerId,
+                                ),
+                                currentPlayerId: currentPlayerId,
+                                onPlaceBet: onPlaceBet,
+                                onRemoveBet: onRemoveBet,
+                              ),
+                            ),
+                            if (i != slots.length - 1) const SizedBox(width: 8),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        )
+        .animate()
+        .fadeIn(duration: 420.ms)
+        .scale(begin: const Offset(0.985, 0.985));
   }
 
   Widget _buildBoardHeader(BuildContext context) {
@@ -125,47 +132,50 @@ class BettingBoard extends StatelessWidget {
   }
 
   List<_SlotData> _buildSlots() {
-    final slots = <_SlotData>[
+    return const [
       _SlotData(
         index: 0,
-        odds: GameConstants.boardOdds[0],
+        odds: 4,
         label: 'SMALLER',
-        subtitle: 'than every guess',
+        subtitle: 'below the lowest line',
+        isEdge: true,
+      ),
+      _SlotData(
+        index: 1,
+        odds: 3,
+        label: 'LOW RANGE',
+        subtitle: 'between lower lines',
+        isEdge: false,
+      ),
+      _SlotData(
+        index: 2,
+        odds: 2,
+        label: 'SWEET SPOT',
+        subtitle: 'between middle lines',
+        isEdge: false,
+      ),
+      _SlotData(
+        index: 3,
+        odds: 3,
+        label: 'HIGH RANGE',
+        subtitle: 'between upper lines',
+        isEdge: false,
+      ),
+      _SlotData(
+        index: 4,
+        odds: 4,
+        label: 'LARGER',
+        subtitle: 'above the highest line',
         isEdge: true,
       ),
     ];
-
-    for (var i = 0; i < GameConstants.maxGuessSlots; i++) {
-      final guess = i < guesses.length ? guesses[i] : null;
-      slots.add(
-        _SlotData(
-          index: i + 1,
-          odds: GameConstants.boardOdds[i + 1],
-          label: guess != null ? Helpers.formatNumber(guess.value) : '--',
-          subtitle: guess?.playerName ?? 'waiting',
-          guess: guess,
-          isEdge: false,
-        ),
-      );
-    }
-
-    slots.add(
-      _SlotData(
-        index: 6,
-        odds: GameConstants.boardOdds[6],
-        label: 'LARGER',
-        subtitle: 'than every guess',
-        isEdge: true,
-      ),
-    );
-    return slots;
   }
 
   bool _isWinningSlot(int slotIndex) {
     if (correctAnswer == null || winningGuessId == null) return false;
     final winnerIdx = guesses.indexWhere((g) => g.id == winningGuessId);
     if (winnerIdx < 0) return slotIndex == 0;
-    return slotIndex == winnerIdx + 1;
+    return slotIndex == winnerIdx.clamp(0, 4);
   }
 }
 
@@ -206,7 +216,8 @@ class _BettingLane extends StatelessWidget {
 
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => canBet,
-      onAcceptWithDetails: (details) => onPlaceBet(slot.index, details.data, position: details.offset),
+      onAcceptWithDetails: (details) =>
+          onPlaceBet(slot.index, details.data, position: details.offset),
       builder: (context, candidateData, rejectedData) {
         final hovering = candidateData.isNotEmpty;
         final lane = AnimatedContainer(
@@ -215,15 +226,15 @@ class _BettingLane extends StatelessWidget {
             color: isWinning
                 ? AppColors.neonGreen.withValues(alpha: 0.18)
                 : hovering
-                    ? AppColors.brassLight.withValues(alpha: 0.16)
-                    : AppColors.ink.withValues(alpha: slot.odds == 2 ? 0.18 : 0.1),
+                ? AppColors.brassLight.withValues(alpha: 0.16)
+                : AppColors.ink.withValues(alpha: slot.odds == 2 ? 0.18 : 0.1),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: isWinning
                   ? AppColors.neonGreen
                   : hovering
-                      ? AppColors.brassLight
-                      : Colors.white.withValues(alpha: 0.12),
+                  ? AppColors.brassLight
+                  : Colors.white.withValues(alpha: 0.12),
               width: isWinning || hovering ? 2 : 1,
             ),
           ),
@@ -287,18 +298,31 @@ class _BettingLane extends StatelessWidget {
                 : null,
             child: isWinning && phase == RoundPhase.revealAnswer
                 ? lane
-                    .animate(onPlay: (controller) => controller.repeat(reverse: true))
-                    .scale(end: const Offset(1.04, 1.04), duration: 500.ms, curve: Curves.easeInOut)
-                    .boxShadow(
-                      begin: const BoxShadow(color: Colors.transparent, blurRadius: 0),
-                      end: const BoxShadow(
-                        color: AppColors.neonGreen,
-                        blurRadius: 28,
-                        spreadRadius: 4,
-                      ),
-                      duration: 500.ms,
-                    )
-                    .shimmer(color: Colors.white.withValues(alpha: 0.45), duration: 1000.ms)
+                      .animate(
+                        onPlay: (controller) =>
+                            controller.repeat(reverse: true),
+                      )
+                      .scale(
+                        end: const Offset(1.04, 1.04),
+                        duration: 500.ms,
+                        curve: Curves.easeInOut,
+                      )
+                      .boxShadow(
+                        begin: const BoxShadow(
+                          color: Colors.transparent,
+                          blurRadius: 0,
+                        ),
+                        end: const BoxShadow(
+                          color: AppColors.neonGreen,
+                          blurRadius: 28,
+                          spreadRadius: 4,
+                        ),
+                        duration: 500.ms,
+                      )
+                      .shimmer(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        duration: 1000.ms,
+                      )
                 : lane,
           ),
         );
@@ -322,7 +346,10 @@ class _OddsMedallion extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: AppColors.goldGradient,
-        border: Border.all(color: Colors.white.withValues(alpha: 0.32), width: 1.4),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.32),
+          width: 1.4,
+        ),
         boxShadow: [
           BoxShadow(
             color: color.withValues(alpha: 0.28),
@@ -356,10 +383,6 @@ class _GuessPlaque extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final guessColor = slot.guess?.playerColor != null
-        ? Color(Helpers.colorFromHex(slot.guess!.playerColor!))
-        : AppColors.brass;
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
@@ -367,15 +390,15 @@ class _GuessPlaque extends StatelessWidget {
         color: isWinning
             ? AppColors.neonGreen.withValues(alpha: 0.16)
             : slot.isEdge
-                ? Colors.black.withValues(alpha: 0.22)
-                : AppColors.ivory.withValues(alpha: 0.12),
+            ? Colors.black.withValues(alpha: 0.22)
+            : AppColors.ivory.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isWinning
               ? AppColors.neonGreen
               : slot.isEdge
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : AppColors.brassLight.withValues(alpha: 0.24),
+              ? Colors.white.withValues(alpha: 0.08)
+              : AppColors.brassLight.withValues(alpha: 0.24),
           width: isWinning ? 2 : 1,
         ),
         boxShadow: [
@@ -398,8 +421,8 @@ class _GuessPlaque extends StatelessWidget {
                 color: isWinning
                     ? AppColors.neonGreen
                     : slot.isEdge
-                        ? AppColors.ivory.withValues(alpha: 0.5)
-                        : AppColors.ivory,
+                    ? AppColors.ivory.withValues(alpha: 0.5)
+                    : AppColors.ivory,
                 fontWeight: FontWeight.w900,
                 fontSize: slot.isEdge ? 13 : 22,
                 shadows: [
@@ -419,7 +442,9 @@ class _GuessPlaque extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: slot.isEdge ? AppColors.textSecondary.withValues(alpha: 0.5) : guessColor,
+              color: slot.isEdge
+                  ? AppColors.textSecondary.withValues(alpha: 0.5)
+                  : AppColors.brass,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.4,
               shadows: [
@@ -511,10 +536,7 @@ class _ChipPit extends StatelessWidget {
           );
     }
 
-    return SpringyChip(
-      key: ValueKey(bet.id),
-      child: chip,
-    );
+    return SpringyChip(key: ValueKey(bet.id), child: chip);
   }
 }
 
@@ -553,10 +575,10 @@ class _LaneFooter extends StatelessWidget {
         hasMyBet
             ? 'your chips: $myTotal'
             : isLocked
-                ? 'locked'
-                : canBet
-                    ? 'tap 1 / drop'
-                    : 'stand by',
+            ? 'locked'
+            : canBet
+            ? 'tap 1 / drop'
+            : 'stand by',
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: hasMyBet ? AppColors.brassLight : AppColors.textMuted,
           fontWeight: FontWeight.w900,
@@ -572,7 +594,6 @@ class _SlotData {
   final int odds;
   final String label;
   final String subtitle;
-  final Guess? guess;
   final bool isEdge;
 
   const _SlotData({
@@ -580,7 +601,6 @@ class _SlotData {
     required this.odds,
     required this.label,
     required this.subtitle,
-    this.guess,
     required this.isEdge,
   });
 }
@@ -592,7 +612,11 @@ class _FeltPatternPainter extends CustomPainter {
       ..color = Colors.white.withValues(alpha: 0.045)
       ..strokeWidth = 1;
     for (var x = -size.height; x < size.width; x += 24) {
-      canvas.drawLine(Offset(x.toDouble(), size.height), Offset(x + size.height, 0), linePaint);
+      canvas.drawLine(
+        Offset(x.toDouble(), size.height),
+        Offset(x + size.height, 0),
+        linePaint,
+      );
     }
 
     final railPaint = Paint()
@@ -600,7 +624,10 @@ class _FeltPatternPainter extends CustomPainter {
       ..strokeWidth = 2
       ..color = AppColors.brass.withValues(alpha: 0.16);
     final rect = Rect.fromLTWH(14, 14, size.width - 28, size.height - 28);
-    canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(24)), railPaint);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(24)),
+      railPaint,
+    );
   }
 
   @override
