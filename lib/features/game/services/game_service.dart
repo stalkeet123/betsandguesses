@@ -382,7 +382,6 @@ class GameService {
     required List<Guess> guesses,
     required List<Bet> bets,
     required int correctAnswer,
-    required Guess? winningGuess,
   }) {
     final payouts = <String, int>{};
 
@@ -397,12 +396,6 @@ class GameService {
         final payout = bet.chips * bet.payoutMultiplier;
         payouts[bet.playerId] = (payouts[bet.playerId] ?? 0) + payout;
       }
-    }
-
-    // Guess bonus: the player who wrote the winning guess gets bonus
-    if (winningGuess != null) {
-      payouts[winningGuess.playerId] =
-          (payouts[winningGuess.playerId] ?? 0) + GameConstants.guessBonus;
     }
 
     return payouts;

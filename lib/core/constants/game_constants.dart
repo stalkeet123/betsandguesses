@@ -11,7 +11,6 @@ class GameConstants {
 
   static const int freeChipsPerRound = 2;
   static const int startingScore = 15;
-  static const int guessBonus = 3;
 
   // Visual slot layout: [Smaller] [Low range] [Sweet spot] [High range] [Larger]
   static const List<int> boardOdds = [4, 3, 2, 3, 4];

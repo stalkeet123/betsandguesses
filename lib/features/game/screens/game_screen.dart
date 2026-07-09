@@ -46,6 +46,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool _showWinnerBadge = false;
   final Set<String> _incomingOtherBetIds = {};
   final Set<String> _scheduledOtherBetEntryCleanupIds = {};
+  int _revealSequenceId = 0;
 
   @override
   void initState() {
@@ -397,7 +398,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       guesses: gameState.sortedGuesses,
       bets: bets,
       correctAnswer: correctAnswer,
-      winningGuess: winningGuess,
     );
 
     final newScores = Map<String, int>.from(gameState.scores);
@@ -443,7 +443,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final correctAnswer = gameState.correctAnswer;
     if (correctAnswer == null) return;
 
-    final winningGuess = _winningGuessForState(gameState);
     final resolvedPayouts =
         payouts ??
         ref
@@ -452,7 +451,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               guesses: gameState.sortedGuesses,
               bets: gameState.bets,
               correctAnswer: correctAnswer,
-              winningGuess: winningGuess,
             );
     final winners = resolvedPayouts.entries
         .where((entry) => entry.value > 0)
@@ -477,6 +475,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     var step = 0;
     setState(() {
+      _revealSequenceId++;
       _roundPayouts = resolvedPayouts;
       _roundWinners = winners;
       _showWinnerBadge = false;
@@ -524,16 +523,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         gameState.phase == RoundPhase.scoring;
   }
 
-  Guess? _winningGuessForState(GameState gameState) {
-    final winningGuessId = gameState.winningGuessId;
-    if (winningGuessId == null) return null;
-
-    for (final guess in gameState.sortedGuesses) {
-      if (guess.id == winningGuessId) return guess;
-    }
-    return null;
-  }
-
   int? _winningBetSlotIndex(GameState gameState) {
     final correctAnswer = gameState.correctAnswer;
     if (correctAnswer == null) return null;
@@ -553,11 +542,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           bet.slotIndex == winningSlotIndex) {
         payout += bet.chips * bet.payoutMultiplier;
       }
-    }
-
-    final winningGuess = _winningGuessForState(gameState);
-    if (winningGuess?.playerId == currentPlayer.id) {
-      payout += GameConstants.guessBonus;
     }
 
     return payout;
@@ -1257,9 +1241,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ),
         )
         .animate(
-          key: ValueKey(
-            'answer-${gameState.correctAnswer}-${resultSettled ? 'settled' : 'scan'}',
-          ),
+          key: ValueKey('answer-${gameState.correctAnswer}-$_revealSequenceId'),
         )
         .fadeIn(duration: 180.ms)
         .scale(begin: const Offset(0.97, 0.97), duration: 260.ms);
@@ -1283,6 +1265,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final chipSize = 42.0;
+        final chipValues = const [
+          (label: '5', value: 5, color: AppColors.feltLight),
+          (label: '10', value: 10, color: AppColors.neonBlue),
+          (label: '50', value: 50, color: AppColors.burgundy),
+        ];
 
         final canReturnBet =
             gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
@@ -1359,40 +1346,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   const SizedBox(height: 5),
                   Expanded(
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _buildDraggableChip(
-                          label: '5',
-                          color: AppColors.feltLight,
-                          isAvailable: canReturnBet && availableChips >= 5,
-                          value: 5,
-                          isSelected: _selectedChipValue == 5,
-                          size: chipSize,
-                        ),
-                        _buildDraggableChip(
-                          label: '10',
-                          color: AppColors.neonBlue,
-                          isAvailable: canReturnBet && availableChips >= 10,
-                          value: 10,
-                          isSelected: _selectedChipValue == 10,
-                          size: chipSize,
-                        ),
-                        _buildDraggableChip(
-                          label: '50',
-                          color: AppColors.burgundy,
-                          isAvailable: canReturnBet && availableChips >= 50,
-                          value: 50,
-                          isSelected: _selectedChipValue == 50,
-                          size: chipSize,
-                        ),
-                        _buildDraggableChip(
-                          label: '100',
-                          color: AppColors.neonPurple,
-                          isAvailable: canReturnBet && availableChips >= 100,
-                          value: 100,
-                          isSelected: _selectedChipValue == 100,
-                          size: chipSize,
-                        ),
+                        for (final chip in chipValues)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 7),
+                            child: _buildDraggableChip(
+                              label: chip.label,
+                              color: chip.color,
+                              isAvailable:
+                                  canReturnBet && availableChips >= chip.value,
+                              value: chip.value,
+                              isSelected: _selectedChipValue == chip.value,
+                              size: chipSize,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -3168,8 +3136,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               }
             },
             builder: (context, candidateData, rejectedData) {
-              final isHovering = candidateData.isNotEmpty;
-
               return Stack(
                 key: boardKey,
                 clipBehavior: Clip.none,
@@ -3194,7 +3160,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                             : null,
                         child: _buildCodedBetSlot(
                           spec: spec,
-                          isBoardHovering: isHovering,
                           isWinningReveal: activeRevealSlotIndex == spec.index,
                           isDimmedReveal:
                               isReveal &&
@@ -3215,6 +3180,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     winningSlotIndex: winningSlotIndex,
                     emphasizeWinners: _showWinnerBadge,
                   ),
+                  if (_showWinnerBadge && winningSlotIndex != null)
+                    ..._buildPayoutFlightChips(
+                      size,
+                      winningSlotIndex,
+                      gameState.bets,
+                    ),
                 ],
               );
             },
@@ -3249,20 +3220,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   Widget _buildCodedBetSlot({
     required _BetSlotSpec spec,
-    required bool isBoardHovering,
     required bool isWinningReveal,
     required bool isDimmedReveal,
   }) {
     return AnimatedScale(
       duration: const Duration(milliseconds: 210),
-      scale: isWinningReveal ? 1.026 : (isBoardHovering ? 1.006 : 1),
+      scale: isWinningReveal ? 1.026 : 1,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(
             child: _BetSlotSurface(
               spec: spec,
-              isHovering: isBoardHovering,
+              isHovering: false,
               isWinningReveal: isWinningReveal,
               isDimmedReveal: isDimmedReveal,
             ),
@@ -3314,6 +3284,142 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ),
         ),
     ];
+  }
+
+  List<Widget> _buildPayoutFlightChips(
+    Size boardSize,
+    int winningSlotIndex,
+    List<Bet> bets,
+  ) {
+    final spec = _betSlotSpecFor(winningSlotIndex);
+    if (spec == null) return const [];
+
+    final winningBets = bets
+        .where((bet) => bet.slotIndex == winningSlotIndex)
+        .toList();
+    if (winningBets.isEmpty) return const [];
+
+    final odds = GameConstants.boardOdds[winningSlotIndex];
+    final center = Offset(
+      (spec.rect.left + spec.rect.width * 0.5) * boardSize.width,
+      (spec.rect.top + spec.rect.height * 0.5) * boardSize.height,
+    );
+    final chipSize = (boardSize.width * 0.095).clamp(28.0, 36.0).toDouble();
+    final payoutTokens = <({Bet bet, int token, int order})>[];
+    var order = 0;
+
+    for (final bet in winningBets) {
+      final visualChipCount = min(odds, 4);
+      for (var token = 0; token < visualChipCount && order < 18; token++) {
+        payoutTokens.add((bet: bet, token: token, order: order));
+        order++;
+      }
+      if (order >= 18) break;
+    }
+
+    return [
+      for (final item in payoutTokens)
+        _buildPayoutFlightChip(
+          bet: item.bet,
+          order: item.order,
+          token: item.token,
+          odds: odds,
+          center: center,
+          chipSize: chipSize,
+          boardSize: boardSize,
+        ),
+    ];
+  }
+
+  Widget _buildPayoutFlightChip({
+    required Bet bet,
+    required int order,
+    required int token,
+    required int odds,
+    required Offset center,
+    required double chipSize,
+    required Size boardSize,
+  }) {
+    final angle = -pi / 2 + order * 0.72;
+    final radius = 14.0 + (order % 3) * 7.0;
+    final start = center + Offset(cos(angle) * radius, sin(angle) * radius);
+    final leaderboardTargetY = boardSize.height * 0.82;
+    final flyOffset = Offset(
+      -boardSize.width * 1.04 - (order % 4) * 12,
+      leaderboardTargetY - start.dy + ((order % 5) - 2) * 5,
+    );
+    final delayMs = 150 + order * 42;
+    final flightMs = 1040 + (order % 4) * 45;
+    final duration = Duration(milliseconds: delayMs + flightMs);
+
+    return Positioned(
+      left: start.dx - chipSize / 2,
+      top: start.dy - chipSize / 2,
+      child: IgnorePointer(
+        child: TweenAnimationBuilder<double>(
+          key: ValueKey('payout-flight-${bet.id}-$token-$odds'),
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: duration,
+          curve: Curves.linear,
+          builder: (context, rawProgress, child) {
+            final delayedProgress =
+                ((rawProgress * duration.inMilliseconds) - delayMs) / flightMs;
+            if (delayedProgress <= 0) {
+              return const SizedBox.shrink();
+            }
+            final progress = delayedProgress.clamp(0.0, 1.0).toDouble();
+            final launch = ((progress - 0.34) / 0.66).clamp(0.0, 1.0);
+            final pop = (progress / 0.30).clamp(0.0, 1.0);
+            final launchCurve = Curves.easeInOutCubic.transform(launch);
+            final popCurve = Curves.easeOutBack.transform(pop).clamp(0.0, 1.12);
+            final floatLift = sin(min(progress, 0.34) / 0.34 * pi) * -9;
+            final opacity = launch < 0.78
+                ? 1.0
+                : (1 - ((launch - 0.78) / 0.22)).clamp(0.0, 1.0);
+            final scale = launch == 0
+                ? 0.66 + 0.39 * popCurve
+                : (1.05 - 0.80 * Curves.easeInCubic.transform(launch)).clamp(
+                    0.22,
+                    1.08,
+                  );
+
+            return Opacity(
+              opacity: opacity.toDouble(),
+              child: Transform.translate(
+                offset: Offset(
+                  flyOffset.dx * launchCurve,
+                  floatLift + flyOffset.dy * launchCurve,
+                ),
+                child: Transform.scale(scale: scale.toDouble(), child: child),
+              ),
+            );
+          },
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.brassLight.withValues(alpha: 0.42),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.30),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: PokerChip(
+              label: '${bet.chips}',
+              color: _getChipColor(bet.chips),
+              size: chipSize,
+              isScoreChip: false,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   List<Widget> _buildBoundaryLabels(List<int> boundaryValues, Size boardSize) {
