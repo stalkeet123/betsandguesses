@@ -79,8 +79,7 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
         (player) => player.id == previousPlayerId,
       );
 
-      if (!isReturningPlayer &&
-          activePlayers.length >= GameConstants.maxPlayers) {
+      if (!isReturningPlayer && activePlayers.length >= room.maxPlayers) {
         setState(() => _error = 'That table is full.');
         return;
       }

@@ -55,31 +55,17 @@ class PlayerService {
     required String? playerId,
     required String name,
   }) async {
-    if (playerId != null && playerId.trim().isNotEmpty) {
-      final response = await _client
-          .from('players')
-          .select()
-          .eq('id', playerId)
-          .eq('room_id', roomId)
-          .maybeSingle();
+    if (playerId == null || playerId.trim().isEmpty) return null;
 
-      if (response != null) {
-        return Player.fromJson(response);
-      }
-    }
-
-    final existingByName = await _client
+    final response = await _client
         .from('players')
         .select()
+        .eq('id', playerId)
         .eq('room_id', roomId)
-        .eq('name', name)
-        .eq('is_host', false)
-        .order('joined_at', ascending: false)
-        .limit(1);
+        .maybeSingle();
 
-    final rows = existingByName as List;
-    if (rows.isEmpty) return null;
-    return Player.fromJson(rows.first as Map<String, dynamic>);
+    if (response != null) return Player.fromJson(response);
+    return null;
   }
 
   /// Get all players in a room
@@ -126,10 +112,9 @@ class PlayerService {
   /// Remove player from room
   Future<void> leaveRoom(String playerId) async {
     try {
-      await setConnected(playerId, false);
       await _client.from('players').delete().eq('id', playerId);
     } catch (_) {
-      // Ignore if delete fails due to RLS or constraints
+      // Ignore if already deleted or RLS prevents it
     }
   }
 

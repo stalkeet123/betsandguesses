@@ -4,10 +4,12 @@ class GameConstants {
   static const int roomCodeLength = 6;
   static const int minPlayers = 2;
   static const int maxPlayers = 10;
+  static const int freeMaxPlayers = 4;
 
   static const int defaultRounds = 8;
   static const int minRounds = 5;
   static const int maxRounds = 12;
+  static const String defaultCategory = 'Mixed';
 
   static const int freeChipsPerRound = 2;
   static const int startingScore = 15;

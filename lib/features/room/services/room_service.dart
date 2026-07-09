@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/constants/game_constants.dart';
 import '../../../core/utils/helpers.dart';
 import '../models/room_model.dart';
 
@@ -9,7 +10,12 @@ class RoomService {
   RoomService(this._client);
 
   /// Create a new room, returns the created Room
-  Future<Room> createRoom(String hostId) async {
+  Future<Room> createRoom(
+    String hostId, {
+    int maxRounds = GameConstants.defaultRounds,
+    int maxPlayers = GameConstants.freeMaxPlayers,
+    String? category,
+  }) async {
     for (var attempt = 0; attempt < 12; attempt++) {
       final code = Helpers.generateRoomCode();
       final existing = await _client
@@ -21,26 +27,55 @@ class RoomService {
       if ((existing as List).isNotEmpty) continue;
 
       try {
-        final response = await _client
-            .from('rooms')
-            .insert({
-              'code': code,
-              'host_id': hostId,
-              'status': 'waiting',
-              'current_round': 0,
-              'max_rounds': 8,
-              'round_phase': 'idle',
-            })
-            .select()
-            .single();
+        final insertData = {
+          'code': code,
+          'host_id': hostId,
+          'status': 'waiting',
+          'current_round': 0,
+          'max_rounds': maxRounds,
+          'max_players': maxPlayers,
+          'category': category == GameConstants.defaultCategory
+              ? null
+              : category,
+          'round_phase': 'idle',
+        };
+        final response = await _insertRoom(insertData);
         return Room.fromJson(response);
       } on PostgrestException catch (error) {
         if (error.code == '23505') continue;
+        if (_isMissingOptionalRoomColumn(error)) {
+          final fallbackData = {
+            'code': code,
+            'host_id': hostId,
+            'status': 'waiting',
+            'current_round': 0,
+            'max_rounds': maxRounds,
+            'round_phase': 'idle',
+          };
+          final response = await _insertRoom(fallbackData);
+          return Room.fromJson({
+            ...response,
+            'max_players': maxPlayers,
+            'category': category == GameConstants.defaultCategory
+                ? null
+                : category,
+          });
+        }
         rethrow;
       }
     }
 
     throw StateError('Could not generate a unique room code.');
+  }
+
+  Future<Map<String, dynamic>> _insertRoom(Map<String, dynamic> data) async {
+    final response = await _client.from('rooms').insert(data).select().single();
+    return response;
+  }
+
+  bool _isMissingOptionalRoomColumn(PostgrestException error) {
+    final message = error.message.toLowerCase();
+    return message.contains('max_players') || message.contains('category');
   }
 
   /// Find a room by its code

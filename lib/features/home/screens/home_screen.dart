@@ -86,7 +86,132 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     super.dispose();
   }
 
-  Future<void> _createRoom() async {
+  Future<void> _showCreateLobbySetup() async {
+    if (_isLoading) return;
+
+    if (kIsWeb) {
+      _showSnack('Web version is player-only.');
+      return;
+    }
+
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      _showSnack('Enter your name first.');
+      return;
+    }
+
+    ref.read(audioServiceProvider).playClick();
+    final isPremium = await ref
+        .read(premiumStatusProvider.future)
+        .catchError((_) => false);
+    if (!mounted) return;
+
+    final categoriesFuture = ref
+        .read(gameServiceProvider)
+        .getQuestionCategories();
+    var selectedRounds = GameConstants.defaultRounds;
+    var selectedMaxPlayers = GameConstants.freeMaxPlayers;
+    var selectedCategory = GameConstants.defaultCategory;
+
+    _showHomeSheet(
+      title: 'SETUP',
+      icon: Icons.tune_rounded,
+      child: StatefulBuilder(
+        builder: (context, setModalState) {
+          void goPremiumFromSheet() {
+            Navigator.of(context).pop();
+            _goPremium();
+          }
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _setupSlider(
+                icon: Icons.casino_rounded,
+                label: 'ROUNDS',
+                value: selectedRounds,
+                min: GameConstants.minRounds,
+                max: GameConstants.maxRounds,
+                onChanged: (value) {
+                  setModalState(() => selectedRounds = value);
+                },
+              ),
+              const SizedBox(height: 10),
+              _setupSlider(
+                icon: Icons.groups_rounded,
+                label: 'PLAYERS',
+                value: selectedMaxPlayers,
+                min: GameConstants.minPlayers,
+                max: isPremium
+                    ? GameConstants.maxPlayers
+                    : GameConstants.freeMaxPlayers,
+                onChanged: (value) {
+                  setModalState(() => selectedMaxPlayers = value);
+                },
+                trailing: isPremium
+                    ? null
+                    : TextButton.icon(
+                        onPressed: goPremiumFromSheet,
+                        icon: const Icon(Icons.lock_rounded, size: 16),
+                        label: const Text('5-10'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.brassLight,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 10),
+              FutureBuilder<List<String>>(
+                future: categoriesFuture,
+                builder: (context, snapshot) {
+                  final categories = [
+                    GameConstants.defaultCategory,
+                    ...?snapshot.data,
+                  ];
+                  return _categoryPicker(
+                    categories: categories,
+                    selectedCategory: selectedCategory,
+                    isPremium: isPremium,
+                    onSelected: (category) {
+                      if (!isPremium &&
+                          category != GameConstants.defaultCategory) {
+                        goPremiumFromSheet();
+                        return;
+                      }
+                      setModalState(() => selectedCategory = category);
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _createRoom(
+                      maxRounds: selectedRounds,
+                      maxPlayers: selectedMaxPlayers,
+                      category: selectedCategory,
+                    );
+                  },
+                  icon: const Icon(Icons.groups_rounded, size: 25),
+                  label: const Text('CREATE LOBBY'),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _createRoom({
+    required int maxRounds,
+    required int maxPlayers,
+    required String category,
+  }) async {
     if (_isLoading) return;
 
     if (kIsWeb) {
@@ -108,7 +233,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     try {
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
-      final room = await roomService.createRoom('temp');
+      final room = await roomService.createRoom(
+        'temp',
+        maxRounds: maxRounds,
+        maxPlayers: maxPlayers,
+        category: category,
+      );
 
       final player = await playerService.joinRoom(
         roomId: room.id,
@@ -182,8 +312,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         (player) => player.id == previousPlayerId,
       );
 
-      if (!isReturningPlayer &&
-          activePlayers.length >= GameConstants.maxPlayers) {
+      if (!isReturningPlayer && activePlayers.length >= room.maxPlayers) {
         _showSnack('That table is full.');
         return;
       }
@@ -209,11 +338,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         previousPlayerId: previousPlayerId,
       );
       _rememberPlayerForRoom(room.id, player.id);
-      await ref.read(realtimeServiceProvider).broadcast(
-        room.code,
-        'player_joined',
-        {'player_id': player.id},
-      );
 
       ref.read(currentPlayerProvider.notifier).set(player);
       ref.read(currentRoomProvider.notifier).set(room);
@@ -410,6 +534,164 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  Widget _setupSlider({
+    required IconData icon,
+    required String label,
+    required int value,
+    required int min,
+    required int max,
+    required ValueChanged<int> onChanged,
+    Widget? trailing,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF06351F).withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.44)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: AppColors.brassLight, size: 24),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: _homeTextStyle(
+                  color: AppColors.ivory,
+                  size: 22,
+                  letterSpacing: 1,
+                ),
+              ),
+              const Spacer(),
+              if (trailing != null) trailing,
+              Container(
+                width: 42,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: AppColors.goldGradient,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.22),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '$value',
+                  style: _homeTextStyle(
+                    color: AppColors.ink,
+                    size: 22,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: AppColors.brassLight,
+              inactiveTrackColor: AppColors.ivory.withValues(alpha: 0.22),
+              thumbColor: AppColors.brassLight,
+              overlayColor: AppColors.brassLight.withValues(alpha: 0.18),
+              trackHeight: 5,
+            ),
+            child: Slider(
+              min: min.toDouble(),
+              max: max.toDouble(),
+              divisions: max - min,
+              value: value.clamp(min, max).toDouble(),
+              onChanged: (next) => onChanged(next.round()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _categoryPicker({
+    required List<String> categories,
+    required String selectedCategory,
+    required bool isPremium,
+    required ValueChanged<String> onSelected,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF06351F).withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.category_rounded,
+                color: AppColors.brassLight,
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'CATEGORY',
+                style: _homeTextStyle(
+                  color: AppColors.ivory,
+                  size: 22,
+                  letterSpacing: 1,
+                ),
+              ),
+              const Spacer(),
+              if (!isPremium)
+                const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: AppColors.brassLight,
+                  size: 20,
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: categories.map((category) {
+              final selected = selectedCategory == category;
+              final locked =
+                  !isPremium && category != GameConstants.defaultCategory;
+              return ChoiceChip(
+                selected: selected,
+                onSelected: (_) => onSelected(category),
+                avatar: locked
+                    ? const Icon(Icons.lock_rounded, size: 15)
+                    : null,
+                label: Text(category),
+                labelStyle: TextStyle(
+                  color: selected ? AppColors.ink : AppColors.ivory,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+                selectedColor: AppColors.brassLight,
+                backgroundColor: AppColors.feltDark.withValues(alpha: 0.84),
+                disabledColor: AppColors.surfaceLight,
+                side: BorderSide(
+                  color: selected
+                      ? AppColors.ivory
+                      : AppColors.brassLight.withValues(alpha: 0.34),
+                ),
+                visualDensity: VisualDensity.compact,
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _pickAvatarColor([Set<String> usedColors = const {}]) {
     final availableColors = GameConstants.avatarColors
         .where((color) => !usedColors.contains(color))
@@ -468,9 +750,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               _buildSubtitleWithLines(),
                               SizedBox(height: kIsWeb ? 16 : 18),
                               if (kIsWeb) ...[
-                                _dimIfGuide(
-                                  child: _buildWebPlayerBadge(),
-                                ),
+                                _dimIfGuide(child: _buildWebPlayerBadge()),
                                 const SizedBox(height: 12),
                               ],
                               _buildNamePanel(),
@@ -481,8 +761,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                     label: 'CREATE LOBBY',
                                     icon: Icons.groups_rounded,
                                     isLoading: _isLoading,
-                                    onPressed:
-                                        _isLoading ? null : _createRoom,
+                                    onPressed: _isLoading
+                                        ? null
+                                        : _showCreateLobbySetup,
                                   ),
                                 ),
                                 const SizedBox(height: 10),
@@ -698,8 +979,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   borderRadius: BorderRadius.circular(20),
                   border: _showQrJoinGuide
                       ? Border.all(
-                          color: AppColors.brassLight
-                              .withValues(alpha: glowAlpha),
+                          color: AppColors.brassLight.withValues(
+                            alpha: glowAlpha,
+                          ),
                           width: 2.4,
                         )
                       : null,
@@ -711,8 +993,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ),
                     if (_showQrJoinGuide)
                       BoxShadow(
-                        color: AppColors.brassLight
-                            .withValues(alpha: glowAlpha * 0.6),
+                        color: AppColors.brassLight.withValues(
+                          alpha: glowAlpha * 0.6,
+                        ),
                         blurRadius: 22,
                         spreadRadius: 2,
                       ),
@@ -975,8 +1258,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             boxShadow: _showQrJoinGuide
                 ? [
                     BoxShadow(
-                      color:
-                          AppColors.brassLight.withValues(alpha: codeGlow),
+                      color: AppColors.brassLight.withValues(alpha: codeGlow),
                       blurRadius: 14,
                       spreadRadius: 1,
                     ),

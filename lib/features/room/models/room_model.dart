@@ -8,6 +8,8 @@ class Room {
   final RoomStatus status;
   final int currentRound;
   final int maxRounds;
+  final int maxPlayers;
+  final String? category;
   final RoundPhase roundPhase;
   final String? currentQuestionId;
   final DateTime createdAt;
@@ -18,7 +20,9 @@ class Room {
     required this.hostId,
     this.status = RoomStatus.waiting,
     this.currentRound = 0,
-    this.maxRounds = 8,
+    this.maxRounds = GameConstants.defaultRounds,
+    this.maxPlayers = GameConstants.freeMaxPlayers,
+    this.category,
     this.roundPhase = RoundPhase.idle,
     this.currentQuestionId,
     required this.createdAt,
@@ -31,7 +35,9 @@ class Room {
       hostId: json['host_id'] as String,
       status: RoomStatus.fromString(json['status'] as String? ?? 'waiting'),
       currentRound: json['current_round'] as int? ?? 0,
-      maxRounds: json['max_rounds'] as int? ?? 8,
+      maxRounds: json['max_rounds'] as int? ?? GameConstants.defaultRounds,
+      maxPlayers: json['max_players'] as int? ?? GameConstants.freeMaxPlayers,
+      category: json['category'] as String?,
       roundPhase: RoundPhase.fromString(
         json['round_phase'] as String? ?? 'idle',
       ),
@@ -48,6 +54,8 @@ class Room {
       'status': status.name,
       'current_round': currentRound,
       'max_rounds': maxRounds,
+      'max_players': maxPlayers,
+      'category': category,
       'round_phase': roundPhase.name,
       'current_question_id': currentQuestionId,
     };
@@ -62,6 +70,8 @@ class Room {
     RoomStatus? status,
     int? currentRound,
     int? maxRounds,
+    int? maxPlayers,
+    String? category,
     RoundPhase? roundPhase,
     String? currentQuestionId,
     DateTime? createdAt,
@@ -73,6 +83,8 @@ class Room {
       status: status ?? this.status,
       currentRound: currentRound ?? this.currentRound,
       maxRounds: maxRounds ?? this.maxRounds,
+      maxPlayers: maxPlayers ?? this.maxPlayers,
+      category: category ?? this.category,
       roundPhase: roundPhase ?? this.roundPhase,
       currentQuestionId: currentQuestionId ?? this.currentQuestionId,
       createdAt: createdAt ?? this.createdAt,

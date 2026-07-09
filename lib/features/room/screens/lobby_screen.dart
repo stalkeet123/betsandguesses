@@ -63,11 +63,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       },
       onGameEnded: (_) {},
       onPlayerJoined: (_) {
-        _loadPlayers();
+        // Player list updates come via playersStreamProvider.
       },
       onPlayerLeft: (payload) {
         final kickedPlayerId = payload['player_id'] as String?;
         final currentPlayer = ref.read(currentPlayerProvider);
+        // Only react if WE were the one kicked
         if (kickedPlayerId != null &&
             currentPlayer != null &&
             kickedPlayerId == currentPlayer.id) {
@@ -83,12 +84,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               ),
             );
           }
-        } else {
-          if (currentPlayer?.isHost == true && kickedPlayerId != null) {
-            ref.read(playerServiceProvider).leaveRoom(kickedPlayerId);
-          }
-          _loadPlayers();
         }
+        // The leaving player handles their own DB cleanup.
+        // The host's player list refreshes via playersStreamProvider.
       },
     );
   }
@@ -183,9 +181,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   Future<void> _leaveLobby() async {
     final player = ref.read(currentPlayerProvider);
     ref.read(skipAutoJoinProvider.notifier).set(true);
-    if (player != null) {
-      await ref.read(playerServiceProvider).leaveRoom(player.id);
-    }
+
+    // 1. Broadcast FIRST (while record still exists and channel is active)
     if (player != null) {
       await ref.read(realtimeServiceProvider).broadcast(
         widget.roomCode,
@@ -193,6 +190,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         {'player_id': player.id},
       );
     }
+
+    // 2. Then delete from DB
+    if (player != null) {
+      await ref.read(playerServiceProvider).leaveRoom(player.id);
+    }
+
+    // 3. Then leave channel and clear state
     ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     ref.read(currentRoomProvider.notifier).set(null);
     ref.read(currentPlayerProvider.notifier).set(null);

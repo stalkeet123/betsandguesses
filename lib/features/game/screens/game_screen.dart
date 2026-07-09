@@ -423,6 +423,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final question = await gameService.getRandomQuestion(
       room.id,
       _usedQuestionIds,
+      category: room.category,
     );
     if (question == null) return;
     _usedQuestionIds.add(question.id);

@@ -31,8 +31,9 @@ class GameService {
   /// Get a random question not yet used in this room
   Future<Question?> getRandomQuestion(
     String roomId,
-    List<String> usedQuestionIds,
-  ) async {
+    List<String> usedQuestionIds, {
+    String? category,
+  }) async {
     await prefetchQuestions();
 
     if (_cachedQuestions == null || _cachedQuestions!.isEmpty) {
@@ -45,13 +46,44 @@ class GameService {
       if (_cachedQuestions!.isEmpty) return null;
     }
 
-    final available = _cachedQuestions!
+    final normalizedCategory = category?.trim();
+    final useCategory =
+        normalizedCategory != null &&
+        normalizedCategory.isNotEmpty &&
+        normalizedCategory != GameConstants.defaultCategory;
+
+    var available = _cachedQuestions!
         .where((q) => !usedQuestionIds.contains(q.id))
         .toList();
+
+    if (useCategory) {
+      final categoryQuestions = available
+          .where((q) => q.category?.trim() == normalizedCategory)
+          .toList();
+      if (categoryQuestions.isNotEmpty) {
+        available = categoryQuestions;
+      }
+    }
 
     if (available.isEmpty) return null;
     available.shuffle(Random());
     return available.first;
+  }
+
+  Future<List<String>> getQuestionCategories() async {
+    await prefetchQuestions();
+    if (_cachedQuestions == null || _cachedQuestions!.isEmpty) return [];
+
+    final categories =
+        _cachedQuestions!
+            .map((q) => q.category?.trim())
+            .whereType<String>()
+            .where((category) => category.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return categories;
   }
 
   Future<Question?> getQuestionById(String questionId) async {
