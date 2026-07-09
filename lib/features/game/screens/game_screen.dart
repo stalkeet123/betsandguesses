@@ -3285,19 +3285,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ),
     );
 
-    if (!isWinner) return row;
-
-    return row
-        .animate(onPlay: (controller) => controller.repeat(reverse: true))
-        .boxShadow(
-          begin: const BoxShadow(color: Colors.transparent, blurRadius: 0),
-          end: BoxShadow(
-            color: AppColors.neonGreen.withValues(alpha: 0.62),
-            blurRadius: 14,
-            spreadRadius: 1,
-          ),
-          duration: 430.ms,
-        );
+    return row;
   }
 
   Color _getChipColor(int value) {
@@ -4227,16 +4215,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final visual = AnimatedScale(
       duration: const Duration(milliseconds: 150),
       curve: Curves.easeOutCubic,
-      scale: isSelected ? 1.13 : 1,
+      scale: isSelected ? 1.15 : 1,
       child: DecoratedBox(
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           boxShadow: [
             if (isSelected)
               BoxShadow(
-                color: AppColors.brassLight.withValues(alpha: 0.78),
-                blurRadius: 18,
-                spreadRadius: 3,
+                color: AppColors.brassLight.withValues(alpha: 0.95),
+                blurRadius: 22,
+                spreadRadius: 4,
+              )
+            else
+              BoxShadow(
+                color: AppColors.brassLight.withValues(alpha: 0.45),
+                blurRadius: 12,
+                spreadRadius: 2,
               ),
           ],
         ),
