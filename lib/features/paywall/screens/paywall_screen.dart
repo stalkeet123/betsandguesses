@@ -329,7 +329,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.event_repeat_rounded, '24 hours access'),
               _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
               _PlanFeature(Icons.groups_rounded, 'Unlimited players'),
-              _PlanFeature(Icons.alarm_add_rounded, 'Custom rounds'),
+              _PlanFeature(Icons.category_rounded, 'Premium categories'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
             ],
             price: '₺59,99',
@@ -352,7 +352,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.workspace_premium_rounded, 'Lifetime access'),
               _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
               _PlanFeature(Icons.groups_rounded, 'Unlimited players'),
-              _PlanFeature(Icons.alarm_add_rounded, 'Custom rounds'),
+              _PlanFeature(Icons.category_rounded, 'Premium categories'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
             ],
             price: '₺199,99',
@@ -802,15 +802,13 @@ class _FeatureRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(feature.icon, color: AppColors.brassLight, size: 16),
         const SizedBox(width: 8),
-        Flexible(
+        Expanded(
           child: Text(
             feature.label,
-            maxLines: 2,
-            textAlign: TextAlign.center,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.ivory,
