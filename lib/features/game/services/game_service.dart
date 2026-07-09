@@ -168,9 +168,11 @@ class GameService {
   List<int> boardBoundaryValues(List<Guess> guesses) {
     final values = guesses.map((guess) => guess.value).toSet().toList()..sort();
 
-    if (values.isEmpty) return const [];
-    if (values.length >= GameConstants.maxGuessSlots) {
-      return _selectBalancedValues(values);
+    if (values.isEmpty) return const [25, 50, 75, 100];
+    if (values.length == GameConstants.maxGuessSlots) return values;
+
+    if (values.length > GameConstants.maxGuessSlots) {
+      return _selectSpacedSubset(values, GameConstants.maxGuessSlots);
     }
     if (values.length == 1) return _fallbackSpread(values);
 
@@ -191,29 +193,35 @@ class GameService {
     return boundaries;
   }
 
-  List<int> _selectBalancedValues(List<int> values) {
-    if (values.length == GameConstants.maxGuessSlots) return values;
+  List<int> _selectSpacedSubset(List<int> values, int count) {
+    if (values.length <= count) return values;
 
-    if (values.length == GameConstants.maxGuessSlots + 1) {
-      final lowGap = values[1] - values[0];
-      final highGap = values[values.length - 1] - values[values.length - 2];
-      if (highGap > lowGap) {
-        return values.take(GameConstants.maxGuessSlots).toList();
+    final minVal = values.first;
+    final maxVal = values.last;
+    final step = (maxVal - minVal) / (count - 1);
+
+    final result = <int>[minVal];
+    final candidates = values.sublist(1, values.length - 1);
+
+    for (int i = 1; i < count - 1; i++) {
+      if (candidates.isEmpty) break;
+      final target = minVal + step * i;
+      int bestCandidate = candidates.first;
+      double minDiff = (bestCandidate - target).abs();
+      for (final c in candidates) {
+        final diff = (c - target).abs();
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestCandidate = c;
+        }
       }
-      return values.skip(1).toList();
+      result.add(bestCandidate);
+      candidates.remove(bestCandidate);
     }
 
-    final last = values.length - 1;
-    final selectedIndices = const [0.2, 0.4, 0.6, 0.8]
-        .map((percentile) => (last * percentile).round().clamp(1, last - 1))
-        .toSet()
-        .toList();
-
-    selectedIndices.sort();
-    return selectedIndices
-        .take(GameConstants.maxGuessSlots)
-        .map((index) => values[index])
-        .toList();
+    result.add(maxVal);
+    result.sort();
+    return result;
   }
 
   int _widestBoundaryGapIndex(List<int> values) {
