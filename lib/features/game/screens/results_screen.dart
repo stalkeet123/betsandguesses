@@ -629,30 +629,16 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   Widget _buildActions() {
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildActionButton(
-                label: 'PLAY AGAIN',
-                icon: Icons.workspace_premium_rounded,
-                isGold: true,
-                onTap: () {
-                  _backToLobby();
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildActionButton(
-                label: 'BACK TO LOBBY',
-                icon: Icons.meeting_room_rounded,
-                isGold: false,
-                onTap: () {
-                  _backToLobby();
-                },
-              ),
-            ),
-          ],
+        SizedBox(
+          width: double.infinity,
+          child: _buildActionButton(
+            label: 'PLAY AGAIN',
+            icon: Icons.workspace_premium_rounded,
+            isGold: true,
+            onTap: () {
+              _backToLobby();
+            },
+          ),
         ),
         const SizedBox(height: 10),
         SizedBox(

@@ -19,7 +19,7 @@ class GameState {
   final String? winningGuessId;
   final int timerSeconds;
   final bool hasSubmittedGuess;
-  final bool hasPlacedBets;
+
 
   const GameState({
     required this.roomId,
@@ -36,7 +36,6 @@ class GameState {
     this.winningGuessId,
     this.timerSeconds = 0,
     this.hasSubmittedGuess = false,
-    this.hasPlacedBets = false,
   });
 
   bool get isLastRound => currentRound >= maxRounds;
@@ -57,7 +56,6 @@ class GameState {
     String? winningGuessId,
     int? timerSeconds,
     bool? hasSubmittedGuess,
-    bool? hasPlacedBets,
   }) {
     return GameState(
       roomId: roomId ?? this.roomId,
@@ -74,7 +72,6 @@ class GameState {
       winningGuessId: winningGuessId ?? this.winningGuessId,
       timerSeconds: timerSeconds ?? this.timerSeconds,
       hasSubmittedGuess: hasSubmittedGuess ?? this.hasSubmittedGuess,
-      hasPlacedBets: hasPlacedBets ?? this.hasPlacedBets,
     );
   }
 

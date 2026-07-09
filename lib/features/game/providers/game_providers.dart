@@ -112,9 +112,7 @@ class GameStateNotifier extends Notifier<GameState> {
     state = state.copyWith(hasSubmittedGuess: submitted);
   }
 
-  void setBetsPlaced(bool placed) {
-    state = state.copyWith(hasPlacedBets: placed);
-  }
+
 
   void setTimer(int seconds) {
     state = state.copyWith(timerSeconds: seconds);
