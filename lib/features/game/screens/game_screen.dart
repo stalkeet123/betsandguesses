@@ -44,6 +44,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   final List<Timer> _revealEffectTimers = [];
   int? _scanSlotIndex;
   bool _showWinnerBadge = false;
+  final Set<String> _incomingOtherBetIds = {};
+  final Set<String> _scheduledOtherBetEntryCleanupIds = {};
 
   @override
   void initState() {
@@ -128,6 +130,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             gameNotifier.setQuestion(Question.fromJson(questionData));
           }
           _roundWinners.clear();
+          _incomingOtherBetIds.clear();
+          _scheduledOtherBetEntryCleanupIds.clear();
           gameNotifier.resetForNewRound();
 
           if (phase == RoundPhase.guessing) {
@@ -167,6 +171,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           final currentPlayer = ref.read(currentPlayerProvider);
           final bet = Bet.fromJson(betData);
           if (bet.playerId != currentPlayer?.id) {
+            _incomingOtherBetIds.add(bet.id);
+            _scheduledOtherBetEntryCleanupIds.remove(bet.id);
             ref.read(gameStateProvider.notifier).addBet(bet);
           }
           setState(() {});
@@ -177,6 +183,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         final playerId = payload['player_id'] as String?;
         final slotIndex = payload['slot_index'] as int?;
         if (betId != null) {
+          _incomingOtherBetIds.remove(betId);
+          _scheduledOtherBetEntryCleanupIds.remove(betId);
           ref.read(gameStateProvider.notifier).removeBetById(betId);
           setState(() {});
           return;
@@ -1061,39 +1069,64 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final payout = _currentPlayerRoundPayout(gameState);
     final didWin = payout > 0;
     final answer = gameState.correctAnswer ?? gameState.currentQuestion?.answer;
-    final accent = didWin ? AppColors.chipGold : AppColors.burgundy;
-    final banner = didWin ? 'YOU WON +$payout' : 'NO WIN THIS ROUND';
+    final resultSettled = _showWinnerBadge;
+    final accent = didWin && resultSettled
+        ? AppColors.chipGold
+        : AppColors.brassLight;
+    final banner = resultSettled
+        ? (didWin ? 'YOU WON +$payout' : 'NO WIN THIS ROUND')
+        : 'LOCKING WINNING RANGE';
+    final headlineColor = didWin && resultSettled
+        ? AppColors.mahoganyDark
+        : Colors.white;
 
     return AnimatedContainer(
           duration: const Duration(milliseconds: 280),
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(18, 13, 18, 13),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: didWin
+              colors: didWin && resultSettled
                   ? const [
                       Color(0xFFFFF8D4),
                       Color(0xFFFFC833),
                       Color(0xFFFFF5B8),
                     ]
                   : const [
-                      Color(0xFF22070C),
-                      Color(0xFF5C101B),
-                      Color(0xFF140307),
+                      Color(0xFF13040A),
+                      Color(0xFF5B0F1A),
+                      Color(0xFF23060B),
                     ],
             ),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: didWin ? Colors.white : AppColors.brassLight,
-              width: didWin ? 2 : 1.5,
+              color: didWin && resultSettled
+                  ? Colors.white
+                  : AppColors.brassLight,
+              width: didWin && resultSettled ? 2 : 1.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: accent.withValues(alpha: didWin ? 0.44 : 0.28),
-                blurRadius: didWin ? 26 : 18,
-                spreadRadius: didWin ? 2 : 0,
+                color: accent.withValues(alpha: resultSettled ? 0.46 : 0.28),
+                blurRadius: resultSettled ? 28 : 18,
+                spreadRadius: resultSettled ? 2 : 0,
+              ),
+              if (!resultSettled)
+                BoxShadow(
+                  color: AppColors.burgundy.withValues(alpha: 0.38),
+                  blurRadius: 24,
+                  spreadRadius: -3,
+                  offset: const Offset(0, 8),
+                ),
+              BoxShadow(
+                color: Colors.white.withValues(
+                  alpha: didWin && resultSettled ? 0.34 : 0.08,
+                ),
+                blurRadius: 10,
+                spreadRadius: -4,
+                offset: const Offset(-3, -3),
               ),
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.34),
@@ -1108,7 +1141,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 'ANSWER',
                 maxLines: 1,
                 style: GoogleFonts.outfit(
-                  color: didWin
+                  color: didWin && resultSettled
                       ? AppColors.mahoganyDark.withValues(alpha: 0.72)
                       : AppColors.brassLight,
                   fontSize: 14,
@@ -1120,34 +1153,70 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               const SizedBox(height: 8),
               Expanded(
                 child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      answer == null ? '--' : _formatGuessValue(answer),
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontFamily: 'RehnCondensed',
-                        color: didWin ? AppColors.ink : Colors.white,
-                        fontSize: 72,
-                        fontWeight: FontWeight.w900,
-                        height: 0.86,
-                        letterSpacing: 0,
-                        shadows: [
-                          Shadow(
-                            color: didWin
-                                ? Colors.white.withValues(alpha: 0.9)
-                                : Colors.black,
-                            blurRadius: didWin ? 6 : 8,
-                            offset: const Offset(0, 2),
-                          ),
-                          if (didWin)
-                            const Shadow(
-                              color: Color(0xFFFFF1A0),
-                              blurRadius: 18,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                            width: 108,
+                            height: 108,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  accent.withValues(alpha: 0.34),
+                                  accent.withValues(alpha: 0.03),
+                                ],
+                              ),
                             ),
-                        ],
-                      ),
-                    ),
+                          )
+                          .animate(target: resultSettled ? 1 : 0)
+                          .scale(
+                            begin: const Offset(0.92, 0.92),
+                            end: const Offset(1.12, 1.12),
+                            duration: 420.ms,
+                            curve: Curves.easeOutCubic,
+                          ),
+                      FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              answer == null ? '--' : _formatGuessValue(answer),
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontFamily: 'RehnCondensed',
+                                color: headlineColor,
+                                fontSize: 76,
+                                fontWeight: FontWeight.w900,
+                                height: 0.86,
+                                letterSpacing: 0,
+                                shadows: [
+                                  Shadow(
+                                    color: didWin && resultSettled
+                                        ? Colors.white.withValues(alpha: 0.9)
+                                        : Colors.black,
+                                    blurRadius: didWin && resultSettled
+                                        ? 6
+                                        : 10,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                  if (didWin && resultSettled)
+                                    const Shadow(
+                                      color: Color(0xFFFFF1A0),
+                                      blurRadius: 20,
+                                    ),
+                                  if (!resultSettled)
+                                    Shadow(
+                                      color: AppColors.brassLight.withValues(
+                                        alpha: 0.42,
+                                      ),
+                                      blurRadius: 18,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          )
+                          .animate(target: resultSettled ? 1 : 0)
+                          .shake(duration: 420.ms, hz: 5),
+                    ],
                   ),
                 ),
               ),
@@ -1157,12 +1226,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 height: 34,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: didWin
+                  color: didWin && resultSettled
                       ? Colors.white.withValues(alpha: 0.58)
                       : Colors.black.withValues(alpha: 0.26),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: didWin
+                    color: didWin && resultSettled
                         ? AppColors.mahoganyDark.withValues(alpha: 0.26)
                         : AppColors.brassLight.withValues(alpha: 0.52),
                   ),
@@ -1173,11 +1242,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     banner,
                     maxLines: 1,
                     style: GoogleFonts.outfit(
-                      color: didWin ? AppColors.mahoganyDark : Colors.white,
-                      fontSize: 18,
+                      color: didWin && resultSettled
+                          ? AppColors.mahoganyDark
+                          : Colors.white,
+                      fontSize: resultSettled ? 18 : 14,
                       fontWeight: FontWeight.w900,
                       height: 1,
-                      letterSpacing: 0,
+                      letterSpacing: resultSettled ? 0 : 0.8,
                     ),
                   ),
                 ),
@@ -1185,7 +1256,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ],
           ),
         )
-        .animate(key: ValueKey('answer-${gameState.correctAnswer}'))
+        .animate(
+          key: ValueKey(
+            'answer-${gameState.correctAnswer}-${resultSettled ? 'settled' : 'scan'}',
+          ),
+        )
         .fadeIn(duration: 180.ms)
         .scale(begin: const Offset(0.97, 0.97), duration: 260.ms);
   }
@@ -3541,6 +3616,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             isReveal: isReveal,
             isWinningBet:
                 emphasizeWinners && myBets[i].slotIndex == winningSlotIndex,
+            resultSettled: emphasizeWinners,
           ),
       ],
     );
@@ -3605,23 +3681,79 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     return [
       for (var i = 0; i < visibleBets.length; i++)
-        Positioned(
+        _buildOtherBetMarker(
+          bet: visibleBets[i],
+          index: i,
+          chipSize: chipSize,
           left: spec.rect.left * boardSize.width + localLeft + i * step,
           top:
               spec.rect.top * boardSize.height +
               localTop +
               (i.isOdd ? chipSize * 0.10 : 0),
-          child: _buildPlacedChipVisual(
-            visibleBets[i],
-            chipSize,
-            isReveal: isReveal,
-            isWinningBet:
-                emphasizeWinners &&
-                visibleBets[i].slotIndex == winningSlotIndex,
-            isOtherPlayer: true,
-          ),
+          boardWidth: boardSize.width,
+          isReveal: isReveal,
+          isWinningBet:
+              emphasizeWinners && visibleBets[i].slotIndex == winningSlotIndex,
+          resultSettled: emphasizeWinners,
         ),
     ];
+  }
+
+  Widget _buildOtherBetMarker({
+    required Bet bet,
+    required int index,
+    required double chipSize,
+    required double left,
+    required double top,
+    required double boardWidth,
+    required bool isReveal,
+    required bool isWinningBet,
+    required bool resultSettled,
+  }) {
+    final shouldSlideIn = _incomingOtherBetIds.contains(bet.id) && !isReveal;
+    if (shouldSlideIn) _queueOtherBetEntryCleanup(bet.id);
+
+    final chip = _buildPlacedChipVisual(
+      bet,
+      chipSize,
+      isReveal: isReveal,
+      isWinningBet: isWinningBet,
+      resultSettled: resultSettled,
+    );
+    final entryTravel = boardWidth + chipSize + index * 6;
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey('other-bet-entry-${bet.id}'),
+        tween: Tween<double>(begin: shouldSlideIn ? 1 : 0, end: 0),
+        duration: shouldSlideIn
+            ? Duration(milliseconds: 520 + index * 35)
+            : Duration.zero,
+        curve: Curves.easeOutCubic,
+        child: chip,
+        builder: (context, progress, child) {
+          return Transform.translate(
+            offset: Offset(entryTravel * progress, 0),
+            child: Transform.scale(scale: 1 - (0.12 * progress), child: child),
+          );
+        },
+      ),
+    );
+  }
+
+  void _queueOtherBetEntryCleanup(String betId) {
+    if (!_scheduledOtherBetEntryCleanupIds.add(betId)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 760), () {
+        if (!mounted) return;
+        setState(() {
+          _incomingOtherBetIds.remove(betId);
+          _scheduledOtherBetEntryCleanupIds.remove(betId);
+        });
+      });
+    });
   }
 
   Widget _positionedBetChip(
@@ -3633,6 +3765,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     VoidCallback? onTap,
     required bool isReveal,
     required bool isWinningBet,
+    required bool resultSettled,
   }) {
     final fallbackX = 0.5 + ((index % 3) - 1) * 0.14;
     final fallbackY = 0.52 + ((index ~/ 3) % 2) * 0.16;
@@ -3658,7 +3791,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       chipSize,
       isReveal: isReveal,
       isWinningBet: isWinningBet,
-      isOtherPlayer: false,
+      resultSettled: resultSettled,
     );
 
     final child = GestureDetector(onTap: onTap, child: chip);
@@ -3693,7 +3826,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     double chipSize, {
     required bool isReveal,
     required bool isWinningBet,
-    required bool isOtherPlayer,
+    required bool resultSettled,
   }) {
     Widget chip = PokerChip(
       label: '${bet.chips}',
@@ -3702,10 +3835,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       isScoreChip: false,
     );
 
-    if (isReveal && !isWinningBet) {
-      chip = Opacity(opacity: isOtherPlayer ? 0.38 : 0.52, child: chip);
-    } else if (isOtherPlayer) {
-      chip = Opacity(opacity: 0.82, child: chip);
+    if (resultSettled && !isWinningBet) {
+      return _buildDissolvingChipVisual(chip, bet.id, chipSize);
     }
 
     if (!isWinningBet) return chip;
@@ -3729,6 +3860,78 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           duration: 420.ms,
           curve: Curves.easeInOut,
         );
+  }
+
+  Widget _buildDissolvingChipVisual(Widget chip, String betId, double size) {
+    const particleColor = Color(0xFFFFE8A3);
+    final particleOffsets = const [
+      Offset(-15, -14),
+      Offset(13, -18),
+      Offset(-18, 4),
+      Offset(17, 8),
+      Offset(-8, 18),
+      Offset(9, 15),
+    ];
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          chip
+              .animate(key: ValueKey('chip-dust-body-$betId'))
+              .fadeOut(delay: 260.ms, duration: 620.ms)
+              .scale(
+                end: const Offset(0.62, 0.62),
+                delay: 180.ms,
+                duration: 700.ms,
+                curve: Curves.easeInCubic,
+              )
+              .moveY(
+                end: -9,
+                delay: 180.ms,
+                duration: 700.ms,
+                curve: Curves.easeOutCubic,
+              ),
+          for (var i = 0; i < particleOffsets.length; i++)
+            Positioned(
+              left: size / 2 - 3,
+              top: size / 2 - 3,
+              child:
+                  Container(
+                        width: i.isEven ? 5 : 4,
+                        height: i.isEven ? 5 : 4,
+                        decoration: BoxDecoration(
+                          color: particleColor.withValues(alpha: 0.72),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: particleColor.withValues(alpha: 0.35),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                      )
+                      .animate(key: ValueKey('chip-dust-$betId-$i'))
+                      .fadeIn(delay: (210 + i * 28).ms, duration: 70.ms)
+                      .fadeOut(delay: (330 + i * 28).ms, duration: 440.ms)
+                      .move(
+                        end: particleOffsets[i],
+                        delay: (230 + i * 28).ms,
+                        duration: 560.ms,
+                        curve: Curves.easeOutCubic,
+                      )
+                      .scale(
+                        end: const Offset(0.2, 0.2),
+                        delay: (330 + i * 28).ms,
+                        duration: 460.ms,
+                      ),
+            ),
+        ],
+      ),
+    );
   }
 
   _BetSlotSpec? _betSlotSpecFor(int slotIndex) {
