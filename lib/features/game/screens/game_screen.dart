@@ -5,6 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
@@ -1100,6 +1102,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildPortraitLogo() {
+    if (kIsWeb) {
+      return const _WebPromoLogo();
+    }
     return const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain);
   }
 
@@ -4756,6 +4761,142 @@ class _InfoPill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _WebPromoLogo extends StatefulWidget {
+  const _WebPromoLogo();
+
+  @override
+  State<_WebPromoLogo> createState() => _WebPromoLogoState();
+}
+
+class _WebPromoLogoState extends State<_WebPromoLogo> {
+  bool _showPromo = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      if (mounted) {
+        setState(() => _showPromo = !_showPromo);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _launchStore() async {
+    // Placeholder URL for now
+    final uri = Uri.parse('https://example.com/download-app');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 600),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.9, end: 1.0).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: _showPromo
+          ? _buildPromoCard(key: const ValueKey('promo'))
+          : _buildLogo(key: const ValueKey('logo')),
+    );
+  }
+
+  Widget _buildLogo({required Key key}) {
+    return Container(
+      key: key,
+      alignment: Alignment.center,
+      child: const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
+    );
+  }
+
+  Widget _buildPromoCard({required Key key}) {
+    return Container(
+      key: key,
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E1E1E), Color(0xFF0A0A0A)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _launchStore,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.phone_android_rounded, color: AppColors.brassLight, size: 24),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'GET THE APP',
+                        style: GoogleFonts.outfit(
+                          color: AppColors.ivory,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          letterSpacing: 1.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Tap to download for a better party experience!',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    color: AppColors.ivory.withValues(alpha: 0.8),
+                    fontSize: 11,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

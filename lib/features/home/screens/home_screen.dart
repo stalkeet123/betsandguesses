@@ -109,7 +109,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final categoriesFuture = ref
         .read(gameServiceProvider)
         .getQuestionCategories();
-    var selectedRounds = GameConstants.defaultRounds;
+    var selectedRounds = isPremium
+        ? GameConstants.defaultRounds
+        : GameConstants.freeMaxRounds;
     var selectedMaxPlayers = GameConstants.freeMaxPlayers;
     var selectedCategory = GameConstants.defaultCategory;
 
@@ -118,10 +120,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       icon: Icons.tune_rounded,
       child: StatefulBuilder(
         builder: (context, setModalState) {
-          void goPremiumFromSheet() {
-            Navigator.of(context).pop();
-            _goPremium();
-          }
+          final usesPremiumSetup =
+              !isPremium &&
+              (selectedRounds > GameConstants.freeMaxRounds ||
+                  selectedMaxPlayers > GameConstants.freeMaxPlayers ||
+                  selectedCategory != GameConstants.defaultCategory);
 
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -132,6 +135,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 value: selectedRounds,
                 min: GameConstants.minRounds,
                 max: GameConstants.maxRounds,
+                premiumStart: GameConstants.freeMaxRounds + 1,
+                isPremiumLocked:
+                    !isPremium && selectedRounds > GameConstants.freeMaxRounds,
                 onChanged: (value) {
                   setModalState(() => selectedRounds = value);
                 },
@@ -142,23 +148,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 label: 'PLAYERS',
                 value: selectedMaxPlayers,
                 min: GameConstants.minPlayers,
-                max: isPremium
-                    ? GameConstants.maxPlayers
-                    : GameConstants.freeMaxPlayers,
+                max: GameConstants.maxPlayers,
+                valueText: selectedMaxPlayers == GameConstants.maxPlayers
+                    ? '${GameConstants.maxPlayers}+'
+                    : '$selectedMaxPlayers',
+                premiumStart: GameConstants.freeMaxPlayers + 1,
+                isPremiumLocked:
+                    !isPremium &&
+                    selectedMaxPlayers > GameConstants.freeMaxPlayers,
                 onChanged: (value) {
                   setModalState(() => selectedMaxPlayers = value);
                 },
-                trailing: isPremium
-                    ? null
-                    : TextButton.icon(
-                        onPressed: goPremiumFromSheet,
-                        icon: const Icon(Icons.lock_rounded, size: 16),
-                        label: const Text('5-10'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.brassLight,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
               ),
               const SizedBox(height: 10),
               FutureBuilder<List<String>>(
@@ -173,11 +173,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     selectedCategory: selectedCategory,
                     isPremium: isPremium,
                     onSelected: (category) {
-                      if (!isPremium &&
-                          category != GameConstants.defaultCategory) {
-                        goPremiumFromSheet();
-                        return;
-                      }
                       setModalState(() => selectedCategory = category);
                     },
                   );
@@ -186,18 +181,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               const SizedBox(height: 14),
               SizedBox(
                 width: double.infinity,
-                height: 56,
+                height: 58,
                 child: ElevatedButton.icon(
                   onPressed: () {
                     Navigator.of(context).pop();
+                    if (usesPremiumSetup) {
+                      _goPremium();
+                      return;
+                    }
                     _createRoom(
                       maxRounds: selectedRounds,
                       maxPlayers: selectedMaxPlayers,
                       category: selectedCategory,
                     );
                   },
-                  icon: const Icon(Icons.groups_rounded, size: 25),
-                  label: const Text('CREATE LOBBY'),
+                  icon: Icon(
+                    usesPremiumSetup
+                        ? Icons.workspace_premium_rounded
+                        : Icons.groups_rounded,
+                    size: 25,
+                  ),
+                  label: Text(
+                    usesPremiumSetup ? 'UPGRADE TO CREATE' : 'CREATE LOBBY',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: usesPremiumSetup
+                        ? AppColors.brassLight
+                        : AppColors.brass,
+                    foregroundColor: AppColors.ink,
+                    elevation: 10,
+                    shadowColor: AppColors.brass.withValues(alpha: 0.38),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -408,24 +425,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           return Column(
             children: [
               Container(
-                height: 72,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                height: 76,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF06351F).withValues(alpha: 0.9),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF1E1E1E),
+                      Color(0xFF121212),
+                      Color(0xFF080808),
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color: AppColors.brassLight.withValues(alpha: 0.5),
+                    color: AppColors.brassLight.withValues(alpha: 0.34),
                     width: 1.2,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.24),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      isMuted
-                          ? Icons.volume_off_rounded
-                          : Icons.volume_up_rounded,
-                      color: AppColors.brassLight,
-                      size: 30,
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: AppColors.brassLight.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.brassLight.withValues(alpha: 0.38),
+                        ),
+                      ),
+                      child: Icon(
+                        isMuted
+                            ? Icons.volume_off_rounded
+                            : Icons.volume_up_rounded,
+                        color: AppColors.brassLight,
+                        size: 27,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -438,6 +481,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ),
                       ),
                     ),
+                    Text(
+                      isMuted ? 'OFF' : 'ON',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Switch.adaptive(
                       value: !isMuted,
                       activeThumbColor: AppColors.brassLight,
@@ -473,59 +525,79 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       builder: (context) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFFF7D5),
-                    Color(0xFFF2D691),
-                    Color(0xFFFFF4C3),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: AppColors.ivory, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    blurRadius: 28,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
+            padding: EdgeInsets.fromLTRB(
+              18,
+              0,
+              18,
+              18 + MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.94,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      _roundIcon(icon, size: 52, iconSize: 29),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: _homeTextStyle(
-                            color: AppColors.feltDark,
-                            size: 34,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close_rounded),
-                        color: AppColors.feltDark,
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.38),
-                        ),
-                      ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF1A1A1A),
+                      Color(0xFF0F0F0F),
+                      Color(0xFF050505),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  child,
-                ],
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: AppColors.brassLight.withValues(alpha: 0.46),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      blurRadius: 28,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        _roundIcon(icon, size: 52, iconSize: 29),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: _homeTextStyle(
+                              color: AppColors.ivory,
+                              size: 34,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                          color: AppColors.ivory,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.1,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: child,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -541,14 +613,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required int min,
     required int max,
     required ValueChanged<int> onChanged,
+    int? premiumStart,
+    bool isPremiumLocked = false,
+    String? valueText,
     Widget? trailing,
   }) {
+    final premiumRange = premiumStart != null && premiumStart <= max
+        ? premiumStart
+        : null;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF06351F).withValues(alpha: 0.92),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isPremiumLocked
+              ? const [Color(0xFF2A1F0D), Color(0xFF140F06)]
+              : const [Color(0xFF181818), Color(0xFF0A0A0A)],
+        ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.44)),
+        border: Border.all(
+          color: (isPremiumLocked ? AppColors.brassLight : AppColors.feltLight)
+              .withValues(alpha: 0.48),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 14,
+            offset: const Offset(0, 7),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -566,12 +661,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
               const Spacer(),
               if (trailing != null) trailing,
+              if (premiumRange != null) ...[
+                _premiumBadge('$premiumRange+'),
+                const SizedBox(width: 8),
+              ],
+              if (isPremiumLocked) ...[
+                const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: AppColors.brassLight,
+                  size: 18,
+                ),
+                const SizedBox(width: 7),
+              ],
               Container(
-                width: 42,
+                width: valueText != null && valueText.length > 2 ? 52 : 42,
                 height: 34,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  gradient: AppColors.goldGradient,
+                  gradient: isPremiumLocked
+                      ? AppColors.goldGradient
+                      : const LinearGradient(
+                          colors: [Color(0xFFF7E6C2), Color(0xFFD7A84A)],
+                        ),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
@@ -582,7 +693,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
                 child: Text(
-                  '$value',
+                  valueText ?? '$value',
                   style: _homeTextStyle(
                     color: AppColors.ink,
                     size: 22,
@@ -595,17 +706,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
               activeTrackColor: AppColors.brassLight,
-              inactiveTrackColor: AppColors.ivory.withValues(alpha: 0.22),
+              inactiveTrackColor: AppColors.ivory.withValues(alpha: 0.18),
               thumbColor: AppColors.brassLight,
               overlayColor: AppColors.brassLight.withValues(alpha: 0.18),
-              trackHeight: 5,
+              trackHeight: 6,
+              tickMarkShape: SliderTickMarkShape.noTickMark,
             ),
-            child: Slider(
-              min: min.toDouble(),
-              max: max.toDouble(),
-              divisions: max - min,
-              value: value.clamp(min, max).toDouble(),
-              onChanged: (next) => onChanged(next.round()),
+            child: Stack(
+              children: [
+                Slider(
+                  min: min.toDouble(),
+                  max: max.toDouble(),
+                  divisions: max - min,
+                  value: value.clamp(min, max).toDouble(),
+                  onChanged: (next) => onChanged(next.round()),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _premiumBadge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.brassLight.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.32)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.workspace_premium_rounded,
+            color: AppColors.brassLight,
+            size: 12,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.brassLight,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              height: 1,
             ),
           ),
         ],
@@ -619,13 +766,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required bool isPremium,
     required ValueChanged<String> onSelected,
   }) {
+    final lockedSelection =
+        !isPremium && selectedCategory != GameConstants.defaultCategory;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: const Color(0xFF06351F).withValues(alpha: 0.92),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: lockedSelection
+              ? const [Color(0xFF2A1F0D), Color(0xFF140F06)]
+              : const [Color(0xFF181818), Color(0xFF0A0A0A)],
+        ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.44)),
+        border: Border.all(
+          color: (lockedSelection ? AppColors.brassLight : AppColors.feltLight)
+              .withValues(alpha: 0.48),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 14,
+            offset: const Offset(0, 7),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -647,45 +813,114 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ),
               const Spacer(),
-              if (!isPremium)
-                const Icon(
-                  Icons.workspace_premium_rounded,
-                  color: AppColors.brassLight,
-                  size: 20,
-                ),
+              if (lockedSelection) _premiumBadge('PREMIUM'),
             ],
           ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.ivory.withValues(alpha: 0.12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  lockedSelection
+                      ? Icons.lock_rounded
+                      : Icons.check_circle_rounded,
+                  color: lockedSelection
+                      ? AppColors.brassLight
+                      : AppColors.neonGreen,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    selectedCategory,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.ivory,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                if (lockedSelection)
+                  const Text(
+                    'PREMIUM',
+                    style: TextStyle(
+                      color: AppColors.brassLight,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                    ),
+                  ),
+              ],
+            ),
+          ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: categories.map((category) {
-              final selected = selectedCategory == category;
-              final locked =
-                  !isPremium && category != GameConstants.defaultCategory;
-              return ChoiceChip(
-                selected: selected,
-                onSelected: (_) => onSelected(category),
-                avatar: locked
-                    ? const Icon(Icons.lock_rounded, size: 15)
-                    : null,
-                label: Text(category),
-                labelStyle: TextStyle(
-                  color: selected ? AppColors.ink : AppColors.ivory,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                ),
-                selectedColor: AppColors.brassLight,
-                backgroundColor: AppColors.feltDark.withValues(alpha: 0.84),
-                disabledColor: AppColors.surfaceLight,
-                side: BorderSide(
-                  color: selected
-                      ? AppColors.ivory
-                      : AppColors.brassLight.withValues(alpha: 0.34),
-                ),
-                visualDensity: VisualDensity.compact,
-              );
-            }).toList(),
+          SizedBox(
+            height: 48,
+            child: ListView.separated(
+              physics: const BouncingScrollPhysics(),
+              scrollDirection: Axis.horizontal,
+              itemCount: categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final category = categories[index];
+                final selected = selectedCategory == category;
+                final locked =
+                    !isPremium && category != GameConstants.defaultCategory;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: () => onSelected(category),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppColors.brassLight
+                          : Colors.black.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.ivory
+                            : AppColors.brassLight.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (locked) ...[
+                          Icon(
+                            Icons.lock_rounded,
+                            size: 14,
+                            color: selected
+                                ? AppColors.ink
+                                : AppColors.brassLight,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          category,
+                          style: TextStyle(
+                            color: selected ? AppColors.ink : AppColors.ivory,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -942,7 +1177,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               Text(
                 _showQrJoinGuide ? 'ENTER YOUR NAME' : 'YOUR NAME',
                 style: _homeTextStyle(
-                  color: AppColors.feltDark,
+                  color: AppColors.ivory,
                   size: 27,
                   letterSpacing: 0.8,
                 ),
@@ -971,20 +1206,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF948D7D),
-                      Color(0xFF5D584C),
-                      Color(0xFF7E7462),
+                      Color(0xFF0B3D2A),
+                      Color(0xFF042416),
+                      Color(0xFF1C120C),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(20),
-                  border: _showQrJoinGuide
-                      ? Border.all(
-                          color: AppColors.brassLight.withValues(
-                            alpha: glowAlpha,
-                          ),
-                          width: 2.4,
-                        )
-                      : null,
+                  border: Border.all(
+                    color: _showQrJoinGuide
+                        ? AppColors.brassLight.withValues(alpha: glowAlpha)
+                        : AppColors.brassLight.withValues(alpha: 0.32),
+                    width: _showQrJoinGuide ? 2.4 : 1.2,
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.28),
@@ -1388,12 +1621,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFF06351F).withValues(alpha: 0.64),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF0B442E),
+                  Color(0xFF052A19),
+                  Color(0xFF1B100A),
+                ],
+              ),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: AppColors.brassLight.withValues(alpha: 0.7),
+                color: AppColors.brassLight.withValues(alpha: 0.48),
                 width: 1.6,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1424,9 +1672,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: const Color(0xFF06351F).withValues(alpha: 0.9),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF083D28), Color(0xFF052416)],
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.42)),
+        border: Border.all(color: AppColors.feltLight.withValues(alpha: 0.46)),
       ),
       child: Row(
         children: [
@@ -1529,15 +1781,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [Color(0xFFFFF7D5), Color(0xFFF3E2B8), Color(0xFFFFFBE7)],
+        colors: [Color(0xFF0E4C34), Color(0xFF062C1B), Color(0xFF1A0E09)],
       ),
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: AppColors.ivory, width: 1.8),
+      border: Border.all(
+        color: AppColors.brassLight.withValues(alpha: 0.44),
+        width: 1.5,
+      ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.25),
-          blurRadius: 18,
-          offset: const Offset(0, 9),
+          color: Colors.black.withValues(alpha: 0.35),
+          blurRadius: 22,
+          offset: const Offset(0, 12),
         ),
       ],
     );

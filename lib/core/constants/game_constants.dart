@@ -8,6 +8,7 @@ class GameConstants {
 
   static const int defaultRounds = 8;
   static const int minRounds = 5;
+  static const int freeMaxRounds = 6;
   static const int maxRounds = 12;
   static const String defaultCategory = 'Mixed';
 
