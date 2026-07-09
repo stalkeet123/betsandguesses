@@ -250,6 +250,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     try {
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
+      final deviceId = ref.read(deviceIdProvider);
       final room = await roomService.createRoom(
         'temp',
         maxRounds: maxRounds,
@@ -259,11 +260,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
       final player = await playerService.joinRoom(
         roomId: room.id,
+        deviceId: deviceId,
         name: name,
         avatarColor: _pickAvatarColor(),
         isHost: true,
       );
-      _rememberPlayerForRoom(room.id, player.id);
 
       await roomService.updateRoom(room.id, {'host_id': player.id});
       ref.read(currentPlayerProvider.notifier).set(player);
@@ -309,6 +310,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     try {
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
+      final deviceId = ref.read(deviceIdProvider);
       final room = await roomService.findRoomByCode(code);
       if (room == null) {
         _showSnack('Room not found.');
@@ -321,12 +323,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
 
       final existingPlayers = await playerService.getPlayers(room.id);
-      final previousPlayerId = _rememberedPlayerForRoom(room.id);
       final activePlayers = existingPlayers
           .where((player) => player.isConnected)
           .toList();
       final isReturningPlayer = activePlayers.any(
-        (player) => player.id == previousPlayerId,
+        (player) => player.deviceId == deviceId,
       );
 
       if (!isReturningPlayer && activePlayers.length >= room.maxPlayers) {
@@ -337,7 +338,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final normalizedName = name.toLowerCase();
       final nameTaken = activePlayers.any(
         (player) =>
-            player.id != previousPlayerId &&
+            player.deviceId != deviceId &&
             player.name.trim().toLowerCase() == normalizedName,
       );
       if (nameTaken) {
@@ -350,11 +351,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
       final player = await playerService.joinRoom(
         roomId: room.id,
+        deviceId: deviceId,
         name: name,
         avatarColor: availableColor,
-        previousPlayerId: previousPlayerId,
       );
-      _rememberPlayerForRoom(room.id, player.id);
 
       ref.read(currentPlayerProvider.notifier).set(player);
       ref.read(currentRoomProvider.notifier).set(room);
@@ -368,18 +368,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
-  String? _rememberedPlayerForRoom(String roomId) {
-    final prefs = ref.read(sharedPrefsProvider);
-    return prefs.getString(_playerMemoryKey(roomId));
-  }
-
-  void _rememberPlayerForRoom(String roomId, String playerId) {
-    final prefs = ref.read(sharedPrefsProvider);
-    prefs.setString(_playerMemoryKey(roomId), playerId);
-  }
-
-  String _playerMemoryKey(String roomId) => 'lobby_player_id_$roomId';
 
   void _showSnack(String message) {
     if (!mounted) return;
@@ -533,7 +521,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.94,
+                maxHeight: MediaQuery.sizeOf(context).height * 0.97,
               ),
               child: Container(
                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
@@ -542,9 +530,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF1A1A1A),
-                      Color(0xFF0F0F0F),
-                      Color(0xFF050505),
+                      Color(0xFF0E4C34),
+                      Color(0xFF062C1B),
+                      Color(0xFF1A0E09),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(28),
@@ -629,8 +617,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: isPremiumLocked
-              ? const [Color(0xFF2A1F0D), Color(0xFF140F06)]
-              : const [Color(0xFF181818), Color(0xFF0A0A0A)],
+              ? const [Color(0xFF5B3917), Color(0xFF2B170C)]
+              : const [Color(0xFF083D28), Color(0xFF052416)],
         ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
@@ -777,8 +765,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: lockedSelection
-              ? const [Color(0xFF2A1F0D), Color(0xFF140F06)]
-              : const [Color(0xFF181818), Color(0xFF0A0A0A)],
+              ? const [Color(0xFF5B3917), Color(0xFF28150B)]
+              : const [Color(0xFF083D28), Color(0xFF052416)],
         ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
@@ -864,63 +852,94 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            height: 48,
-            child: ListView.separated(
-              physics: const BouncingScrollPhysics(),
-              scrollDirection: Axis.horizontal,
-              itemCount: categories.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final category = categories[index];
-                final selected = selectedCategory == category;
-                final locked =
-                    !isPremium && category != GameConstants.defaultCategory;
-                return InkWell(
-                  borderRadius: BorderRadius.circular(24),
-                  onTap: () => onSelected(category),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.brassLight
-                          : Colors.black.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: selected
-                            ? AppColors.ivory
-                            : AppColors.brassLight.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (locked) ...[
-                          Icon(
-                            Icons.lock_rounded,
-                            size: 14,
-                            color: selected
-                                ? AppColors.ink
-                                : AppColors.brassLight,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Text(
-                          category,
-                          style: TextStyle(
-                            color: selected ? AppColors.ink : AppColors.ivory,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = 8.0;
+              final itemWidth = (constraints.maxWidth - gap) / 2;
+              return ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 178),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: categories.map((category) {
+                      final selected = selectedCategory == category;
+                      final locked =
+                          !isPremium &&
+                          category != GameConstants.defaultCategory;
+                      return SizedBox(
+                        width: itemWidth,
+                        height: 46,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => onSelected(category),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? AppColors.brassLight
+                                  : Colors.black.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: selected
+                                    ? AppColors.ivory
+                                    : AppColors.brassLight.withValues(
+                                        alpha: 0.22,
+                                      ),
+                              ),
+                              boxShadow: selected
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.brassLight.withValues(
+                                          alpha: 0.22,
+                                        ),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 5),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (locked) ...[
+                                  Icon(
+                                    Icons.lock_rounded,
+                                    size: 14,
+                                    color: selected
+                                        ? AppColors.ink
+                                        : AppColors.brassLight,
+                                  ),
+                                  const SizedBox(width: 5),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    category,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: selected
+                                          ? AppColors.ink
+                                          : AppColors.ivory,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      );
+                    }).toList(),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ],
       ),

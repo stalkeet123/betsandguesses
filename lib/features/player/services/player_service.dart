@@ -1,74 +1,54 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/player_model.dart';
 
-/// Service for player CRUD + realtime
+/// Service for player CRUD + realtime.
 class PlayerService {
   final SupabaseClient _client;
 
   PlayerService(this._client);
 
-  /// Add a player to a room, or revive the same local player if they rejoin.
+  /// Join is an atomic upsert on (room_id, device_id). This prevents duplicate
+  /// player rows for the same device even if leave/delete fails or retries race.
   Future<Player> joinRoom({
     required String roomId,
+    required String deviceId,
     required String name,
     required String avatarColor,
     bool isHost = false,
-    String? previousPlayerId,
   }) async {
-    final previousPlayer = await _findReusablePlayer(
-      roomId: roomId,
-      playerId: previousPlayerId,
-      name: name,
+    final existingPlayers = await getPlayers(roomId);
+    final normalizedName = _normalizeName(name);
+    final sameNameDifferentDevice = existingPlayers.any(
+      (player) =>
+          player.isConnected &&
+          player.deviceId != deviceId &&
+          _normalizeName(player.name) == normalizedName,
     );
-
-    if (previousPlayer != null) {
-      final response = await _client
-          .from('players')
-          .update({
-            'name': name,
-            'avatar_color': previousPlayer.avatarColor,
-            'is_connected': true,
-          })
-          .eq('id', previousPlayer.id)
-          .select()
-          .single();
-      return Player.fromJson(response);
+    if (sameNameDifferentDevice) {
+      throw StateError('That name is already taken in this lobby.');
     }
+
+    final existingForDevice = _findPlayerForDevice(existingPlayers, deviceId);
+    final now = DateTime.now().toIso8601String();
 
     final response = await _client
         .from('players')
-        .insert({
+        .upsert({
           'room_id': roomId,
+          'device_id': deviceId,
           'name': name,
-          'avatar_color': avatarColor,
-          'is_host': isHost,
-          'is_ready': isHost, // Host is always ready
+          'avatar_color': existingForDevice?.avatarColor ?? avatarColor,
+          'is_host': existingForDevice?.isHost == true || isHost,
+          'is_ready': existingForDevice?.isHost == true || isHost,
           'is_connected': true,
-        })
+          'last_seen': now,
+        }, onConflict: 'room_id,device_id')
         .select()
         .single();
+
     return Player.fromJson(response);
   }
 
-  Future<Player?> _findReusablePlayer({
-    required String roomId,
-    required String? playerId,
-    required String name,
-  }) async {
-    if (playerId == null || playerId.trim().isEmpty) return null;
-
-    final response = await _client
-        .from('players')
-        .select()
-        .eq('id', playerId)
-        .eq('room_id', roomId)
-        .maybeSingle();
-
-    if (response != null) return Player.fromJson(response);
-    return null;
-  }
-
-  /// Get all players in a room
   Future<List<Player>> getPlayers(String roomId) async {
     final response = await _client
         .from('players')
@@ -78,7 +58,6 @@ class PlayerService {
     return (response as List).map((e) => Player.fromJson(e)).toList();
   }
 
-  /// Stream players in a room (Supabase Realtime Postgres Changes)
   Stream<List<Map<String, dynamic>>> streamPlayers(String roomId) {
     return _client
         .from('players')
@@ -86,7 +65,39 @@ class PlayerService {
         .eq('room_id', roomId);
   }
 
-  /// Toggle ready state
+  List<Player> collapseDuplicateConnectedPlayers(List<Player> players) {
+    final output = <Player>[];
+    final seen = <String, Player>{};
+
+    for (final player in players) {
+      if (!player.isConnected) {
+        output.add(player);
+        continue;
+      }
+
+      final key = player.deviceId;
+      final current = seen[key];
+      if (current == null) {
+        seen[key] = player;
+        output.add(player);
+        continue;
+      }
+
+      final shouldReplace =
+          (!current.isHost && player.isHost) ||
+          (current.isHost == player.isHost &&
+              player.joinedAt.isAfter(current.joinedAt));
+      if (!shouldReplace) continue;
+
+      final index = output.indexWhere((item) => item.id == current.id);
+      if (index != -1) output[index] = player;
+      seen[key] = player;
+    }
+
+    output.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
+    return output;
+  }
+
   Future<void> toggleReady(String playerId, bool isReady) async {
     await _client
         .from('players')
@@ -94,12 +105,10 @@ class PlayerService {
         .eq('id', playerId);
   }
 
-  /// Update score
   Future<void> updateScore(String playerId, int score) async {
     await _client.from('players').update({'score': score}).eq('id', playerId);
   }
 
-  /// Update multiple player scores at once
   Future<void> updateScores(Map<String, int> playerScores) async {
     for (final entry in playerScores.entries) {
       await _client
@@ -109,20 +118,26 @@ class PlayerService {
     }
   }
 
-  /// Remove player from room
   Future<void> leaveRoom(String playerId) async {
-    try {
-      await _client.from('players').delete().eq('id', playerId);
-    } catch (_) {
-      // Ignore if already deleted or RLS prevents it
-    }
+    await setConnected(playerId, false);
   }
 
-  /// Set connection status
   Future<void> setConnected(String playerId, bool connected) async {
     await _client
         .from('players')
-        .update({'is_connected': connected})
+        .update({
+          'is_connected': connected,
+          'last_seen': DateTime.now().toIso8601String(),
+        })
         .eq('id', playerId);
+  }
+
+  String _normalizeName(String name) => name.trim().toLowerCase();
+
+  Player? _findPlayerForDevice(List<Player> players, String deviceId) {
+    for (final player in players) {
+      if (player.deviceId == deviceId) return player;
+    }
+    return null;
   }
 }

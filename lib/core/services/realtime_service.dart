@@ -22,6 +22,8 @@ class RealtimeService {
     required void Function(Map<String, dynamic> payload) onGameEnded,
     void Function(Map<String, dynamic> payload)? onPlayerJoined,
     void Function(Map<String, dynamic> payload)? onPlayerLeft,
+    Map<String, dynamic>? presencePayload,
+    void Function(Set<String> deviceIds)? onPresenceChanged,
   }) {
     final channelName = 'room:$roomCode';
 
@@ -32,7 +34,21 @@ class RealtimeService {
 
     final channel = _client.channel(channelName);
 
+    Set<String> currentPresenceDeviceIds() {
+      final ids = <String>{};
+      for (final state in channel.presenceState()) {
+        for (final presence in state.presences) {
+          final deviceId = presence.payload['device_id'] as String?;
+          if (deviceId != null && deviceId.isNotEmpty) ids.add(deviceId);
+        }
+      }
+      return ids;
+    }
+
     channel
+        .onPresenceSync((_) {
+          onPresenceChanged?.call(currentPresenceDeviceIds());
+        })
         .onBroadcast(
           event: 'phase_change',
           callback: (payload) {
@@ -99,7 +115,13 @@ class RealtimeService {
             onPlayerLeft?.call(payload);
           },
         )
-        .subscribe();
+        .subscribe((status, error) async {
+          if (status == RealtimeSubscribeStatus.subscribed &&
+              presencePayload != null) {
+            await channel.track(presencePayload);
+            onPresenceChanged?.call(currentPresenceDeviceIds());
+          }
+        });
 
     _channels[channelName] = channel;
     return channel;

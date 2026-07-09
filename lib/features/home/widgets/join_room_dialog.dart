@@ -59,6 +59,7 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
     try {
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
+      final deviceId = ref.read(deviceIdProvider);
       final room = await roomService.findRoomByCode(code);
       if (room == null) {
         setState(() => _error = 'Room not found.');
@@ -71,12 +72,11 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
       }
 
       final existingPlayers = await playerService.getPlayers(room.id);
-      final previousPlayerId = _rememberedPlayerForRoom(room.id);
       final activePlayers = existingPlayers
           .where((player) => player.isConnected)
           .toList();
       final isReturningPlayer = activePlayers.any(
-        (player) => player.id == previousPlayerId,
+        (player) => player.deviceId == deviceId,
       );
 
       if (!isReturningPlayer && activePlayers.length >= room.maxPlayers) {
@@ -87,7 +87,7 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
       final normalizedName = widget.playerName.trim().toLowerCase();
       final nameTaken = activePlayers.any(
         (player) =>
-            player.id != previousPlayerId &&
+            player.deviceId != deviceId &&
             player.name.trim().toLowerCase() == normalizedName,
       );
       if (nameTaken) {
@@ -100,11 +100,10 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
 
       final player = await playerService.joinRoom(
         roomId: room.id,
+        deviceId: deviceId,
         name: widget.playerName,
         avatarColor: availableColor,
-        previousPlayerId: previousPlayerId,
       );
-      _rememberPlayerForRoom(room.id, player.id);
 
       ref.read(currentPlayerProvider.notifier).set(player);
       ref.read(currentRoomProvider.notifier).set(room);
@@ -119,18 +118,6 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
-  String? _rememberedPlayerForRoom(String roomId) {
-    final prefs = ref.read(sharedPrefsProvider);
-    return prefs.getString(_playerMemoryKey(roomId));
-  }
-
-  void _rememberPlayerForRoom(String roomId, String playerId) {
-    final prefs = ref.read(sharedPrefsProvider);
-    prefs.setString(_playerMemoryKey(roomId), playerId);
-  }
-
-  String _playerMemoryKey(String roomId) => 'lobby_player_id_$roomId';
 
   String _pickAvatarColor(Set<String> usedColors) {
     final availableColors = GameConstants.avatarColors

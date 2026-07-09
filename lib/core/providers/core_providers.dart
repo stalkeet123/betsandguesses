@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../services/realtime_service.dart';
 import '../services/audio_service.dart';
 import '../services/revenuecat_service.dart';
@@ -53,6 +54,18 @@ final premiumStatusProvider = FutureProvider<bool>((ref) async {
 // ── SharedPreferences ──
 final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError('Must be overridden in main');
+});
+
+// Stable per-install ID used for room membership identity.
+final deviceIdProvider = Provider<String>((ref) {
+  const key = 'device_id';
+  final prefs = ref.watch(sharedPrefsProvider);
+  final existing = prefs.getString(key);
+  if (existing != null && existing.isNotEmpty) return existing;
+
+  final id = const Uuid().v4();
+  prefs.setString(key, id);
+  return id;
 });
 
 // ── Player Name (persisted) ──

@@ -23,11 +23,18 @@ class LobbyScreen extends ConsumerStatefulWidget {
 
 class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   List<Player> _players = [];
+  Set<String> _presentDeviceIds = {};
+  bool _hasPresenceSync = false;
   bool _isStarting = false;
   bool _isReadyLoading = false;
 
-  List<Player> get _activePlayers =>
-      _players.where((player) => player.isConnected).toList();
+  List<Player> get _activePlayers {
+    final connected = _players.where((player) => player.isConnected);
+    if (!_hasPresenceSync) return connected.toList();
+    return connected
+        .where((player) => _presentDeviceIds.contains(player.deviceId))
+        .toList();
+  }
 
   @override
   void initState() {
@@ -41,6 +48,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   void _setupRealtimeListener() {
     final room = ref.read(currentRoomProvider);
+    final currentPlayer = ref.read(currentPlayerProvider);
     if (room == null) return;
 
     final realtimeService = ref.read(realtimeServiceProvider);
@@ -88,6 +96,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         // The leaving player handles their own DB cleanup.
         // The host's player list refreshes via playersStreamProvider.
       },
+      presencePayload: currentPlayer == null
+          ? null
+          : {
+              'device_id': currentPlayer.deviceId,
+              'player_id': currentPlayer.id,
+              'name': currentPlayer.name,
+            },
+      onPresenceChanged: (deviceIds) {
+        if (!mounted) return;
+        setState(() {
+          _hasPresenceSync = true;
+          _presentDeviceIds = deviceIds;
+        });
+      },
     );
   }
 
@@ -97,7 +119,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
     final playerService = ref.read(playerServiceProvider);
     final players = await playerService.getPlayers(room.id);
-    if (mounted) setState(() => _players = players);
+    if (mounted) {
+      setState(() {
+        _players = playerService.collapseDuplicateConnectedPlayers(players);
+      });
+    }
   }
 
   Future<void> _toggleReady() async {
@@ -214,8 +240,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       ref.listen(playersStreamProvider(room.id), (prev, next) {
         next.whenData((data) {
           if (mounted) {
+            final playerService = ref.read(playerServiceProvider);
             setState(() {
-              _players = data.map((e) => Player.fromJson(e)).toList();
+              _players = playerService.collapseDuplicateConnectedPlayers(
+                data.map((e) => Player.fromJson(e)).toList(),
+              );
             });
           }
         });
