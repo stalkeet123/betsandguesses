@@ -608,6 +608,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
     for (final entry in payouts.entries) {
       newScores[entry.key] = (newScores[entry.key] ?? 0) + entry.value;
     }
+
+    // Give 15 coins to bankrupt players so they aren't stuck
+    for (final entry in newScores.entries) {
+      if (entry.value <= 0) {
+        newScores[entry.key] = 15;
+      }
+    }
     gameNotifier.setCorrectAnswer(correctAnswer, winningGuess?.id);
     gameNotifier.updatePhase(RoundPhase.revealAnswer);
     gameNotifier.setScores(newScores);
@@ -755,6 +762,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     return payout;
+  }
+
+  int _currentPlayerTotalBets(GameState gameState) {
+    final currentPlayer = ref.read(currentPlayerProvider);
+    if (currentPlayer == null) return 0;
+    return gameState.bets
+        .where((b) => b.playerId == currentPlayer.id)
+        .fold(0, (sum, bet) => sum + bet.chips);
   }
 
   Future<void> _nextRound() async {
@@ -1129,8 +1144,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
       isScoreChip: isScoreChip,
     );
 
+    Widget content = chip;
     if (!isAvailable) {
-      return Opacity(opacity: 0.2, child: chip);
+      content = Opacity(opacity: 0.2, child: chip);
     }
 
     return GestureDetector(
@@ -1140,6 +1156,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           await _removeSelectedBet();
           return;
         }
+        if (!isAvailable) return;
         setState(() {
           _selectedChipValue = value;
           _selectedBetId = null;
@@ -1160,7 +1177,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
             ],
           ),
-          child: chip,
+          child: content,
         ),
       ),
     );
@@ -1290,14 +1307,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildAnswerRevealCard(GameState gameState) {
     final payout = _currentPlayerRoundPayout(gameState);
-    final didWin = payout > 0;
+    final totalBets = _currentPlayerTotalBets(gameState);
+    final netProfit = payout - totalBets;
+    final didWin = netProfit > 0;
     final answer = gameState.correctAnswer ?? gameState.currentQuestion?.answer;
     final resultSettled = _showWinnerBadge;
     final accent = didWin && resultSettled
         ? AppColors.chipGold
         : AppColors.brassLight;
     final banner = resultSettled
-        ? (didWin ? 'YOU WON +$payout' : 'NO WIN THIS ROUND')
+        ? (netProfit > 0
+            ? 'YOU WON +$netProfit'
+            : (netProfit < 0 ? 'YOU LOST -${netProfit.abs()}' : 'BREAK EVEN'))
         : 'LOCKING WINNING RANGE';
     final headlineColor = didWin && resultSettled
         ? AppColors.mahoganyDark
@@ -1506,11 +1527,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final chipSize = 42.0;
-        final chipValues = const [
-          (label: '5', value: 5, color: AppColors.feltLight),
-          (label: '10', value: 10, color: AppColors.neonBlue),
-          (label: '50', value: 50, color: AppColors.burgundy),
-        ];
+        final dynamicChips = _getDynamicChips(totalChips);
+        final chipValues = dynamicChips
+            .map((val) => (
+                  label: val.toString(),
+                  value: val,
+                  color: _getChipColor(val),
+                ))
+            .toList();
 
         final canEdit =
             gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
@@ -1577,25 +1601,33 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(height: 5),
               Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    for (final chip in chipValues)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 7),
-                        child: _buildSelectableChip(
-                          label: chip.label,
-                          color: chip.color,
-                          isAvailable:
-                              canEdit &&
-                              (selectedBet != null ||
-                                  availableChips >= chip.value),
-                          value: chip.value,
-                          isSelected: _selectedChipValue == chip.value,
-                          size: chipSize,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () async {
+                    if (selectedBet != null && _selectedBetId != null) {
+                      ref.read(audioServiceProvider).playChip();
+                      await _removeSelectedBet();
+                    }
+                  },
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      for (final chip in chipValues)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 7),
+                          child: _buildSelectableChip(
+                            label: chip.label,
+                            color: chip.color,
+                            isAvailable: canEdit && availableChips >= chip.value,
+                            value: chip.value,
+                            isSelected: selectedBet != null
+                                ? chip.value == selectedBet.chips
+                                : _selectedChipValue == chip.value,
+                            size: chipSize,
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 4),
@@ -1673,9 +1705,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final didWin = payout > 0;
       final isLastRound = gameState.currentRound >= gameState.maxRounds;
 
+      final isWaitingForHost = !isHost && !didWin;
+
       return SizedBox(
         width: double.infinity,
-        height: 62,
+        height: isWaitingForHost ? 44 : 62,
         child: DecoratedBox(
           decoration: BoxDecoration(
             gradient: isHost
@@ -1695,10 +1729,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         ? const [Color(0xFFFFE58A), Color(0xFFD88700)]
                         : const [Color(0xFF331017), Color(0xFF120508)],
                   ),
-            borderRadius: BorderRadius.circular(19),
+            borderRadius: BorderRadius.circular(isWaitingForHost ? 14 : 19),
             border: Border.all(
               color: AppColors.ivory.withValues(alpha: 0.86),
-              width: 2,
+              width: isWaitingForHost ? 1 : 2,
             ),
             boxShadow: [
               BoxShadow(
@@ -1729,7 +1763,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     maxLines: 1,
                     style: GoogleFonts.outfit(
                       color: isHost || didWin ? AppColors.ink : Colors.white,
-                      fontSize: 26,
+                      fontSize: isWaitingForHost ? 18 : 26,
                       fontWeight: FontWeight.w900,
                       height: 1,
                       letterSpacing: 0,
@@ -3288,16 +3322,33 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return row;
   }
 
+  List<int> _getDynamicChips(int bank) {
+    if (bank < 20) return const [1, 5, 10];
+    if (bank < 50) return const [5, 10, 25];
+    if (bank <= 150) return const [5, 10, 50];
+    if (bank <= 350) return const [10, 50, 100];
+    if (bank <= 1000) return const [50, 100, 500];
+    return const [100, 500, 1000];
+  }
+
   Color _getChipColor(int value) {
     switch (value) {
+      case 1:
+        return AppColors.neonPink;
       case 5:
         return AppColors.feltLight;
       case 10:
         return AppColors.neonBlue;
+      case 25:
+        return AppColors.neonCyan;
       case 50:
         return AppColors.burgundy;
       case 100:
         return AppColors.neonPurple;
+      case 500:
+        return AppColors.chipGold;
+      case 1000:
+        return AppColors.brass;
       default:
         return AppColors.chipGold;
     }
