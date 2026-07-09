@@ -326,7 +326,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               colors: [Color(0xFF5F2477), Color(0xFF271127), Color(0xFF14071C)],
             ),
             features: const [
-              _PlanFeature(Icons.event_repeat_rounded, '24 hours access'),
+              _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
               _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
               _PlanFeature(Icons.groups_rounded, 'Unlimited players'),
               _PlanFeature(Icons.category_rounded, 'Premium categories'),
@@ -735,7 +735,7 @@ class _PlanCard extends StatelessWidget {
               const SizedBox(height: 10),
               Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     for (var index = 0; index < features.length; index++) ...[
                       _FeatureRow(feature: features[index]),
