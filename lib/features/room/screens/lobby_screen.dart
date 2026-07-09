@@ -43,6 +43,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     _setupRealtimeListener();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(audioServiceProvider).startAmbience();
+      ref.read(gameServiceProvider).prefetchQuestions();
     });
   }
 
@@ -152,11 +153,34 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       if (room == null) return;
 
       final roomService = ref.read(roomServiceProvider);
-      await roomService.startGame(room.id);
+      final gameService = ref.read(gameServiceProvider);
+      final question = await gameService.getRandomQuestion(
+        room.id,
+        const [],
+        category: room.category,
+      );
+      if (question == null) {
+        throw StateError('No question could be loaded.');
+      }
+
+      await roomService.startGame(room.id, currentQuestionId: question.id);
+      ref
+          .read(currentRoomProvider.notifier)
+          .set(
+            room.copyWith(
+              status: RoomStatus.playing,
+              currentRound: 1,
+              roundPhase: RoundPhase.guessing,
+              currentQuestionId: question.id,
+            ),
+          );
 
       final realtimeService = ref.read(realtimeServiceProvider);
       await realtimeService.broadcast(widget.roomCode, 'game_started', {
         'room_id': room.id,
+        'round': 1,
+        'phase': RoundPhase.guessing.name,
+        'question': question.toJson(),
       });
 
       if (mounted) {

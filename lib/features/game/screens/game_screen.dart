@@ -356,6 +356,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
       if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
         _timer?.cancel();
+      } else if (phase == RoundPhase.guessing) {
+        _startTimer(GameConstants.guessTimerSeconds);
+      } else if (phase == RoundPhase.betting) {
+        _startTimer(GameConstants.betTimerSeconds);
       }
       if (mounted) setState(() {});
     } finally {
@@ -1014,7 +1018,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Future<void> _removeSelectedBet() async {
     final bet = _selectedBet(ref.read(gameStateProvider));
-    if (bet == null) return;
+    if (bet == null) {
+      setState(() {
+        _selectedBetId = null;
+        _selectedChipValue = null;
+      });
+      return;
+    }
     await _removeBetById(bet);
   }
 
@@ -1073,8 +1083,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         ref.read(audioServiceProvider).playChip();
+        if (_selectedBetId != null) {
+          await _removeSelectedBet();
+          return;
+        }
         setState(() {
           _selectedChipValue = value;
           _selectedBetId = null;
@@ -1101,8 +1115,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
-  Widget _buildPortraitLogo() {
-    if (kIsWeb) {
+  Widget _buildPortraitLogo({bool allowWebPromo = true}) {
+    if (kIsWeb && allowWebPromo) {
       return const _WebPromoLogo();
     }
     return const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain);
@@ -1451,7 +1465,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final pickerTitle = !canEdit
             ? 'CHIPS LOCKED'
             : selectedBet != null
-            ? 'TAP SLOT TO MOVE'
+            ? 'TAP CHIP TO RECALL'
             : _selectedChipValue == null
             ? 'SELECT A CHIP'
             : 'TAP A BET AREA';
@@ -1520,7 +1534,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         child: _buildSelectableChip(
                           label: chip.label,
                           color: chip.color,
-                          isAvailable: canEdit && availableChips >= chip.value,
+                          isAvailable:
+                              canEdit &&
+                              (selectedBet != null ||
+                                  availableChips >= chip.value),
                           value: chip.value,
                           isSelected: _selectedChipValue == chip.value,
                           size: chipSize,
@@ -1531,22 +1548,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(height: 4),
               SizedBox(
-                height: 21,
+                height: 26,
                 child: Row(
                   children: [
                     Expanded(child: _buildChipStatPill('BANK', bankLabel)),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: _buildChipStatPill('ON TABLE', '$totalOnTable'),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 68,
-                      child: _buildChipActionPill(
-                        label: 'RECALL',
-                        enabled: canEdit && selectedBet != null,
-                        onTap: _removeSelectedBet,
-                      ),
                     ),
                   ],
                 ),
@@ -1555,57 +1563,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
         );
       },
-    );
-  }
-
-  Widget _buildChipActionPill({
-    required String label,
-    required bool enabled,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 7),
-        decoration: BoxDecoration(
-          color: enabled
-              ? AppColors.burgundy.withValues(alpha: 0.78)
-              : Colors.black.withValues(alpha: 0.20),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: enabled
-                ? AppColors.brassLight.withValues(alpha: 0.62)
-                : AppColors.brassLight.withValues(alpha: 0.18),
-            width: 1,
-          ),
-          boxShadow: [
-            if (enabled)
-              BoxShadow(
-                color: AppColors.burgundy.withValues(alpha: 0.30),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-          ],
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            maxLines: 1,
-            style: GoogleFonts.outfit(
-              color: enabled
-                  ? AppColors.ivory
-                  : AppColors.ivory.withValues(alpha: 0.38),
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              height: 1,
-              letterSpacing: 0.4,
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -1620,7 +1577,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 9),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -1630,8 +1587,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.outfit(
-                  color: AppColors.ivory.withValues(alpha: 0.66),
-                  fontSize: 9,
+                  color: AppColors.ivory.withValues(alpha: 0.72),
+                  fontSize: 8,
                   fontWeight: FontWeight.w900,
                   height: 1,
                   letterSpacing: 0.4,
@@ -1642,9 +1599,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
             Text(
               value,
               maxLines: 1,
+              overflow: TextOverflow.fade,
               style: GoogleFonts.outfit(
                 color: AppColors.brassLight,
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w900,
                 height: 1,
                 letterSpacing: 0,
@@ -1858,7 +1816,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               children: [
                                 Expanded(
                                   flex: isCompact ? 10 : 12,
-                                  child: _buildPortraitLogo(),
+                                  child: _buildPortraitLogo(
+                                    allowWebPromo: false,
+                                  ),
                                 ),
                                 SizedBox(height: tightGap),
                                 SizedBox(
@@ -4866,7 +4826,11 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.phone_android_rounded, color: AppColors.brassLight, size: 24),
+                    const Icon(
+                      Icons.phone_android_rounded,
+                      color: AppColors.brassLight,
+                      size: 24,
+                    ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(

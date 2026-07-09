@@ -125,29 +125,20 @@ class RoomService {
     if (currentQuestionId != null) {
       data['current_question_id'] = currentQuestionId;
     }
-    try {
-      await _client.from('rooms').update(data).eq('id', roomId);
-    } on PostgrestException catch (error) {
-      if (!data.containsKey('current_question_id') ||
-          !error.message.toLowerCase().contains('current_question_id')) {
-        rethrow;
-      }
-      final fallbackData = Map<String, dynamic>.from(data)
-        ..remove('current_question_id');
-      await _client.from('rooms').update(fallbackData).eq('id', roomId);
-    }
+    await _client.from('rooms').update(data).eq('id', roomId);
   }
 
   /// Start the game
-  Future<void> startGame(String roomId) async {
-    await _client
-        .from('rooms')
-        .update({
-          'status': 'playing',
-          'current_round': 1,
-          'round_phase': 'question',
-        })
-        .eq('id', roomId);
+  Future<void> startGame(String roomId, {String? currentQuestionId}) async {
+    final data = {
+      'status': 'playing',
+      'current_round': 1,
+      'round_phase': currentQuestionId == null
+          ? RoundPhase.question.name
+          : RoundPhase.guessing.name,
+      if (currentQuestionId != null) 'current_question_id': currentQuestionId,
+    };
+    await _client.from('rooms').update(data).eq('id', roomId);
   }
 
   /// End the game
