@@ -9,6 +9,7 @@ import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../core/widgets/web_promo_banner.dart';
 import '../../../features/room/providers/room_providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -1029,6 +1030,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               ],
                               SizedBox(height: kIsWeb ? 14 : 16),
                               _dimIfGuide(child: _buildBottomActions()),
+                              if (kIsWeb) ...[
+                                const SizedBox(height: 12),
+                                _dimIfGuide(child: const WebPromoBanner()),
+                              ],
                             ],
                           ),
                         ),

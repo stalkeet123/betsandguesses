@@ -9,6 +9,7 @@ import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../core/widgets/web_promo_banner.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
@@ -467,6 +468,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                               _buildPlayersPanel(activePlayers),
                               const SizedBox(height: 10),
                               _buildActionsPanel(isHost, currentPlayer),
+                              if (kIsWeb) ...[
+                                const SizedBox(height: 12),
+                                const WebPromoBanner(),
+                              ],
                             ],
                           ),
                         ),
