@@ -866,9 +866,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          _buildReadyBadge(isReady),
           if (isHost && !player.isHost) ...[
-            const SizedBox(width: 8),
             IconButton(
               tooltip: 'Kick player',
               icon: const Icon(
@@ -887,7 +885,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 );
               },
             ),
+            const SizedBox(width: 8),
           ],
+          _buildReadyBadge(isReady),
         ],
       ),
     ).animate().fadeIn(delay: (55 * index).ms).slideX(begin: 0.03);
