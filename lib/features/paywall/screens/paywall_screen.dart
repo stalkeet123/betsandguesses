@@ -256,7 +256,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               child: _BenefitItem(
                 icon: Icons.groups_rounded,
                 title: 'BIGGER LOBBIES',
-                subtitle: 'Up to 10 players',
+                subtitle: 'Unlimited players',
               ),
             ),
             _verticalRule(),
@@ -326,10 +326,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               colors: [Color(0xFF5F2477), Color(0xFF271127), Color(0xFF14071C)],
             ),
             features: const [
-              _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
-              _PlanFeature(Icons.groups_2_rounded, 'Unlimited lobbies'),
-              _PlanFeature(Icons.groups_rounded, 'Up to 10 players'),
-              _PlanFeature(Icons.alarm_rounded, '8-12 rounds'),
+              _PlanFeature(Icons.event_repeat_rounded, '24 hours access'),
+              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
+              _PlanFeature(Icons.groups_rounded, 'Unlimited players'),
+              _PlanFeature(Icons.alarm_add_rounded, 'Custom rounds'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
             ],
             price: '₺59,99',
@@ -349,11 +349,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             subtitle: 'One-time purchase',
             crownColor: AppColors.neonGreen,
             features: const [
-              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited everything'),
-              _PlanFeature(Icons.groups_rounded, 'Up to 10 players'),
+              _PlanFeature(Icons.workspace_premium_rounded, 'Lifetime access'),
+              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
+              _PlanFeature(Icons.groups_rounded, 'Unlimited players'),
               _PlanFeature(Icons.alarm_add_rounded, 'Custom rounds'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
-              _PlanFeature(Icons.auto_awesome_rounded, 'All premium features'),
             ],
             price: '₺199,99',
             displayPrice:
@@ -802,19 +802,21 @@ class _FeatureRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(feature.icon, color: AppColors.brassLight, size: 14),
-        const SizedBox(width: 6),
-        Expanded(
+        Icon(feature.icon, color: AppColors.brassLight, size: 16),
+        const SizedBox(width: 8),
+        Flexible(
           child: Text(
             feature.label,
-            maxLines: 1,
+            maxLines: 2,
+            textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.ivory,
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: FontWeight.w700,
-              height: 1.1,
+              height: 1.2,
             ),
           ),
         ),
