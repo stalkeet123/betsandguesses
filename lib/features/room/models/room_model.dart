@@ -9,6 +9,7 @@ class Room {
   final int currentRound;
   final int maxRounds;
   final RoundPhase roundPhase;
+  final String? currentQuestionId;
   final DateTime createdAt;
 
   const Room({
@@ -19,6 +20,7 @@ class Room {
     this.currentRound = 0,
     this.maxRounds = 8,
     this.roundPhase = RoundPhase.idle,
+    this.currentQuestionId,
     required this.createdAt,
   });
 
@@ -30,7 +32,10 @@ class Room {
       status: RoomStatus.fromString(json['status'] as String? ?? 'waiting'),
       currentRound: json['current_round'] as int? ?? 0,
       maxRounds: json['max_rounds'] as int? ?? 8,
-      roundPhase: RoundPhase.fromString(json['round_phase'] as String? ?? 'idle'),
+      roundPhase: RoundPhase.fromString(
+        json['round_phase'] as String? ?? 'idle',
+      ),
+      currentQuestionId: json['current_question_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -44,6 +49,7 @@ class Room {
       'current_round': currentRound,
       'max_rounds': maxRounds,
       'round_phase': roundPhase.name,
+      'current_question_id': currentQuestionId,
     };
   }
 
@@ -57,6 +63,7 @@ class Room {
     int? currentRound,
     int? maxRounds,
     RoundPhase? roundPhase,
+    String? currentQuestionId,
     DateTime? createdAt,
   }) {
     return Room(
@@ -67,6 +74,7 @@ class Room {
       currentRound: currentRound ?? this.currentRound,
       maxRounds: maxRounds ?? this.maxRounds,
       roundPhase: roundPhase ?? this.roundPhase,
+      currentQuestionId: currentQuestionId ?? this.currentQuestionId,
       createdAt: createdAt ?? this.createdAt,
     );
   }

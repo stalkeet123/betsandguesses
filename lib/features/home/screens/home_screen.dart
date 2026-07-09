@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/game_constants.dart';
@@ -18,16 +19,24 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with SingleTickerProviderStateMixin {
   final _nameController = TextEditingController();
   final _roomCodeController = TextEditingController();
+  final _nameFocusNode = FocusNode();
   final _random = Random();
   bool _isLoading = false;
   String? _prefilledRoomCode;
+  bool _showQrJoinGuide = false;
+  late final AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
     _prefilledRoomCode = widget.prefilledRoomCode;
     if (_prefilledRoomCode != null && _prefilledRoomCode!.isNotEmpty) {
       _roomCodeController.text = _prefilledRoomCode!;
@@ -56,12 +65,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _prefilledRoomCode != null &&
           _prefilledRoomCode!.isNotEmpty) {
         _joinRoom();
+      } else if (savedName.isEmpty &&
+          _prefilledRoomCode != null &&
+          _prefilledRoomCode!.isNotEmpty) {
+        // QR arrival with no name — activate guided flow
+        setState(() => _showQrJoinGuide = true);
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) _nameFocusNode.requestFocus();
+        });
       }
     });
   }
 
   @override
   void dispose() {
+    _pulseController.dispose();
+    _nameFocusNode.dispose();
     _nameController.dispose();
     _roomCodeController.dispose();
     super.dispose();
@@ -121,7 +140,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       _showSnack('Enter your name first.');
+      _nameFocusNode.requestFocus();
       return;
+    }
+    if (_showQrJoinGuide) {
+      setState(() => _showQrJoinGuide = false);
     }
     ref.read(playerNameProvider.notifier).setName(name);
 
@@ -445,27 +468,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               _buildSubtitleWithLines(),
                               SizedBox(height: kIsWeb ? 16 : 18),
                               if (kIsWeb) ...[
-                                _buildWebPlayerBadge(),
+                                _dimIfGuide(
+                                  child: _buildWebPlayerBadge(),
+                                ),
                                 const SizedBox(height: 12),
                               ],
                               _buildNamePanel(),
                               const SizedBox(height: 10),
                               if (!kIsWeb) ...[
-                                _buildHeroActionButton(
-                                  label: 'CREATE LOBBY',
-                                  icon: Icons.groups_rounded,
-                                  isLoading: _isLoading,
-                                  onPressed: _isLoading ? null : _createRoom,
+                                _dimIfGuide(
+                                  child: _buildHeroActionButton(
+                                    label: 'CREATE LOBBY',
+                                    icon: Icons.groups_rounded,
+                                    isLoading: _isLoading,
+                                    onPressed:
+                                        _isLoading ? null : _createRoom,
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
                               ],
                               _buildJoinLobbyPanel(),
                               if (!kIsWeb) ...[
                                 const SizedBox(height: 10),
-                                _buildPremiumButton(),
+                                _dimIfGuide(child: _buildPremiumButton()),
                               ],
                               SizedBox(height: kIsWeb ? 14 : 16),
-                              _buildBottomActions(),
+                              _dimIfGuide(child: _buildBottomActions()),
                             ],
                           ),
                         ),
@@ -605,8 +633,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _dimIfGuide({required Widget child}) {
+    if (!_showQrJoinGuide) return child;
+    return AnimatedOpacity(
+      opacity: 0.38,
+      duration: const Duration(milliseconds: 400),
+      child: IgnorePointer(child: child),
+    );
+  }
+
   Widget _buildNamePanel() {
-    return Container(
+    final panel = Container(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       decoration: _creamPanelDecoration(radius: 28),
       child: Column(
@@ -622,7 +659,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                'YOUR NAME',
+                _showQrJoinGuide ? 'ENTER YOUR NAME' : 'YOUR NAME',
                 style: _homeTextStyle(
                   color: AppColors.feltDark,
                   size: 27,
@@ -640,29 +677,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          Container(
-            height: 66,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF948D7D),
-                  Color(0xFF5D584C),
-                  Color(0xFF7E7462),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.28),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, child) {
+              final glowAlpha = _showQrJoinGuide
+                  ? 0.35 + 0.55 * _pulseController.value
+                  : 0.0;
+              return Container(
+                height: 66,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF948D7D),
+                      Color(0xFF5D584C),
+                      Color(0xFF7E7462),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: _showQrJoinGuide
+                      ? Border.all(
+                          color: AppColors.brassLight
+                              .withValues(alpha: glowAlpha),
+                          width: 2.4,
+                        )
+                      : null,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.28),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                    if (_showQrJoinGuide)
+                      BoxShadow(
+                        color: AppColors.brassLight
+                            .withValues(alpha: glowAlpha * 0.6),
+                        blurRadius: 22,
+                        spreadRadius: 2,
+                      ),
+                  ],
                 ),
-              ],
-            ),
+                child: child,
+              );
+            },
             child: TextField(
               controller: _nameController,
+              focusNode: _nameFocusNode,
               textAlign: TextAlign.left,
               style: _homeTextStyle(
                 color: AppColors.ivory,
@@ -670,12 +731,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 letterSpacing: 0,
               ),
               cursorColor: AppColors.brassLight,
+              textInputAction: TextInputAction.go,
+              onSubmitted: (_) => _joinRoom(),
               decoration: InputDecoration(
                 filled: false,
-                hintText: 'Your name',
+                hintText: _showQrJoinGuide
+                    ? 'Type your name to join'
+                    : 'Your name',
                 hintStyle: _homeTextStyle(
                   color: AppColors.ivory.withValues(alpha: 0.6),
-                  size: 25,
+                  size: _showQrJoinGuide ? 22 : 25,
                   letterSpacing: 0,
                 ),
                 prefixIcon: const Icon(
@@ -696,6 +761,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
     );
+
+    if (!_showQrJoinGuide) return panel;
+
+    return panel
+        .animate(onPlay: (c) => c.repeat(reverse: true))
+        .scaleXY(end: 1.012, duration: 900.ms, curve: Curves.easeInOut);
   }
 
   Widget _buildHeroActionButton({
@@ -761,23 +832,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildJoinLobbyPanel() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF062E1F).withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(
-          color: AppColors.brassLight.withValues(alpha: 0.78),
-          width: 1.8,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final borderGlow = _showQrJoinGuide
+            ? 0.78 + 0.22 * _pulseController.value
+            : 0.78;
+        final panelGlow = _showQrJoinGuide
+            ? 0.18 * _pulseController.value
+            : 0.0;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          decoration: BoxDecoration(
+            color: const Color(0xFF062E1F).withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(
+              color: AppColors.brassLight.withValues(alpha: borderGlow),
+              width: _showQrJoinGuide ? 2.4 : 1.8,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+              if (_showQrJoinGuide)
+                BoxShadow(
+                  color: AppColors.brassLight.withValues(alpha: panelGlow),
+                  blurRadius: 28,
+                  spreadRadius: 4,
+                ),
+            ],
           ),
-        ],
-      ),
+          child: child,
+        );
+      },
       child: Column(
         children: [
           Row(
@@ -806,24 +895,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               Expanded(child: _buildRoomCodeField()),
               const SizedBox(width: 14),
-              SizedBox(
-                width: 74,
-                height: 60,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _joinRoom,
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    backgroundColor: AppColors.brass,
-                    foregroundColor: AppColors.ink,
-                    elevation: 7,
-                    shadowColor: Colors.black45,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: const Icon(Icons.arrow_forward_rounded, size: 38),
-                ),
-              ),
+              _buildJoinButton(),
             ],
           ),
         ],
@@ -831,21 +903,94 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildRoomCodeField() {
-    return Container(
+  Widget _buildJoinButton() {
+    final button = SizedBox(
+      width: 74,
       height: 60,
-      decoration: BoxDecoration(
-        color: const Color(0xFF042819).withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.brassLight.withValues(alpha: 0.32),
-          width: 1.4,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _joinRoom,
+        style: ElevatedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          backgroundColor: AppColors.brass,
+          foregroundColor: AppColors.ink,
+          elevation: 7,
+          shadowColor: Colors.black45,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
         ),
+        child: const Icon(Icons.arrow_forward_rounded, size: 38),
       ),
+    );
+
+    if (!_showQrJoinGuide) return button;
+
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final scale = 1.0 + 0.06 * _pulseController.value;
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.brassLight.withValues(
+                    alpha: 0.3 + 0.4 * _pulseController.value,
+                  ),
+                  blurRadius: 16 + 10 * _pulseController.value,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: button,
+    );
+  }
+
+  Widget _buildRoomCodeField() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final codeGlow = _showQrJoinGuide
+            ? 0.2 + 0.32 * _pulseController.value
+            : 0.0;
+        return Container(
+          height: 60,
+          decoration: BoxDecoration(
+            color: const Color(0xFF042819).withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _showQrJoinGuide
+                  ? AppColors.brassLight.withValues(
+                      alpha: 0.52 + 0.38 * _pulseController.value,
+                    )
+                  : AppColors.brassLight.withValues(alpha: 0.32),
+              width: _showQrJoinGuide ? 1.8 : 1.4,
+            ),
+            boxShadow: _showQrJoinGuide
+                ? [
+                    BoxShadow(
+                      color:
+                          AppColors.brassLight.withValues(alpha: codeGlow),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: child,
+        );
+      },
       child: TextField(
         controller: _roomCodeController,
         textAlign: TextAlign.left,
         textCapitalization: TextCapitalization.characters,
+        readOnly: _showQrJoinGuide,
         maxLength: GameConstants.roomCodeLength,
         style: _homeTextStyle(
           color: AppColors.ivory,
@@ -861,8 +1006,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             size: 22,
             letterSpacing: 3,
           ),
-          prefixIcon: const Icon(
-            Icons.tag_rounded,
+          prefixIcon: Icon(
+            _showQrJoinGuide ? Icons.qr_code_rounded : Icons.tag_rounded,
             color: AppColors.brassLight,
             size: 28,
           ),

@@ -54,7 +54,9 @@ class RoomService {
     final rows = response as List;
     if (rows.isEmpty) return null;
 
-    final rooms = rows.map((row) => Room.fromJson(row as Map<String, dynamic>)).toList();
+    final rooms = rows
+        .map((row) => Room.fromJson(row as Map<String, dynamic>))
+        .toList();
     return rooms.firstWhere(
       (room) => room.canJoinLobby,
       orElse: () => rooms.first,
@@ -77,36 +79,60 @@ class RoomService {
   }
 
   /// Update round phase
-  Future<void> updatePhase(String roomId, String phase, {int? round}) async {
+  Future<void> updatePhase(
+    String roomId,
+    String phase, {
+    int? round,
+    String? currentQuestionId,
+  }) async {
     final data = <String, dynamic>{'round_phase': phase};
     if (round != null) data['current_round'] = round;
-    await _client.from('rooms').update(data).eq('id', roomId);
+    if (currentQuestionId != null) {
+      data['current_question_id'] = currentQuestionId;
+    }
+    try {
+      await _client.from('rooms').update(data).eq('id', roomId);
+    } on PostgrestException catch (error) {
+      if (!data.containsKey('current_question_id') ||
+          !error.message.toLowerCase().contains('current_question_id')) {
+        rethrow;
+      }
+      final fallbackData = Map<String, dynamic>.from(data)
+        ..remove('current_question_id');
+      await _client.from('rooms').update(fallbackData).eq('id', roomId);
+    }
   }
 
   /// Start the game
   Future<void> startGame(String roomId) async {
-    await _client.from('rooms').update({
-      'status': 'playing',
-      'current_round': 1,
-      'round_phase': 'question',
-    }).eq('id', roomId);
+    await _client
+        .from('rooms')
+        .update({
+          'status': 'playing',
+          'current_round': 1,
+          'round_phase': 'question',
+        })
+        .eq('id', roomId);
   }
 
   /// End the game
   Future<void> endGame(String roomId) async {
-    await _client.from('rooms').update({
-      'status': 'finished',
-      'round_phase': 'idle',
-    }).eq('id', roomId);
+    await _client
+        .from('rooms')
+        .update({'status': 'finished', 'round_phase': 'idle'})
+        .eq('id', roomId);
   }
 
   /// Reset a room so players can return to the lobby after a game.
   Future<void> resetToLobby(String roomId) async {
-    await _client.from('rooms').update({
-      'status': 'waiting',
-      'current_round': 0,
-      'round_phase': 'idle',
-    }).eq('id', roomId);
+    await _client
+        .from('rooms')
+        .update({
+          'status': 'waiting',
+          'current_round': 0,
+          'round_phase': 'idle',
+        })
+        .eq('id', roomId);
   }
 
   /// Delete room

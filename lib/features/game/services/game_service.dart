@@ -54,6 +54,16 @@ class GameService {
     return available.first;
   }
 
+  Future<Question?> getQuestionById(String questionId) async {
+    final response = await _client
+        .from('questions')
+        .select()
+        .eq('id', questionId)
+        .maybeSingle();
+    if (response == null) return null;
+    return Question.fromJson(response);
+  }
+
   // ── Guesses ──
 
   /// Submit a guess

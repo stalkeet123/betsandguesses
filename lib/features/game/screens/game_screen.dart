@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +14,7 @@ import '../../../features/game/models/guess_model.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
+import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../models/game_state.dart';
 import '../widgets/poker_chip.dart';
@@ -28,13 +28,15 @@ class GameScreen extends ConsumerStatefulWidget {
   ConsumerState<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends ConsumerState<GameScreen> {
+class _GameScreenState extends ConsumerState<GameScreen>
+    with WidgetsBindingObserver {
   List<Player> _players = [];
   Timer? _timer;
   int _timerSeconds = 0;
   final List<String> _usedQuestionIds = [];
   String _guessInput = '';
   int? _selectedChipValue;
+  String? _selectedBetId;
   bool _isBetOperationInFlight = false;
   bool _isSubmittingGuess = false;
   bool _isRevealingGuesses = false;
@@ -45,20 +47,31 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   int? _scanSlotIndex;
   bool _showWinnerBadge = false;
   final Set<String> _incomingOtherBetIds = {};
-  final Set<String> _scheduledOtherBetEntryCleanupIds = {};
+  final Set<String> _playedOtherBetEntryIds = {};
   int _revealSequenceId = 0;
+  bool _isResyncing = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeGame();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _cancelRevealEffects();
+    ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _resyncFromServer(refreshRealtime: true);
+    }
   }
 
   void _syncAudioForPhase(RoundPhase phase) {
@@ -87,8 +100,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   Future<void> _initializeGame() async {
-    final room = ref.read(currentRoomProvider);
+    var room = ref.read(currentRoomProvider);
     if (room == null) return;
+
+    final roomService = ref.read(roomServiceProvider);
+    room = await roomService.getRoom(room.id);
+    ref.read(currentRoomProvider.notifier).set(room);
 
     final playerService = ref.read(playerServiceProvider);
     _players = await playerService.getPlayers(room.id);
@@ -105,9 +122,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _setupRealtime();
 
     final isHost = ref.read(isHostProvider);
-    if (isHost) {
-      await _startRound(1);
+    if (isHost && room.roundPhase == RoundPhase.question) {
+      await _startRound(max(1, room.currentRound));
+      return;
     }
+
+    await _resyncFromServer(roomOverride: room);
   }
 
   void _setupRealtime() {
@@ -132,7 +152,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           }
           _roundWinners.clear();
           _incomingOtherBetIds.clear();
-          _scheduledOtherBetEntryCleanupIds.clear();
+          _playedOtherBetEntryIds.clear();
+          _selectedBetId = null;
           gameNotifier.resetForNewRound();
 
           if (phase == RoundPhase.guessing) {
@@ -173,7 +194,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           final bet = Bet.fromJson(betData);
           if (bet.playerId != currentPlayer?.id) {
             _incomingOtherBetIds.add(bet.id);
-            _scheduledOtherBetEntryCleanupIds.remove(bet.id);
+            _playedOtherBetEntryIds.remove(bet.id);
             ref.read(gameStateProvider.notifier).addBet(bet);
           }
           setState(() {});
@@ -185,7 +206,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         final slotIndex = payload['slot_index'] as int?;
         if (betId != null) {
           _incomingOtherBetIds.remove(betId);
-          _scheduledOtherBetEntryCleanupIds.remove(betId);
+          _playedOtherBetEntryIds.remove(betId);
           ref.read(gameStateProvider.notifier).removeBetById(betId);
           setState(() {});
           return;
@@ -232,6 +253,114 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
+  Future<void> _resyncFromServer({
+    bool refreshRealtime = false,
+    Room? roomOverride,
+  }) async {
+    if (_isResyncing) return;
+    final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
+    if (currentRoom == null) return;
+
+    _isResyncing = true;
+    try {
+      if (refreshRealtime) _setupRealtime();
+
+      final roomService = ref.read(roomServiceProvider);
+      final playerService = ref.read(playerServiceProvider);
+      final gameService = ref.read(gameServiceProvider);
+      final gameNotifier = ref.read(gameStateProvider.notifier);
+      final currentPlayer = ref.read(currentPlayerProvider);
+
+      final room = roomOverride ?? await roomService.getRoom(currentRoom.id);
+      ref.read(currentRoomProvider.notifier).set(room);
+
+      if (room.status == RoomStatus.finished) {
+        if (mounted) {
+          context.goNamed(
+            'results',
+            pathParameters: {'roomCode': widget.roomCode},
+          );
+        }
+        return;
+      }
+
+      _players = await playerService.getPlayers(room.id);
+      final scores = <String, int>{
+        for (final player in _players) player.id: player.score,
+      };
+      final phase = room.roundPhase;
+      final round = room.currentRound;
+      final oldState = ref.read(gameStateProvider);
+      _incomingOtherBetIds.clear();
+      _playedOtherBetEntryIds.clear();
+
+      gameNotifier.initialize(room.id, room.code, room.maxRounds);
+      gameNotifier.setRound(round);
+      gameNotifier.updatePhase(phase);
+      gameNotifier.setScores(scores);
+      _syncAudioForPhase(phase);
+
+      if (round > 0) {
+        final guesses = await gameService.getGuesses(room.id, round);
+        final enrichedGuesses = guesses.map((guess) {
+          final player = _playerById(guess.playerId);
+          return guess.copyWith(
+            playerName: player?.name,
+            playerColor: player?.avatarColor,
+          );
+        }).toList();
+        final bets = await gameService.getBets(room.id, round);
+        final questionId =
+            room.currentQuestionId ??
+            enrichedGuesses
+                .map((guess) => guess.questionId)
+                .whereType<String>()
+                .firstOrNull;
+        final question = questionId == null
+            ? (oldState.currentRound == round ? oldState.currentQuestion : null)
+            : await gameService.getQuestionById(questionId);
+
+        if (question != null) {
+          gameNotifier.setQuestion(question);
+          if (!_usedQuestionIds.contains(question.id)) {
+            _usedQuestionIds.add(question.id);
+          }
+        }
+        gameNotifier.setGuesses(enrichedGuesses);
+        gameNotifier.setBets(bets);
+        gameNotifier.setGuessSubmitted(
+          currentPlayer != null &&
+              enrichedGuesses.any(
+                (guess) => guess.playerId == currentPlayer.id,
+              ),
+        );
+        gameNotifier.setBetsPlaced(
+          currentPlayer != null &&
+              bets.any((bet) => bet.playerId == currentPlayer.id),
+        );
+
+        if ((phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) &&
+            question != null) {
+          final winningGuessId = enrichedGuesses
+              .where((guess) => guess.isWinner)
+              .map((guess) => guess.id)
+              .firstOrNull;
+          gameNotifier.setCorrectAnswer(question.answer, winningGuessId);
+          _startRevealSequence(ref.read(gameStateProvider));
+        } else {
+          _cancelRevealEffects();
+        }
+      }
+
+      if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
+        _timer?.cancel();
+      }
+      if (mounted) setState(() {});
+    } finally {
+      _isResyncing = false;
+    }
+  }
+
   void _startTimer(int seconds) {
     _timer?.cancel();
     _timerSeconds = seconds;
@@ -263,6 +392,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (room == null) return;
 
     final gameService = ref.read(gameServiceProvider);
+    final roomService = ref.read(roomServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final isHost = ref.read(isHostProvider);
@@ -309,6 +439,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _selectedChipValue = null;
     _isSubmittingGuess = false;
 
+    await roomService.updatePhase(
+      room.id,
+      RoundPhase.guessing.name,
+      round: round,
+      currentQuestionId: question.id,
+    );
+
     await realtimeService.broadcast(widget.roomCode, 'phase_change', {
       'phase': RoundPhase.guessing.name,
       'round': round,
@@ -348,6 +485,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _syncAudioForPhase(RoundPhase.betting);
       _timer?.cancel();
 
+      await ref
+          .read(roomServiceProvider)
+          .updatePhase(
+            room.id,
+            RoundPhase.betting.name,
+            round: gameState.currentRound,
+          );
+
       await realtimeService.broadcast(widget.roomCode, 'guesses_revealed', {
         'guesses': enrichedGuesses
             .map(
@@ -378,6 +523,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (room == null) return;
 
     final gameService = ref.read(gameServiceProvider);
+    final roomService = ref.read(roomServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final gameState = ref.read(gameStateProvider);
@@ -409,6 +555,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     gameNotifier.setScores(newScores);
     _syncAudioForPhase(RoundPhase.revealAnswer);
     _startRevealSequence(ref.read(gameStateProvider), payouts: payouts);
+
+    await roomService.updatePhase(
+      room.id,
+      RoundPhase.revealAnswer.name,
+      round: gameState.currentRound,
+    );
 
     final playerService = ref.read(playerServiceProvider);
     await playerService.updateScores(newScores);
@@ -732,6 +884,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _isBetOperationInFlight = false;
     }
 
+    _selectedBetId = null;
     if (mounted) setState(() {});
   }
 
@@ -798,6 +951,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _isBetOperationInFlight = false;
     }
 
+    _selectedBetId = sourceBet.id;
+    _selectedChipValue = null;
     if (mounted) setState(() {});
   }
 
@@ -814,6 +969,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     _isBetOperationInFlight = true;
     ref.read(audioServiceProvider).playClick();
+    if (_selectedBetId == bet.id) _selectedBetId = null;
     gameNotifier.removeBetById(bet.id);
     if (mounted) setState(() {});
 
@@ -835,9 +991,34 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (mounted) setState(() {});
   }
 
+  Bet? _selectedBet(GameState gameState) {
+    final selectedId = _selectedBetId;
+    if (selectedId == null) return null;
+    for (final bet in gameState.bets) {
+      if (bet.id == selectedId) return bet;
+    }
+    return null;
+  }
+
+  void _selectBetForMove(Bet bet) {
+    if (_isBetOperationInFlight) return;
+    ref.read(audioServiceProvider).playChip();
+    setState(() {
+      _selectedBetId = bet.id;
+      _selectedChipValue = null;
+    });
+  }
+
+  Future<void> _removeSelectedBet() async {
+    final bet = _selectedBet(ref.read(gameStateProvider));
+    if (bet == null) return;
+    await _removeBetById(bet);
+  }
+
   Future<void> _lockBets() async {
     ref.read(audioServiceProvider).playClick();
     _selectedChipValue = null;
+    _selectedBetId = null;
     ref.read(gameStateProvider.notifier).setBetsPlaced(true);
     if (mounted) setState(() {});
   }
@@ -868,7 +1049,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return entries;
   }
 
-  Widget _buildDraggableChip({
+  Widget _buildSelectableChip({
     required String label,
     required Color color,
     required bool isAvailable,
@@ -888,45 +1069,32 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return Opacity(opacity: 0.2, child: chip);
     }
 
-    if (kIsWeb) {
-      return GestureDetector(
-        onTap: () {
-          ref.read(audioServiceProvider).playChip();
-          setState(() => _selectedChipValue = value);
-        },
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 120),
-          scale: isSelected ? 1.14 : 1,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                if (isSelected)
-                  BoxShadow(
-                    color: AppColors.brassLight.withValues(alpha: 0.72),
-                    blurRadius: 18,
-                    spreadRadius: 3,
-                  ),
-              ],
-            ),
-            child: chip,
+    return GestureDetector(
+      onTap: () {
+        ref.read(audioServiceProvider).playChip();
+        setState(() {
+          _selectedChipValue = value;
+          _selectedBetId = null;
+        });
+      },
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 120),
+        scale: isSelected ? 1.14 : 1,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              if (isSelected)
+                BoxShadow(
+                  color: AppColors.brassLight.withValues(alpha: 0.72),
+                  blurRadius: 18,
+                  spreadRadius: 3,
+                ),
+            ],
           ),
-        ),
-      );
-    }
-
-    return Draggable<_ChipDragData>(
-      data: _ChipDragData(value: value, size: size),
-      feedback: Transform.scale(
-        scale: 1.08,
-        child: Material(
-          color: Colors.transparent,
-          child: IgnorePointer(child: chip),
+          child: chip,
         ),
       ),
-      childWhenDragging: Opacity(opacity: 0.42, child: chip),
-      onDragStarted: () => ref.read(audioServiceProvider).playChip(),
-      child: chip,
     );
   }
 
@@ -1261,6 +1429,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ? 999
         : max(0, totalChips - totalOnTable);
     final bankLabel = totalChips <= 0 ? '--' : '$availableChips';
+    final selectedBet = _selectedBet(gameState);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1271,121 +1440,166 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           (label: '50', value: 50, color: AppColors.burgundy),
         ];
 
-        final canReturnBet =
+        final canEdit =
             gameState.phase == RoundPhase.betting && !gameState.hasPlacedBets;
+        final pickerTitle = !canEdit
+            ? 'CHIPS LOCKED'
+            : selectedBet != null
+            ? 'TAP SLOT TO MOVE'
+            : _selectedChipValue == null
+            ? 'SELECT A CHIP'
+            : 'TAP A BET AREA';
 
-        return DragTarget<_ChipDragData>(
-          onWillAcceptWithDetails: (details) =>
-              canReturnBet && details.data.sourceBet != null,
-          onAcceptWithDetails: (details) {
-            final sourceBet = details.data.sourceBet;
-            if (sourceBet != null) _removeBetById(sourceBet);
-          },
-          builder: (context, candidateData, rejectedData) {
-            final isReturning = candidateData.isNotEmpty;
-
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                color: isReturning
-                    ? AppColors.feltDark.withValues(alpha: 0.38)
-                    : Colors.transparent,
-                border: Border.all(
-                  color: isReturning
-                      ? AppColors.brassLight
-                      : Colors.transparent,
-                  width: 1.2,
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: selectedBet != null
+                ? AppColors.feltDark.withValues(alpha: 0.24)
+                : Colors.transparent,
+            border: Border.all(
+              color: selectedBet != null
+                  ? AppColors.brassLight
+                  : Colors.transparent,
+              width: 1.2,
+            ),
+            boxShadow: [
+              if (selectedBet != null)
+                BoxShadow(
+                  color: AppColors.brassLight.withValues(alpha: 0.22),
+                  blurRadius: 12,
+                  spreadRadius: 1,
                 ),
-                boxShadow: [
-                  if (isReturning)
-                    BoxShadow(
-                      color: AppColors.brassLight.withValues(alpha: 0.22),
-                      blurRadius: 12,
-                      spreadRadius: 1,
-                    ),
-                ],
-              ),
-              child: Column(
+            ],
+          ),
+          child: Column(
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 1,
-                          color: AppColors.brassLight.withValues(alpha: 0.52),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        isReturning
-                            ? 'RETURN CHIP'
-                            : kIsWeb
-                            ? (_selectedChipValue == null
-                                  ? 'TAP A CHIP'
-                                  : 'TAP A BOARD SLOT')
-                            : 'CHOOSE YOUR CHIP',
-                        style: GoogleFonts.outfit(
-                          color: AppColors.ivory.withValues(alpha: 0.78),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.7,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Container(
-                          height: 1,
-                          color: AppColors.brassLight.withValues(alpha: 0.52),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 5),
                   Expanded(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        for (final chip in chipValues)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 7),
-                            child: _buildDraggableChip(
-                              label: chip.label,
-                              color: chip.color,
-                              isAvailable:
-                                  canReturnBet && availableChips >= chip.value,
-                              value: chip.value,
-                              isSelected: _selectedChipValue == chip.value,
-                              size: chipSize,
-                            ),
-                          ),
-                      ],
+                    child: Container(
+                      height: 1,
+                      color: AppColors.brassLight.withValues(alpha: 0.52),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: 21,
-                    child: Row(
-                      children: [
-                        Expanded(child: _buildChipStatPill('BANK', bankLabel)),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: _buildChipStatPill(
-                            'ON TABLE',
-                            '$totalOnTable',
-                          ),
-                        ),
-                      ],
+                  const SizedBox(width: 8),
+                  Text(
+                    pickerTitle,
+                    style: GoogleFonts.outfit(
+                      color: AppColors.ivory.withValues(alpha: 0.78),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.7,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: AppColors.brassLight.withValues(alpha: 0.52),
                     ),
                   ),
                 ],
               ),
-            );
-          },
+              const SizedBox(height: 5),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    for (final chip in chipValues)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 7),
+                        child: _buildSelectableChip(
+                          label: chip.label,
+                          color: chip.color,
+                          isAvailable: canEdit && availableChips >= chip.value,
+                          value: chip.value,
+                          isSelected: _selectedChipValue == chip.value,
+                          size: chipSize,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 21,
+                child: Row(
+                  children: [
+                    Expanded(child: _buildChipStatPill('BANK', bankLabel)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _buildChipStatPill('ON TABLE', '$totalOnTable'),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      width: 68,
+                      child: _buildChipActionPill(
+                        label: 'RECALL',
+                        enabled: canEdit && selectedBet != null,
+                        onTap: _removeSelectedBet,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
+    );
+  }
+
+  Widget _buildChipActionPill({
+    required String label,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 7),
+        decoration: BoxDecoration(
+          color: enabled
+              ? AppColors.burgundy.withValues(alpha: 0.78)
+              : Colors.black.withValues(alpha: 0.20),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: enabled
+                ? AppColors.brassLight.withValues(alpha: 0.62)
+                : AppColors.brassLight.withValues(alpha: 0.18),
+            width: 1,
+          ),
+          boxShadow: [
+            if (enabled)
+              BoxShadow(
+                color: AppColors.burgundy.withValues(alpha: 0.30),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+          ],
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+            style: GoogleFonts.outfit(
+              color: enabled
+                  ? AppColors.ivory
+                  : AppColors.ivory.withValues(alpha: 0.38),
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              height: 1,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -3104,91 +3318,55 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ..._betSlots.where((slot) => !slot.isSweetSpot),
           ..._betSlots.where((slot) => slot.isSweetSpot),
         ];
-        final boardKey = GlobalKey();
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: DragTarget<_ChipDragData>(
-            onWillAcceptWithDetails: (_) => canBet,
-            onAcceptWithDetails: (details) {
-              final box =
-                  boardKey.currentContext?.findRenderObject() as RenderBox?;
-              if (box == null) return;
-
-              final boardSize = box.size;
-              final chipCenter =
-                  details.offset +
-                  Offset(details.data.size / 2, details.data.size / 2);
-              final local = box.globalToLocal(chipCenter);
-              final targetSlot = _slotAtBoardPosition(local, boardSize);
-              if (targetSlot == null) return;
-
-              final position = _slotLocalPosition(targetSlot, local, boardSize);
-              final sourceBet = details.data.sourceBet;
-              if (sourceBet != null) {
-                _moveBet(sourceBet, targetSlot.index, position: position);
-              } else {
-                _placeBet(
-                  targetSlot.index,
-                  details.data.value,
-                  position: position,
-                );
-              }
-            },
-            builder: (context, candidateData, rejectedData) {
-              return Stack(
-                key: boardKey,
-                clipBehavior: Clip.none,
-                children: [
-                  for (final spec in orderedSlots)
-                    Positioned(
-                      left: spec.rect.left * size.width,
-                      top: spec.rect.top * size.height,
-                      width: spec.rect.width * size.width,
-                      height: spec.rect.height * size.height,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapDown: kIsWeb && canBet
-                            ? (details) => _placeSelectedChipOnSlot(
-                                spec,
-                                details.localPosition,
-                                Size(
-                                  spec.rect.width * size.width,
-                                  spec.rect.height * size.height,
-                                ),
-                              )
-                            : null,
-                        child: _buildCodedBetSlot(
-                          spec: spec,
-                          isWinningReveal: activeRevealSlotIndex == spec.index,
-                          isDimmedReveal:
-                              isReveal &&
-                              activeRevealSlotIndex != null &&
-                              activeRevealSlotIndex != spec.index,
-                        ),
-                      ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (final spec in orderedSlots)
+                Positioned(
+                  left: spec.rect.left * size.width,
+                  top: spec.rect.top * size.height,
+                  width: spec.rect.width * size.width,
+                  height: spec.rect.height * size.height,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: canBet
+                        ? (details) => _handleBetSlotTap(
+                            spec,
+                            details.localPosition,
+                            Size(
+                              spec.rect.width * size.width,
+                              spec.rect.height * size.height,
+                            ),
+                          )
+                        : null,
+                    child: _buildCodedBetSlot(
+                      spec: spec,
+                      isWinningReveal: activeRevealSlotIndex == spec.index,
                     ),
-                  if (_showWinnerBadge && winningSlotIndex != null)
-                    ..._buildWinParticles(size, winningSlotIndex),
-                  ..._buildBoundaryLabels(boundaryValues, size),
-                  _buildAllPlacedChips(
-                    gameState.bets,
-                    size,
-                    currentPlayer?.id,
-                    canDrag: canBet,
-                    isReveal: isReveal,
-                    winningSlotIndex: winningSlotIndex,
-                    emphasizeWinners: _showWinnerBadge,
                   ),
-                  if (_showWinnerBadge && winningSlotIndex != null)
-                    ..._buildPayoutFlightChips(
-                      size,
-                      winningSlotIndex,
-                      gameState.bets,
-                    ),
-                ],
-              );
-            },
+                ),
+              if (_showWinnerBadge && winningSlotIndex != null)
+                ..._buildWinParticles(size, winningSlotIndex),
+              ..._buildBoundaryLabels(boundaryValues, size),
+              _buildAllPlacedChips(
+                gameState.bets,
+                size,
+                currentPlayer?.id,
+                canEdit: canBet,
+                isReveal: isReveal,
+                winningSlotIndex: winningSlotIndex,
+                emphasizeWinners: _showWinnerBadge,
+              ),
+              if (_showWinnerBadge && winningSlotIndex != null)
+                ..._buildPayoutFlightChips(
+                  size,
+                  winningSlotIndex,
+                  gameState.bets,
+                ),
+            ],
           ),
         );
       },
@@ -3201,27 +3379,32 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         .boardBoundaryValues(gameState.sortedGuesses);
   }
 
-  Future<void> _placeSelectedChipOnSlot(
+  Future<void> _handleBetSlotTap(
     _BetSlotSpec spec,
     Offset localPosition,
     Size slotSize,
   ) async {
-    final selectedChip = _selectedChipValue;
-    if (selectedChip == null || _isBetOperationInFlight) return;
+    if (_isBetOperationInFlight) return;
 
     final position = Offset(
       (localPosition.dx / slotSize.width).clamp(0.12, 0.88).toDouble(),
       (localPosition.dy / slotSize.height).clamp(0.18, 0.82).toDouble(),
     );
 
-    setState(() => _selectedChipValue = null);
+    final selectedBet = _selectedBet(ref.read(gameStateProvider));
+    if (selectedBet != null) {
+      await _moveBet(selectedBet, spec.index, position: position);
+      return;
+    }
+
+    final selectedChip = _selectedChipValue;
+    if (selectedChip == null) return;
     await _placeBet(spec.index, selectedChip, position: position);
   }
 
   Widget _buildCodedBetSlot({
     required _BetSlotSpec spec,
     required bool isWinningReveal,
-    required bool isDimmedReveal,
   }) {
     return AnimatedScale(
       duration: const Duration(milliseconds: 210),
@@ -3234,7 +3417,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               spec: spec,
               isHovering: false,
               isWinningReveal: isWinningReveal,
-              isDimmedReveal: isDimmedReveal,
             ),
           ),
           _buildBetSlotLabel(spec),
@@ -3508,41 +3690,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  _BetSlotSpec? _slotAtBoardPosition(Offset local, Size boardSize) {
-    if (boardSize.isEmpty) return null;
-
-    final percent = Offset(
-      local.dx / boardSize.width,
-      local.dy / boardSize.height,
-    );
-    final hitTestSlots = [
-      ..._betSlots.where((slot) => slot.isSweetSpot),
-      ..._betSlots.where((slot) => !slot.isSweetSpot).toList().reversed,
-    ];
-    for (final slot in hitTestSlots) {
-      if (slot.rect.contains(percent)) return slot;
-    }
-
-    return null;
-  }
-
-  Offset _slotLocalPosition(
-    _BetSlotSpec slot,
-    Offset boardLocal,
-    Size boardSize,
-  ) {
-    if (boardSize.isEmpty) return const Offset(0.5, 0.5);
-
-    final percent = Offset(
-      boardLocal.dx / boardSize.width,
-      boardLocal.dy / boardSize.height,
-    );
-    return Offset(
-      (percent.dx - slot.rect.left) / slot.rect.width,
-      (percent.dy - slot.rect.top) / slot.rect.height,
-    );
-  }
-
   Widget _buildBetSlotLabel(_BetSlotSpec slot) {
     return IgnorePointer(
       child: Stack(
@@ -3684,7 +3831,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     List<Bet> bets,
     Size boardSize,
     String? currentPlayerId, {
-    required bool canDrag,
+    required bool canEdit,
     required bool isReveal,
     required int? winningSlotIndex,
     required bool emphasizeWinners,
@@ -3717,8 +3864,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             i,
             boardSize,
             chipSize,
-            canDrag: canDrag,
-            onTap: canDrag ? () => _removeBetById(myBets[i]) : null,
+            canEdit: canEdit,
+            isSelected: _selectedBetId == myBets[i].id,
+            onTap: canEdit ? () => _selectBetForMove(myBets[i]) : null,
             isReveal: isReveal,
             isWinningBet:
                 emphasizeWinners && myBets[i].slotIndex == winningSlotIndex,
@@ -3816,8 +3964,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required bool isWinningBet,
     required bool resultSettled,
   }) {
-    final shouldSlideIn = _incomingOtherBetIds.contains(bet.id) && !isReveal;
-    if (shouldSlideIn) _queueOtherBetEntryCleanup(bet.id);
+    final shouldSlideIn =
+        _incomingOtherBetIds.contains(bet.id) &&
+        !_playedOtherBetEntryIds.contains(bet.id) &&
+        !isReveal;
+    if (shouldSlideIn) {
+      _playedOtherBetEntryIds.add(bet.id);
+      _incomingOtherBetIds.remove(bet.id);
+    }
 
     final chip = _buildPlacedChipVisual(
       bet,
@@ -3835,7 +3989,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         key: ValueKey('other-bet-entry-${bet.id}'),
         tween: Tween<double>(begin: shouldSlideIn ? 1 : 0, end: 0),
         duration: shouldSlideIn
-            ? Duration(milliseconds: 520 + index * 35)
+            ? Duration(milliseconds: 360 + index * 24)
             : Duration.zero,
         curve: Curves.easeOutCubic,
         child: chip,
@@ -3849,25 +4003,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  void _queueOtherBetEntryCleanup(String betId) {
-    if (!_scheduledOtherBetEntryCleanupIds.add(betId)) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(milliseconds: 760), () {
-        if (!mounted) return;
-        setState(() {
-          _incomingOtherBetIds.remove(betId);
-          _scheduledOtherBetEntryCleanupIds.remove(betId);
-        });
-      });
-    });
-  }
-
   Widget _positionedBetChip(
     Bet bet,
     int index,
     Size boardSize,
     double chipSize, {
-    bool canDrag = false,
+    required bool canEdit,
+    required bool isSelected,
     VoidCallback? onTap,
     required bool isReveal,
     required bool isWinningBet,
@@ -3900,7 +4042,27 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       resultSettled: resultSettled,
     );
 
-    final child = GestureDetector(onTap: onTap, child: chip);
+    final visual = AnimatedScale(
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOutCubic,
+      scale: isSelected ? 1.13 : 1,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            if (isSelected)
+              BoxShadow(
+                color: AppColors.brassLight.withValues(alpha: 0.78),
+                blurRadius: 18,
+                spreadRadius: 3,
+              ),
+          ],
+        ),
+        child: chip,
+      ),
+    );
+
+    final child = GestureDetector(onTap: onTap, child: visual);
 
     return AnimatedPositioned(
       key: ValueKey(bet.id),
@@ -3908,22 +4070,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       curve: Curves.easeOutCubic,
       left: globalLeft,
       top: globalTop,
-      child: canDrag && !kIsWeb
-          ? Draggable<_ChipDragData>(
-              data: _ChipDragData(
-                value: bet.chips,
-                size: chipSize,
-                sourceBet: bet,
-              ),
-              feedback: Material(
-                color: Colors.transparent,
-                child: IgnorePointer(child: chip),
-              ),
-              childWhenDragging: Opacity(opacity: 0.18, child: child),
-              onDragStarted: () => ref.read(audioServiceProvider).playChip(),
-              child: child,
-            )
-          : child,
+      child: canEdit ? child : visual,
     );
   }
 
@@ -4185,18 +4332,6 @@ const List<_BetSlotSpec> _betSlots = [
 
 enum _BetSlotTone { green, black, gold, red }
 
-class _ChipDragData {
-  final int value;
-  final double size;
-  final Bet? sourceBet;
-
-  const _ChipDragData({
-    required this.value,
-    required this.size,
-    this.sourceBet,
-  });
-}
-
 class _LeaderboardEntry {
   final String name;
   final Color color;
@@ -4425,13 +4560,11 @@ class _BetSlotSurface extends StatelessWidget {
   final _BetSlotSpec spec;
   final bool isHovering;
   final bool isWinningReveal;
-  final bool isDimmedReveal;
 
   const _BetSlotSurface({
     required this.spec,
     required this.isHovering,
     required this.isWinningReveal,
-    required this.isDimmedReveal,
   });
 
   @override
@@ -4443,7 +4576,7 @@ class _BetSlotSurface extends StatelessWidget {
         borderRadius: radius,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: isDimmedReveal ? 0.72 : 0.42),
+            color: Colors.black.withValues(alpha: 0.42),
             blurRadius: isWinningReveal ? 22 : 9,
             offset: Offset(0, isWinningReveal ? 8 : 5),
           ),
@@ -4500,13 +4633,6 @@ class _BetSlotSurface extends StatelessWidget {
                     ),
                     child: const SizedBox.expand(),
                   ),
-                if (isDimmedReveal)
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
-                    ),
-                    child: const SizedBox.expand(),
-                  ),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     border: Border.all(
@@ -4529,10 +4655,6 @@ class _BetSlotSurface extends StatelessWidget {
         ),
       ),
     );
-
-    if (isDimmedReveal) {
-      surface = Opacity(opacity: 0.34, child: surface);
-    }
 
     if (!isWinningReveal) return surface;
 
