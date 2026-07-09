@@ -9,7 +9,10 @@ import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../features/game/models/question_model.dart';
+import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
+import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 
 class LobbyScreen extends ConsumerStatefulWidget {
@@ -27,6 +30,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   bool _hasPresenceSync = false;
   bool _isStarting = false;
   bool _isReadyLoading = false;
+  bool _isNavigatingToGame = false;
 
   List<Player> get _activePlayers {
     final connected = _players.where((player) => player.isConnected);
@@ -62,8 +66,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       onBetRemoved: (_) {},
       onScoreUpdate: (_) {},
       onAnswerRevealed: (_) {},
-      onGameStarted: (_) {
+      onGameStarted: (payload) {
+        if (_isNavigatingToGame) return;
+        _seedStartedGame(payload);
         if (mounted) {
+          _isNavigatingToGame = true;
           context.goNamed(
             'game',
             pathParameters: {'roomCode': widget.roomCode},
@@ -127,6 +134,54 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
   }
 
+  Future<void> _enterStartedRoom(Room startedRoom) async {
+    if (_isNavigatingToGame || !mounted) return;
+    if (startedRoom.status != RoomStatus.playing) {
+      ref.read(currentRoomProvider.notifier).set(startedRoom);
+      return;
+    }
+
+    ref.read(currentRoomProvider.notifier).set(startedRoom);
+
+    Question? question;
+    final questionId = startedRoom.currentQuestionId;
+    if (questionId != null && questionId.isNotEmpty) {
+      question = await ref
+          .read(gameServiceProvider)
+          .getQuestionById(questionId);
+    }
+
+    final players = _players.isNotEmpty
+        ? _players
+        : ref
+              .read(playerServiceProvider)
+              .collapseDuplicateConnectedPlayers(
+                await ref
+                    .read(playerServiceProvider)
+                    .getPlayers(startedRoom.id),
+              );
+    final scores = {
+      for (final player in players)
+        player.id: player.score <= 0
+            ? GameConstants.startingScore
+            : player.score,
+    };
+
+    if (question != null) {
+      _seedGameState(
+        startedRoom,
+        question,
+        round: startedRoom.currentRound <= 0 ? 1 : startedRoom.currentRound,
+        phase: startedRoom.roundPhase,
+        scores: scores,
+      );
+    }
+
+    if (!mounted || _isNavigatingToGame) return;
+    _isNavigatingToGame = true;
+    context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
+  }
+
   Future<void> _toggleReady() async {
     final player = ref.read(currentPlayerProvider);
     if (player == null || _isReadyLoading) return;
@@ -163,7 +218,27 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         throw StateError('No question could be loaded.');
       }
 
+      final playerService = ref.read(playerServiceProvider);
+      final lobbyPlayers = playerService.collapseDuplicateConnectedPlayers(
+        await playerService.getPlayers(room.id),
+      );
+      final startingScores = {
+        for (final player in lobbyPlayers.where((player) => player.isConnected))
+          player.id: player.score <= 0
+              ? GameConstants.startingScore
+              : player.score,
+      };
+      await playerService.updateScores(startingScores);
+      _players = lobbyPlayers
+          .map(
+            (player) => player.copyWith(
+              score: startingScores[player.id] ?? player.score,
+            ),
+          )
+          .toList();
+
       await roomService.startGame(room.id, currentQuestionId: question.id);
+      _seedGameState(room, question, scores: startingScores);
       ref
           .read(currentRoomProvider.notifier)
           .set(
@@ -181,9 +256,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         'round': 1,
         'phase': RoundPhase.guessing.name,
         'question': question.toJson(),
+        'scores': startingScores,
       });
 
       if (mounted) {
+        _isNavigatingToGame = true;
         context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
       }
     } catch (e) {
@@ -195,6 +272,63 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     } finally {
       if (mounted) setState(() => _isStarting = false);
     }
+  }
+
+  void _seedStartedGame(Map<String, dynamic> payload) {
+    final room = ref.read(currentRoomProvider);
+    if (room == null) return;
+
+    final questionData = payload['question'] as Map<String, dynamic>?;
+    if (questionData == null) return;
+
+    final question = Question.fromJson(questionData);
+    final round = payload['round'] as int? ?? 1;
+    final scores = _scoresFromPayload(payload['scores']);
+    final phase = RoundPhase.fromString(
+      payload['phase'] as String? ?? RoundPhase.guessing.name,
+    );
+
+    ref
+        .read(currentRoomProvider.notifier)
+        .set(
+          room.copyWith(
+            status: RoomStatus.playing,
+            currentRound: round,
+            roundPhase: phase,
+            currentQuestionId: question.id,
+          ),
+        );
+    _seedGameState(room, question, round: round, phase: phase, scores: scores);
+  }
+
+  void _seedGameState(
+    Room room,
+    Question question, {
+    int round = 1,
+    RoundPhase phase = RoundPhase.guessing,
+    Map<String, int>? scores,
+  }) {
+    ref
+        .read(gameStateProvider.notifier)
+        .initialize(
+          room.id,
+          room.code,
+          room.maxRounds,
+          currentRound: round,
+          phase: phase,
+          currentQuestion: question,
+          scores:
+              scores ??
+              {for (final player in _players) player.id: player.score},
+        );
+  }
+
+  Map<String, int>? _scoresFromPayload(Object? rawScores) {
+    if (rawScores is! Map) return null;
+    return rawScores.map((key, value) {
+      final score = value is int ? value : int.tryParse('$value') ?? 0;
+      return MapEntry('$key', score);
+    });
   }
 
   bool get _canStart {
@@ -271,6 +405,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               );
             });
           }
+        });
+      });
+      ref.listen(roomStreamProvider(room.id), (prev, next) {
+        next.whenData((data) {
+          if (data.isEmpty) return;
+          final updatedRoom = Room.fromJson(data.first);
+          _enterStartedRoom(updatedRoom);
         });
       });
     }

@@ -108,6 +108,10 @@ class RoomService {
     return Room.fromJson(response);
   }
 
+  Stream<List<Map<String, dynamic>>> streamRoom(String roomId) {
+    return _client.from('rooms').stream(primaryKey: ['id']).eq('id', roomId);
+  }
+
   /// Update room status
   Future<void> updateRoom(String roomId, Map<String, dynamic> data) async {
     await _client.from('rooms').update(data).eq('id', roomId);

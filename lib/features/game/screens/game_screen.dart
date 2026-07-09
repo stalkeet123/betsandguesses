@@ -113,13 +113,31 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _players = await playerService.getPlayers(room.id);
 
     final gameNotifier = ref.read(gameStateProvider.notifier);
-    gameNotifier.initialize(room.id, room.code, room.maxRounds);
-
     final scores = <String, int>{};
     for (final player in _players) {
       scores[player.id] = player.score;
     }
-    gameNotifier.setScores(scores);
+
+    final seededState = ref.read(gameStateProvider);
+    Question? currentQuestion = seededState.roomId == room.id
+        ? seededState.currentQuestion
+        : null;
+    final currentQuestionId = room.currentQuestionId;
+    if (currentQuestionId != null && currentQuestion?.id != currentQuestionId) {
+      currentQuestion = await ref
+          .read(gameServiceProvider)
+          .getQuestionById(currentQuestionId);
+    }
+
+    gameNotifier.initialize(
+      room.id,
+      room.code,
+      room.maxRounds,
+      currentRound: room.currentRound,
+      phase: room.roundPhase,
+      currentQuestion: currentQuestion,
+      scores: scores,
+    );
 
     _setupRealtime();
 
@@ -243,7 +261,32 @@ class _GameScreenState extends ConsumerState<GameScreen>
           setState(() {});
         }
       },
-      onGameStarted: (_) {},
+      onGameStarted: (payload) {
+        final questionData = payload['question'] as Map<String, dynamic>?;
+        if (questionData == null) return;
+
+        final round = payload['round'] as int? ?? 1;
+        final phase = RoundPhase.fromString(
+          payload['phase'] as String? ?? RoundPhase.guessing.name,
+        );
+        final question = Question.fromJson(questionData);
+        final scores = _scoresFromPayload(payload['scores']);
+        final gameNotifier = ref.read(gameStateProvider.notifier);
+        gameNotifier.setRound(round);
+        gameNotifier.updatePhase(phase);
+        gameNotifier.setQuestion(question);
+        if (scores != null) gameNotifier.setScores(scores);
+        if (!_usedQuestionIds.contains(question.id)) {
+          _usedQuestionIds.add(question.id);
+        }
+        if (phase == RoundPhase.guessing) {
+          _guessInput = '';
+          _isSubmittingGuess = false;
+          _startTimer(GameConstants.guessTimerSeconds);
+        }
+        _syncAudioForPhase(phase);
+        if (mounted) setState(() {});
+      },
       onGameEnded: (_) {
         if (mounted) {
           context.goNamed(
@@ -253,6 +296,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
       },
     );
+  }
+
+  Map<String, int>? _scoresFromPayload(Object? rawScores) {
+    if (rawScores is! Map) return null;
+    return rawScores.map((key, value) {
+      final score = value is int ? value : int.tryParse('$value') ?? 0;
+      return MapEntry('$key', score);
+    });
   }
 
   Future<void> _resyncFromServer({
@@ -1223,14 +1274,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: _AdaptiveQuestionText(
-              text:
-                  gameState.currentQuestion?.textTr ??
-                  'Question will appear here.',
-              color: const Color(0xFF0A2C59),
-              minFontSize: 20,
-              maxFontSize: 34,
-            ),
+            child: gameState.currentQuestion == null
+                ? const _QuestionLoadingText(color: Color(0xFF0A2C59))
+                : _AdaptiveQuestionText(
+                    text: gameState.currentQuestion!.textTr,
+                    color: const Color(0xFF0A2C59),
+                    minFontSize: 20,
+                    maxFontSize: 34,
+                  ),
           ),
         ],
       ),
@@ -1444,11 +1495,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final totalOnTable = myBets.fold<int>(0, (sum, bet) => sum + bet.chips);
     final totalChips = currentPlayer == null
         ? 0
-        : gameState.scores[currentPlayer.id] ?? currentPlayer.score;
-    final availableChips = totalChips <= 0
-        ? 999
-        : max(0, totalChips - totalOnTable);
-    final bankLabel = totalChips <= 0 ? '--' : '$availableChips';
+        : gameState.scores[currentPlayer.id] ??
+              (currentPlayer.score > 0
+                  ? currentPlayer.score
+                  : GameConstants.startingScore);
+    final availableChips = max(0, totalChips - totalOnTable);
+    final bankLabel = '$availableChips';
     final selectedBet = _selectedBet(gameState);
 
     return LayoutBuilder(
@@ -1938,14 +1990,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
           const SizedBox(height: 12),
           Expanded(
-            child: _AdaptiveQuestionText(
-              text:
-                  gameState.currentQuestion?.textTr ??
-                  'Question will appear here.',
-              color: AppColors.feltDark,
-              minFontSize: 22,
-              maxFontSize: 46,
-            ),
+            child: gameState.currentQuestion == null
+                ? const _QuestionLoadingText(color: AppColors.feltDark)
+                : _AdaptiveQuestionText(
+                    text: gameState.currentQuestion!.textTr,
+                    color: AppColors.feltDark,
+                    minFontSize: 22,
+                    maxFontSize: 46,
+                  ),
           ),
         ],
       ),
@@ -3311,27 +3363,31 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     child: _buildCodedBetSlot(
                       spec: spec,
                       isWinningReveal: activeRevealSlotIndex == spec.index,
+                      boundaries: boundaryValues,
                     ),
                   ),
                 ),
               if (_showWinnerBadge && winningSlotIndex != null)
                 ..._buildWinParticles(size, winningSlotIndex),
               ..._buildBoundaryLabels(boundaryValues, size),
-              _buildAllPlacedChips(
-                gameState.bets,
-                size,
-                currentPlayer?.id,
-                canEdit: canBet,
-                isReveal: isReveal,
-                winningSlotIndex: winningSlotIndex,
-                emphasizeWinners: _showWinnerBadge,
-              ),
+              if (!(_showWinnerBadge && winningSlotIndex != null))
+                _buildAllPlacedChips(
+                  gameState.bets,
+                  size,
+                  currentPlayer?.id,
+                  canEdit: canBet,
+                  isReveal: isReveal,
+                  winningSlotIndex: winningSlotIndex,
+                  emphasizeWinners: _showWinnerBadge,
+                ),
               if (_showWinnerBadge && winningSlotIndex != null)
                 ..._buildPayoutFlightChips(
                   size,
                   winningSlotIndex,
                   gameState.bets,
                 ),
+              if (_showWinnerBadge && _roundWinners.isNotEmpty)
+                _buildWinnerOverlayCard(size),
             ],
           ),
         );
@@ -3371,6 +3427,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildCodedBetSlot({
     required _BetSlotSpec spec,
     required bool isWinningReveal,
+    required List<int> boundaries,
   }) {
     return AnimatedScale(
       duration: const Duration(milliseconds: 210),
@@ -3385,7 +3442,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               isWinningReveal: isWinningReveal,
             ),
           ),
-          _buildBetSlotLabel(spec),
+          _buildBetSlotLabel(spec, boundaries),
         ],
       ),
     );
@@ -3656,12 +3713,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
-  Widget _buildBetSlotLabel(_BetSlotSpec slot) {
+  Widget _buildBetSlotLabel(_BetSlotSpec slot, List<int> boundaries) {
     return IgnorePointer(
       child: Stack(
         children: [
           if (slot.title.isNotEmpty)
-            Positioned.fill(child: _buildCasinoSlotTitle(slot)),
+            Positioned.fill(child: _buildCasinoSlotTitle(slot, boundaries)),
           Positioned(
             top: 0,
             right: slot.isSweetSpot ? 16 : 12,
@@ -3728,7 +3785,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
-  Widget _buildCasinoSlotTitle(_BetSlotSpec slot) {
+  Widget _buildCasinoSlotTitle(_BetSlotSpec slot, List<int> boundaries) {
     final isSweetSpot = slot.isSweetSpot;
     final textColor = isSweetSpot ? AppColors.mahoganyDark : Colors.white;
     final strokeColor = isSweetSpot ? AppColors.brassLight : AppColors.feltDark;
@@ -3743,50 +3800,208 @@ class _GameScreenState extends ConsumerState<GameScreen>
           child: Stack(
             alignment: Alignment.center,
             children: [
-              Text(
-                slot.title,
-                maxLines: 1,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.rye(
-                  foreground: Paint()
-                    ..style = PaintingStyle.stroke
-                    ..strokeWidth = isSweetSpot ? 2.6 : 3.2
-                    ..color = strokeColor.withValues(
-                      alpha: isSweetSpot ? 0.72 : 0.78,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    slot.title,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.rye(
+                      foreground: Paint()
+                        ..style = PaintingStyle.stroke
+                        ..strokeWidth = isSweetSpot ? 2.6 : 3.2
+                        ..color = strokeColor.withValues(
+                          alpha: isSweetSpot ? 0.72 : 0.78,
+                        ),
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w400,
+                      height: 1,
+                      letterSpacing: 0,
                     ),
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.w400,
-                  height: 1,
-                  letterSpacing: 0,
-                ),
+                  ),
+                  if (slot.index == 1 && boundaries.length >= 2)
+                    Text(
+                      'BETWEEN ${boundaries[0]} AND ${boundaries[1]}\n(INCLUSIVE)',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: 0.50),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  if (slot.index == 3 && boundaries.length >= 4)
+                    Text(
+                      'BETWEEN ${boundaries[2]} AND ${boundaries[3]}\n(INCLUSIVE)',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: 0.50),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                ],
               ),
-              Text(
-                slot.title,
-                maxLines: 1,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.rye(
-                  color: textColor,
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.w400,
-                  height: 1,
-                  letterSpacing: 0,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withValues(
-                        alpha: isSweetSpot ? 0.28 : 0.75,
-                      ),
-                      blurRadius: isSweetSpot ? 2 : 7,
-                      offset: const Offset(0, 1.4),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    slot.title,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.rye(
+                      color: textColor,
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w400,
+                      height: 1,
+                      letterSpacing: 0,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(
+                            alpha: isSweetSpot ? 0.28 : 0.75,
+                          ),
+                          blurRadius: isSweetSpot ? 2 : 7,
+                          offset: const Offset(0, 2),
+                        ),
+                        if (isSweetSpot)
+                          Shadow(
+                            color: AppColors.brassLight.withValues(alpha: 0.34),
+                            blurRadius: 9,
+                          ),
+                      ],
                     ),
-                    if (!isSweetSpot)
-                      Shadow(
-                        color: AppColors.brassLight.withValues(alpha: 0.34),
-                        blurRadius: 9,
+                  ),
+                  if (slot.index == 1 && boundaries.length >= 2)
+                    Text(
+                      'BETWEEN ${boundaries[0]} AND ${boundaries[1]}\n(INCLUSIVE)',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: 0.50),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: 0.4,
                       ),
-                  ],
-                ),
+                    ),
+                  if (slot.index == 3 && boundaries.length >= 4)
+                    Text(
+                      'BETWEEN ${boundaries[2]} AND ${boundaries[3]}\n(INCLUSIVE)',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: 0.50),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWinnerOverlayCard(Size boardSize) {
+    final winnerIds = _roundWinners;
+    final winners = _players.where((p) => winnerIds.contains(p.id)).toList();
+
+    return Positioned.fill(
+      child: ClipRect(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child:
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 24,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.feltDark.withValues(alpha: 0.96),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(16),
+                    ),
+                    border: Border(
+                      left: BorderSide(
+                        color: AppColors.brassLight.withValues(alpha: 0.6),
+                        width: 1.5,
+                      ),
+                      right: BorderSide(
+                        color: AppColors.brassLight.withValues(alpha: 0.6),
+                        width: 1.5,
+                      ),
+                      bottom: BorderSide(
+                        color: AppColors.brassLight.withValues(alpha: 0.6),
+                        width: 1.5,
+                      ),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (winners.isEmpty)
+                        Text(
+                          'NOBODY WON',
+                          style: GoogleFonts.outfit(
+                            color: AppColors.ivory.withValues(alpha: 0.7),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.0,
+                          ),
+                        )
+                      else
+                        ...winners.map((player) {
+                          final payout = _roundPayouts[player.id] ?? 0;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  player.name,
+                                  style: GoogleFonts.outfit(
+                                    color: AppColors.ivory,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Text(
+                                  '+$payout',
+                                  style: GoogleFonts.outfit(
+                                    color: AppColors.neonGreen,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+                ).animate(delay: 1100.ms)
+                .slideY(
+                  begin: -1.1, // Start completely above the top edge
+                  end: 0,
+                  duration: 560.ms,
+                  curve: Curves.easeOutBack,
+                ),
           ),
         ),
       ),
@@ -4310,6 +4525,43 @@ class _LeaderboardEntry {
   });
 }
 
+class _QuestionLoadingText extends StatelessWidget {
+  final Color color;
+
+  const _QuestionLoadingText({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.6,
+              color: color.withValues(alpha: 0.72),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'LOADING QUESTION',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(
+              color: color.withValues(alpha: 0.72),
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              height: 1,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AdaptiveQuestionText extends StatelessWidget {
   final String text;
   final Color color;
@@ -4626,12 +4878,10 @@ class _BetSlotSurface extends StatelessWidget {
 
     return surface
         .animate(onPlay: (controller) => controller.repeat(reverse: true))
-        .scale(
-          end: const Offset(1.035, 1.035),
-          duration: 520.ms,
-          curve: Curves.easeInOut,
-        )
-        .shimmer(color: Colors.white.withValues(alpha: 0.62), duration: 980.ms);
+        .shimmer(
+          color: Colors.white.withValues(alpha: 0.38),
+          duration: 1800.ms,
+        );
   }
 
   static const LinearGradient _outerRailGradient = LinearGradient(

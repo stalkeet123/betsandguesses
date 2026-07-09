@@ -16,11 +16,25 @@ class GameStateNotifier extends Notifier<GameState> {
     return const GameState(roomId: '', roomCode: '');
   }
 
-  void initialize(String roomId, String roomCode, int maxRounds) {
+  void initialize(
+    String roomId,
+    String roomCode,
+    int maxRounds, {
+    int? currentRound,
+    RoundPhase? phase,
+    Question? currentQuestion,
+    Map<String, int>? scores,
+  }) {
+    final sameRoom = state.roomId == roomId;
     state = GameState(
       roomId: roomId,
       roomCode: roomCode,
       maxRounds: maxRounds,
+      currentRound: currentRound ?? (sameRoom ? state.currentRound : 0),
+      phase: phase ?? (sameRoom ? state.phase : RoundPhase.idle),
+      currentQuestion:
+          currentQuestion ?? (sameRoom ? state.currentQuestion : null),
+      scores: scores ?? (sameRoom ? state.scores : const {}),
     );
   }
 
@@ -37,7 +51,8 @@ class GameStateNotifier extends Notifier<GameState> {
   }
 
   void setGuesses(List<Guess> guesses) {
-    final sorted = List<Guess>.of(guesses)..sort((a, b) => a.value.compareTo(b.value));
+    final sorted = List<Guess>.of(guesses)
+      ..sort((a, b) => a.value.compareTo(b.value));
     state = state.copyWith(guesses: guesses, sortedGuesses: sorted);
   }
 
@@ -76,7 +91,9 @@ class GameStateNotifier extends Notifier<GameState> {
 
   void removeBetForSlot(String playerId, int slotIndex) {
     state = state.copyWith(
-      bets: state.bets.where((b) => !(b.playerId == playerId && b.slotIndex == slotIndex)).toList(),
+      bets: state.bets
+          .where((b) => !(b.playerId == playerId && b.slotIndex == slotIndex))
+          .toList(),
     );
   }
 
@@ -85,7 +102,10 @@ class GameStateNotifier extends Notifier<GameState> {
   }
 
   void setCorrectAnswer(int answer, String? winningGuessId) {
-    state = state.copyWith(correctAnswer: answer, winningGuessId: winningGuessId);
+    state = state.copyWith(
+      correctAnswer: answer,
+      winningGuessId: winningGuessId,
+    );
   }
 
   void setGuessSubmitted(bool submitted) {
