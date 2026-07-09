@@ -3912,86 +3912,84 @@ class _GameScreenState extends ConsumerState<GameScreen>
       top: spec.rect.top * boardSize.height,
       height: spec.rect.height * boardSize.height,
       child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child:
-              Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.feltDark.withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.brassLight.withValues(alpha: 0.8),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            vertical: 14,
+            horizontal: 12,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.ivory.withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(
+              color: AppColors.brassLight.withValues(alpha: 0.9),
+              width: 2.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.65),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (winners.isEmpty)
+                Text(
+                  'NOBODY WON',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(
+                    color: AppColors.mahoganyDark.withValues(alpha: 0.8),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.0,
+                  ),
+                )
+              else
+                ...winners.map((player) {
+                  final payout = _roundPayouts[player.id] ?? 0;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            player.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(
+                              color: AppColors.feltDark,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '+$payout',
+                          style: GoogleFonts.outfit(
+                            color: Colors.green.shade700,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ],
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (winners.isEmpty)
-                          Text(
-                            'NOBODY WON',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.outfit(
-                              color: AppColors.ivory.withValues(alpha: 0.8),
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.8,
-                            ),
-                          )
-                        else
-                          ...winners.map((player) {
-                            final payout = _roundPayouts[player.id] ?? 0;
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 3),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      player.name,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.outfit(
-                                        color: AppColors.ivory,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '+$payout',
-                                    style: GoogleFonts.outfit(
-                                      color: AppColors.neonGreen,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }),
-                      ],
-                    ),
-                  )
-                  .animate(delay: 1100.ms)
-                  .fadeIn(duration: 400.ms)
-                  .scale(
-                    begin: const Offset(0.85, 0.85),
-                    curve: Curves.easeOutBack,
-                    duration: 500.ms,
-                  ),
+                  );
+                }),
+            ],
+          ),
+        )
+        .animate(delay: 1100.ms)
+        .fadeIn(duration: 400.ms)
+        .scale(
+          begin: const Offset(0.85, 0.85),
+          curve: Curves.easeOutBack,
+          duration: 500.ms,
         ),
       ),
     );
