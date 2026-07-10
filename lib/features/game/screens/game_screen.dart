@@ -894,6 +894,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
+  void _clearGuessInput() {
+    final gameState = ref.read(gameStateProvider);
+    if (gameState.hasSubmittedGuess || _isSubmittingGuess) return;
+    setState(() => _guessInput = '');
+  }
+
   Future<void> _submitNumpadGuess() async {
     final value = int.tryParse(_guessInput);
     if (value == null) return;
@@ -2632,7 +2638,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ['1', '2', '3'],
       ['4', '5', '6'],
       ['7', '8', '9'],
-      [',', '0', 'BACK'],
+      ['C', '0', 'BACK'],
     ];
 
     return Column(
@@ -2663,7 +2669,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildNumpadKey(String key, {required bool disabled}) {
     final isBack = key == 'BACK';
-    final isComma = key == ',';
+    final isClear = key == 'C';
     final radius = BorderRadius.circular(11);
 
     return AnimatedOpacity(
@@ -2753,7 +2759,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         : () {
                             if (isBack) {
                               _backspaceGuessDigit();
-                            } else if (!isComma) {
+                            } else if (isClear) {
+                              _clearGuessInput();
+                            } else {
                               _appendGuessDigit(key);
                             }
                           },
