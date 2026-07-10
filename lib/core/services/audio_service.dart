@@ -47,7 +47,7 @@ class AudioService {
     _initPlayers();
   }
 
-  void Function()? _pendingBgmCall;
+  String? _pendingBgmKey;
 
   bool get isMuted => _isMuted;
 
@@ -70,9 +70,21 @@ class AudioService {
 
       _applyVolumes();
       
-      if (_pendingBgmCall != null) {
-        _pendingBgmCall!();
-        _pendingBgmCall = null;
+      // Replay any BGM that was requested before init finished
+      if (_pendingBgmKey != null) {
+        final key = _pendingBgmKey!;
+        _pendingBgmKey = null;
+        switch (key) {
+          case 'main':
+            startMainBgm();
+            break;
+          case 'lobby':
+            startLobbyMusic();
+            break;
+          case 'question':
+            startQuestionMusic();
+            break;
+        }
       }
     } catch (e) {
       debugPrint('SoLoud init failed: $e');
@@ -84,10 +96,10 @@ class AudioService {
     SoLoud.instance.setGlobalVolume(_isMuted ? 0.0 : 1.0);
   }
 
-  Future<void> _fadeToBgm(AudioSource? source, {double volume = 0.15}) async {
+  Future<void> _fadeToBgm(AudioSource? source, {double volume = 0.15, String? bgmKey}) async {
     if (_isMuted) return;
     if (!SoLoud.instance.isInitialized || source == null) {
-      _pendingBgmCall = () => _fadeToBgm(source, volume: volume);
+      if (bgmKey != null) _pendingBgmKey = bgmKey;
       return;
     }
     if (_currentBgmSource == source && _bgmHandle != null) return;
@@ -115,9 +127,9 @@ class AudioService {
     }
   }
 
-  Future<void> startLobbyMusic() => _fadeToBgm(_elevatorSource, volume: 0.12);
-  Future<void> startQuestionMusic() => _fadeToBgm(_questionSuspenseSource, volume: 0.12);
-  Future<void> startMainBgm() => _fadeToBgm(_backgroundSource, volume: 0.12);
+  Future<void> startLobbyMusic() => _fadeToBgm(_elevatorSource, volume: 0.12, bgmKey: 'lobby');
+  Future<void> startQuestionMusic() => _fadeToBgm(_questionSuspenseSource, volume: 0.12, bgmKey: 'question');
+  Future<void> startMainBgm() => _fadeToBgm(_backgroundSource, volume: 0.12, bgmKey: 'main');
 
   Future<void> stopBackgroundMusic() async {
     if (!SoLoud.instance.isInitialized) return;

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -68,7 +69,11 @@ class _TahminAppState extends ConsumerState<TahminApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       AppAssetPaths.warmUpImages(context).catchError((_) {});
-      ref.read(audioServiceProvider).startMainBgm();
+      // On mobile, start music immediately (no autoplay restriction).
+      // On web, we wait for the first user interaction (handled by Listener below).
+      if (!kIsWeb) {
+        ref.read(audioServiceProvider).startMainBgm();
+      }
     });
   }
 
@@ -88,16 +93,18 @@ class _TahminAppState extends ConsumerState<TahminApp> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 460),
               child: child != null
-                  ? Listener(
-                      behavior: HitTestBehavior.translucent,
-                      onPointerDown: (_) {
-                        if (!_hasInteracted) {
-                          _hasInteracted = true;
-                          ref.read(audioServiceProvider).startMainBgm();
-                        }
-                      },
-                      child: ClipRect(child: child),
-                    )
+                  ? kIsWeb
+                      ? Listener(
+                          behavior: HitTestBehavior.translucent,
+                          onPointerDown: (_) {
+                            if (!_hasInteracted) {
+                              _hasInteracted = true;
+                              ref.read(audioServiceProvider).startMainBgm();
+                            }
+                          },
+                          child: ClipRect(child: child),
+                        )
+                      : ClipRect(child: child)
                   : const SizedBox.shrink(),
             ),
           ),
