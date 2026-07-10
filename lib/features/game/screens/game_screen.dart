@@ -601,6 +601,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
 
     final newScores = Map<String, int>.from(gameState.scores);
+
+    // Calculate total bets per player
+    final totalBets = <String, int>{};
+    for (final bet in bets) {
+      totalBets[bet.playerId] = (totalBets[bet.playerId] ?? 0) + bet.chips;
+    }
+
+    // Subtract bets from starting scores
+    for (final playerId in totalBets.keys) {
+      final startingScore = newScores[playerId] ?? _playerById(playerId)?.score ?? 0;
+      newScores[playerId] = startingScore - totalBets[playerId]!;
+    }
+
+    // Add payouts for winning bets
     for (final entry in payouts.entries) {
       newScores[entry.key] = (newScores[entry.key] ?? 0) + entry.value;
     }
@@ -891,6 +905,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (room == null ||
         player == null ||
         _isBetOperationInFlight) {
+      return;
+    }
+
+    final totalBets = _currentPlayerTotalBets(gameState);
+    final currentScore = gameState.scores[player.id] ?? player.score;
+    if (totalBets + chips > currentScore) {
+      setState(() => _selectedChipValue = null);
+      ref.read(audioServiceProvider).playClick(); // error sound fallback
       return;
     }
 
@@ -3596,9 +3618,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
           Positioned.fill(child: _buildCasinoSlotTitle(slot, boundaries)),
           Positioned(
             top: 0,
-            right: slot.isSweetSpot ? 16 : 12,
+            right: slot.isSweetSpot ? 6 : 4,
             bottom: 0,
-            width: slot.isSweetSpot ? 58 : 52,
+            width: slot.isSweetSpot ? 36 : 30,
             child: _buildOddsTicket(slot),
           ),
         ],
@@ -3636,7 +3658,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                       color: isSweetSpot
                           ? AppColors.mahoganyDark
                           : Colors.white,
-                      fontSize: isSweetSpot ? 13 : 12,
+                      fontSize: isSweetSpot ? 11 : 10,
                       fontWeight: FontWeight.w900,
                       height: 1,
                       letterSpacing: 0,
@@ -4127,7 +4149,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final child = GestureDetector(onTap: onTap, child: visual);
 
     return AnimatedPositioned(
-      key: ValueKey(bet.id),
+      key: ValueKey('${bet.playerId}_${bet.slotIndex}_${bet.positionX}_${bet.positionY}'),
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOutCubic,
       left: globalLeft,

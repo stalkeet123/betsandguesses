@@ -79,6 +79,13 @@ class GameStateNotifier extends Notifier<GameState> {
   }
 
   void replaceBet(String oldId, Bet bet) {
+    final alreadyExists = state.bets.any((b) => b.id == bet.id && b.id != oldId);
+    if (alreadyExists) {
+      state = state.copyWith(
+        bets: state.bets.where((b) => b.id != oldId).toList(),
+      );
+      return;
+    }
     final updatedBets = state.bets.map((b) => b.id == oldId ? bet : b).toList();
     state = state.copyWith(bets: updatedBets);
   }
