@@ -20,8 +20,8 @@ class GameConstants {
   static const String slotSmaller = 'SMALLER';
   static const String slotLarger = 'LARGER';
 
-  static const int guessTimerSeconds = 45;
-  static const int betTimerSeconds = 60;
+  static const int guessTimerSeconds = 30;
+  static const int betTimerSeconds = 45;
 
   static const int maxGuessSlots = 4;
 
