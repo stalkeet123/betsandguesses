@@ -90,7 +90,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       case RoundPhase.revealGuesses:
       case RoundPhase.revealAnswer:
       case RoundPhase.scoring:
-        audio.startBettingMusic();
+        audio.startMainBgm();
         break;
     }
   }
@@ -862,9 +862,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
       1,
       _players.where((player) => player.isConnected).length,
     );
-    if (guesses.length >= expectedPlayers) {
-      await _revealGuesses();
-    }
+    // We intentionally removed auto-reveal here to force players to wait for the 30 second timer.
+    // if (guesses.length >= expectedPlayers) {
+    //   await _revealGuesses();
+    // }
   }
 
   void _appendGuessDigit(String digit) {

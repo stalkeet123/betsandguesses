@@ -106,7 +106,7 @@ class AudioService {
 
   Future<void> startLobbyMusic() => _fadeToBgm(_elevatorSource, volume: 0.12);
   Future<void> startQuestionMusic() => _fadeToBgm(_questionSuspenseSource, volume: 0.12);
-  Future<void> startBettingMusic() => _fadeToBgm(_backgroundSource, volume: 0.12);
+  Future<void> startMainBgm() => _fadeToBgm(_backgroundSource, volume: 0.12);
 
   Future<void> stopBackgroundMusic() async {
     if (!SoLoud.instance.isInitialized) return;
@@ -129,7 +129,7 @@ class AudioService {
       if (_tickingClockSource != null) {
         _tickingHandle = await SoLoud.instance.play(
           _tickingClockSource!,
-          volume: 0.35,
+          volume: 0.15,
           looping: true,
         );
         _isTickingPlaying = true;

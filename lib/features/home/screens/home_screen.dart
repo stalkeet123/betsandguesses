@@ -50,7 +50,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         if (savedName.isNotEmpty) {
           _nameController.text = savedName;
         }
-        ref.read(audioServiceProvider).startLobbyMusic();
+        ref.read(audioServiceProvider).startMainBgm();
         ref.read(gameServiceProvider).prefetchQuestions();
         return;
       }
@@ -59,7 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (savedName.isNotEmpty) {
         _nameController.text = savedName;
       }
-      ref.read(audioServiceProvider).startLobbyMusic();
+      ref.read(audioServiceProvider).startMainBgm();
       ref.read(gameServiceProvider).prefetchQuestions();
 
       if (savedName.isNotEmpty &&
@@ -244,7 +244,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    ref.read(audioServiceProvider).startLobbyMusic();
+    ref.read(audioServiceProvider).startMainBgm();
     setState(() => _isLoading = true);
     ref.read(playerNameProvider.notifier).setName(name);
 
@@ -306,7 +306,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    ref.read(audioServiceProvider).startLobbyMusic();
+    ref.read(audioServiceProvider).startMainBgm();
     setState(() => _isLoading = true);
     try {
       final roomService = ref.read(roomServiceProvider);
@@ -381,7 +381,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (kIsWeb) return;
 
     ref.read(audioServiceProvider).playClick();
-    ref.read(audioServiceProvider).startLobbyMusic();
+    ref.read(audioServiceProvider).startMainBgm();
     context.pushNamed('premium');
   }
 
