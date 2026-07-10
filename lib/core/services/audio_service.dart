@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,20 +11,25 @@ class AudioService {
   bool _isAmbiencePlaying = false;
   bool _isSuspensePlaying = false;
 
-  final AudioPlayer _musicPlayer = AudioPlayer();
-  final AudioPlayer _suspensePlayer = AudioPlayer();
-  final AudioPlayer _payoutPlayer = AudioPlayer();
-  final List<AudioPlayer> _sfxPool = List.generate(6, (_) => AudioPlayer());
-  int _sfxIndex = 0;
+  AudioSource? _upbeatSource;
+  AudioSource? _suspenseSource;
+  AudioSource? _buttonClickSource;
+  AudioSource? _chipMoveSource;
+  AudioSource? _slotPayoutSource;
+  AudioSource? _successSource;
+
+  SoundHandle? _ambienceHandle;
+  SoundHandle? _suspenseHandle;
+  SoundHandle? _payoutHandle;
   Timer? _payoutStopTimer;
 
-  static const _upbeatMusic = 'sound/mixkit-upbeat-jazz-644.mp3';
-  static const _suspenseMusic = 'sound/mixkit-suspense-mystery-bass-685.wav';
-  static const _buttonClick = 'sound/button.wav';
-  static const _chipMove = 'sound/chip1.wav';
-  static const _slotPayout = 'sound/mixkit-slot-machine-payout-alarm-1996.wav';
+  static const _upbeatMusic = 'assets/sound/mixkit-upbeat-jazz-644.mp3';
+  static const _suspenseMusic = 'assets/sound/mixkit-suspense-mystery-bass-685.wav';
+  static const _buttonClick = 'assets/sound/button.wav';
+  static const _chipMove = 'assets/sound/chip1.wav';
+  static const _slotPayout = 'assets/sound/mixkit-slot-machine-payout-alarm-1996.wav';
   static const _success =
-      'sound/456965__funwithsound__short-success-sound-glockenspiel-treasure-video-game.mp3';
+      'assets/sound/456965__funwithsound__short-success-sound-glockenspiel-treasure-video-game.mp3';
 
   AudioService(this._prefs) {
     _isMuted = _prefs.getBool('audio_muted') ?? false;
@@ -34,70 +39,81 @@ class AudioService {
   bool get isMuted => _isMuted;
 
   Future<void> _initPlayers() async {
-    await AudioPlayer.global.setAudioContext(
-      AudioContextConfig(
-        focus: AudioContextConfigFocus.gain,
-        respectSilence: false,
-      ).build(),
-    );
-    await _musicPlayer.setReleaseMode(ReleaseMode.loop);
-    await _suspensePlayer.setReleaseMode(ReleaseMode.loop);
-    await _musicPlayer.setPlayerMode(PlayerMode.mediaPlayer);
-    await _suspensePlayer.setPlayerMode(PlayerMode.mediaPlayer);
-    await _payoutPlayer.setPlayerMode(PlayerMode.mediaPlayer);
-    await _payoutPlayer.setReleaseMode(ReleaseMode.stop);
-    for (final player in _sfxPool) {
-      await player.setPlayerMode(PlayerMode.mediaPlayer);
-      await player.setReleaseMode(ReleaseMode.stop);
+    try {
+      await SoLoud.instance.init();
+      
+      _upbeatSource = await SoLoud.instance.loadAsset(_upbeatMusic);
+      _suspenseSource = await SoLoud.instance.loadAsset(_suspenseMusic);
+      _buttonClickSource = await SoLoud.instance.loadAsset(_buttonClick);
+      _chipMoveSource = await SoLoud.instance.loadAsset(_chipMove);
+      _slotPayoutSource = await SoLoud.instance.loadAsset(_slotPayout);
+      _successSource = await SoLoud.instance.loadAsset(_success);
+
+      await _applyVolumes();
+    } catch (e) {
+      debugPrint('SoLoud init failed: $e');
     }
-    await _applyVolumes();
   }
 
   Future<void> _applyVolumes() async {
-    await _musicPlayer.setVolume(_isMuted ? 0.0 : 0.09);
-    await _suspensePlayer.setVolume(_isMuted ? 0.0 : 0.18);
-    await _payoutPlayer.setVolume(_isMuted ? 0.0 : 0.72);
-    for (final player in _sfxPool) {
-      await player.setVolume(_isMuted ? 0.0 : 0.85);
-    }
+    if (!SoLoud.instance.isInitialized) return;
+    SoLoud.instance.setGlobalVolume(_isMuted ? 0.0 : 1.0);
   }
 
   Future<void> startAmbience() async {
-    if (_isMuted || _isAmbiencePlaying) return;
+    if (_isMuted || _isAmbiencePlaying || !SoLoud.instance.isInitialized) return;
     try {
-      await _musicPlayer.play(AssetSource(_upbeatMusic));
-      _isAmbiencePlaying = true;
+      if (_upbeatSource != null) {
+        _ambienceHandle = await SoLoud.instance.play(
+          _upbeatSource!,
+          volume: 0.09,
+          looping: true,
+        );
+        _isAmbiencePlaying = true;
+      }
     } catch (error) {
       debugPrint('Audio ambience failed: $error');
     }
   }
 
   Future<void> stopAmbience() async {
+    if (!SoLoud.instance.isInitialized) return;
     _isAmbiencePlaying = false;
-    await _musicPlayer.stop();
+    if (_ambienceHandle != null) {
+      await SoLoud.instance.stop(_ambienceHandle!);
+      _ambienceHandle = null;
+    }
   }
 
   Future<void> startSuspense() async {
-    if (_isMuted || _isSuspensePlaying) return;
+    if (_isMuted || _isSuspensePlaying || !SoLoud.instance.isInitialized) return;
     try {
       await startAmbience();
-      await _suspensePlayer.play(AssetSource(_suspenseMusic));
-      _isSuspensePlaying = true;
+      if (_suspenseSource != null) {
+        _suspenseHandle = await SoLoud.instance.play(
+          _suspenseSource!,
+          volume: 0.18,
+          looping: true,
+        );
+        _isSuspensePlaying = true;
+      }
     } catch (error) {
       debugPrint('Audio suspense failed: $error');
     }
   }
 
   Future<void> stopSuspense() async {
+    if (!SoLoud.instance.isInitialized) return;
     _isSuspensePlaying = false;
-    await _suspensePlayer.stop();
+    if (_suspenseHandle != null) {
+      await SoLoud.instance.stop(_suspenseHandle!);
+      _suspenseHandle = null;
+    }
   }
 
   Future<void> stopAllLoops() async {
-    _isAmbiencePlaying = false;
-    _isSuspensePlaying = false;
-    await _musicPlayer.stop();
-    await _suspensePlayer.stop();
+    await stopAmbience();
+    await stopSuspense();
     await stopPayout();
   }
 
@@ -117,41 +133,33 @@ class AudioService {
     }
   }
 
-  AudioPlayer _getNextSfxPlayer() {
-    final player = _sfxPool[_sfxIndex];
-    _sfxIndex = (_sfxIndex + 1) % _sfxPool.length;
-    return player;
-  }
-
-  Future<void> _playSfx(String asset, {double volume = 0.48}) async {
-    if (_isMuted) return;
+  Future<void> _playSfx(AudioSource? source, {double volume = 0.48}) async {
+    if (_isMuted || source == null || !SoLoud.instance.isInitialized) return;
     try {
-      final player = _getNextSfxPlayer();
-      await player.setVolume(volume);
-      await player.stop();
-      await player.play(AssetSource(asset));
+      await SoLoud.instance.play(source, volume: volume);
     } catch (error) {
-      debugPrint('Audio sfx failed for $asset: $error');
+      debugPrint('Audio sfx failed: $error');
     }
   }
 
-  Future<void> playClick() => _playSfx(_buttonClick, volume: 0.9);
+  Future<void> playClick() => _playSfx(_buttonClickSource, volume: 0.9);
 
-  Future<void> playChip() => _playSfx(_chipMove, volume: 0.78);
+  Future<void> playChip() => _playSfx(_chipMoveSource, volume: 0.78);
 
   Future<void> playDrop() => playChip();
 
   Future<void> playClink() => playChip();
 
-  Future<void> playSuccess() => _playSfx(_success, volume: 0.86);
+  Future<void> playSuccess() => _playSfx(_successSource, volume: 0.86);
 
   Future<void> playPayout() async {
-    if (_isMuted) return;
+    if (_isMuted || !SoLoud.instance.isInitialized || _slotPayoutSource == null) return;
     try {
       _payoutStopTimer?.cancel();
-      await _payoutPlayer.setVolume(0.72);
-      await _payoutPlayer.stop();
-      await _payoutPlayer.play(AssetSource(_slotPayout));
+      if (_payoutHandle != null) {
+        await SoLoud.instance.stop(_payoutHandle!);
+      }
+      _payoutHandle = await SoLoud.instance.play(_slotPayoutSource!, volume: 0.72);
       _payoutStopTimer = Timer(const Duration(seconds: 5), stopPayout);
     } catch (error) {
       debugPrint('Audio payout failed: $error');
@@ -159,23 +167,24 @@ class AudioService {
   }
 
   Future<void> stopPayout() async {
+    if (!SoLoud.instance.isInitialized) return;
     _payoutStopTimer?.cancel();
     _payoutStopTimer = null;
-    await _payoutPlayer.stop();
+    if (_payoutHandle != null) {
+      await SoLoud.instance.stop(_payoutHandle!);
+      _payoutHandle = null;
+    }
   }
 
   Future<void> playRandomChipSound() async {
     final roll = Random().nextInt(4);
-    await _playSfx(_chipMove, volume: roll == 0 ? 0.72 : 0.78);
+    await _playSfx(_chipMoveSource, volume: roll == 0 ? 0.72 : 0.78);
   }
 
   void dispose() {
     _payoutStopTimer?.cancel();
-    _musicPlayer.dispose();
-    _suspensePlayer.dispose();
-    _payoutPlayer.dispose();
-    for (final player in _sfxPool) {
-      player.dispose();
+    if (SoLoud.instance.isInitialized) {
+      SoLoud.instance.deinit();
     }
   }
 }

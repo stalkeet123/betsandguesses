@@ -26,7 +26,7 @@ dependencies:
   google_fonts: ^6.2.1
   confetti: ^0.8.0
   flutter_animate: ^4.5.2
-  audioplayers: ^6.0.0
+  flutter_soloud: ^2.1.2
   shared_preferences: ^2.5.3
   collection: ^1.19.1
   purchases_flutter: ^10.2.3
