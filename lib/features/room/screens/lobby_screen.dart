@@ -41,6 +41,40 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         .toList();
   }
 
+  bool _samePlayerList(List<Player> a, List<Player> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.id != right.id ||
+          left.deviceId != right.deviceId ||
+          left.name != right.name ||
+          left.avatarColor != right.avatarColor ||
+          left.score != right.score ||
+          left.isHost != right.isHost ||
+          left.isReady != right.isReady ||
+          left.isConnected != right.isConnected) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _setPlayersIfChanged(List<Player> players) {
+    if (_samePlayerList(_players, players)) return;
+    setState(() => _players = players);
+  }
+
+  bool _sameStringSet(Set<String> a, Set<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final value in a) {
+      if (!b.contains(value)) return false;
+    }
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -114,9 +148,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             },
       onPresenceChanged: (deviceIds) {
         if (!mounted) return;
+        if (_hasPresenceSync && _sameStringSet(_presentDeviceIds, deviceIds)) {
+          return;
+        }
         setState(() {
           _hasPresenceSync = true;
-          _presentDeviceIds = deviceIds;
+          _presentDeviceIds = Set<String>.of(deviceIds);
         });
       },
     );
@@ -129,9 +166,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final playerService = ref.read(playerServiceProvider);
     final players = await playerService.getPlayers(room.id);
     if (mounted) {
-      setState(() {
-        _players = playerService.collapseDuplicateConnectedPlayers(players);
-      });
+      _setPlayersIfChanged(
+        playerService.collapseDuplicateConnectedPlayers(players),
+      );
     }
   }
 
@@ -400,11 +437,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         next.whenData((data) {
           if (mounted) {
             final playerService = ref.read(playerServiceProvider);
-            setState(() {
-              _players = playerService.collapseDuplicateConnectedPlayers(
+            _setPlayersIfChanged(
+              playerService.collapseDuplicateConnectedPlayers(
                 data.map((e) => Player.fromJson(e)).toList(),
-              );
-            });
+              ),
+            );
           }
         });
       });

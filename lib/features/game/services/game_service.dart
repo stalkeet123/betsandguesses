@@ -13,15 +13,21 @@ class GameService {
 
   // ── Questions ──
 
-  List<Question>? _cachedQuestions;
+  static const _questionSelectColumns =
+      'id, text_tr, text_en, answer, answer_unit, category, difficulty, source';
+  static const _questionCandidateSelectColumns = 'id, category';
 
-  /// Fetch all questions once and cache them
+  List<_QuestionCandidate>? _cachedQuestionCandidates;
+
+  /// Fetch lightweight question candidates once and cache them.
   Future<void> prefetchQuestions() async {
-    if (_cachedQuestions != null) return;
+    if (_cachedQuestionCandidates != null) return;
     try {
-      final response = await _client.from('questions').select();
-      _cachedQuestions = (response as List)
-          .map((e) => Question.fromJson(e))
+      final response = await _client
+          .from('questions')
+          .select(_questionCandidateSelectColumns);
+      _cachedQuestionCandidates = (response as List)
+          .map((e) => _QuestionCandidate.fromJson(e))
           .toList();
     } catch (e) {
       // Ignore, we will try again
@@ -36,14 +42,16 @@ class GameService {
   }) async {
     await prefetchQuestions();
 
-    if (_cachedQuestions == null || _cachedQuestions!.isEmpty) {
-      // Fallback: fetch directly if cache failed or is empty
-      var query = _client.from('questions').select();
-      final response = await query;
-      _cachedQuestions = (response as List)
-          .map((e) => Question.fromJson(e))
+    if (_cachedQuestionCandidates == null ||
+        _cachedQuestionCandidates!.isEmpty) {
+      // Fallback: fetch candidates directly if cache failed or is empty.
+      final response = await _client
+          .from('questions')
+          .select(_questionCandidateSelectColumns);
+      _cachedQuestionCandidates = (response as List)
+          .map((e) => _QuestionCandidate.fromJson(e))
           .toList();
-      if (_cachedQuestions!.isEmpty) return null;
+      if (_cachedQuestionCandidates!.isEmpty) return null;
     }
 
     final normalizedCategory = category?.trim();
@@ -52,8 +60,9 @@ class GameService {
         normalizedCategory.isNotEmpty &&
         normalizedCategory != GameConstants.defaultCategory;
 
-    var available = _cachedQuestions!
-        .where((q) => !usedQuestionIds.contains(q.id))
+    final usedIds = usedQuestionIds.toSet();
+    var available = _cachedQuestionCandidates!
+        .where((q) => !usedIds.contains(q.id))
         .toList();
 
     if (useCategory) {
@@ -67,15 +76,22 @@ class GameService {
 
     if (available.isEmpty) return null;
     available.shuffle(Random());
-    return available.first;
+    for (final candidate in available) {
+      final question = await getQuestionById(candidate.id);
+      if (question != null) return question;
+    }
+    return null;
   }
 
   Future<List<String>> getQuestionCategories() async {
     await prefetchQuestions();
-    if (_cachedQuestions == null || _cachedQuestions!.isEmpty) return [];
+    if (_cachedQuestionCandidates == null ||
+        _cachedQuestionCandidates!.isEmpty) {
+      return [];
+    }
 
     final categories =
-        _cachedQuestions!
+        _cachedQuestionCandidates!
             .map((q) => q.category?.trim())
             .whereType<String>()
             .where((category) => category.isNotEmpty)
@@ -89,7 +105,7 @@ class GameService {
   Future<Question?> getQuestionById(String questionId) async {
     final response = await _client
         .from('questions')
-        .select()
+        .select(_questionSelectColumns)
         .eq('id', questionId)
         .maybeSingle();
     if (response == null) return null;
@@ -466,5 +482,19 @@ class GameService {
         .toSet()
         .toList();
     return ids;
+  }
+}
+
+class _QuestionCandidate {
+  final String id;
+  final String? category;
+
+  const _QuestionCandidate({required this.id, this.category});
+
+  factory _QuestionCandidate.fromJson(Map<String, dynamic> json) {
+    return _QuestionCandidate(
+      id: json['id'] as String,
+      category: json['category'] as String?,
+    );
   }
 }

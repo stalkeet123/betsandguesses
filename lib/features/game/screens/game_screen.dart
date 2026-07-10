@@ -58,6 +58,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeGame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      AppAssetPaths.warmUpBoardImages(context).catchError((_) {});
+    });
   }
 
   @override
@@ -185,8 +189,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
           _timer?.cancel();
         }
-
-        setState(() {});
       },
       onGuessSubmitted: (_) {
         _maybeAutoRevealGuesses();
@@ -239,15 +241,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final answer = payload['answer'] as int?;
         final winningGuessId = payload['winning_guess_id'] as String?;
         if (answer != null) {
-          ref
-              .read(gameStateProvider.notifier)
-              .setCorrectAnswer(answer, winningGuessId);
-          ref
-              .read(gameStateProvider.notifier)
-              .updatePhase(RoundPhase.revealAnswer);
+          ref.read(gameStateProvider.notifier).revealAnswer(
+                answer: answer,
+                winningGuessId: winningGuessId,
+              );
           _syncAudioForPhase(RoundPhase.revealAnswer);
           _startRevealSequence(ref.read(gameStateProvider));
-          setState(() {});
         }
       },
       onGameStarted: (payload) {
@@ -261,10 +260,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final question = Question.fromJson(questionData);
         final scores = _scoresFromPayload(payload['scores']);
         final gameNotifier = ref.read(gameStateProvider.notifier);
-        gameNotifier.setRound(round);
-        gameNotifier.updatePhase(phase);
-        gameNotifier.setQuestion(question);
-        if (scores != null) gameNotifier.setScores(scores);
+        gameNotifier.startGame(
+          round: round,
+          phase: phase,
+          question: question,
+          scores: scores,
+        );
         if (!_usedQuestionIds.contains(question.id)) {
           _usedQuestionIds.add(question.id);
         }
@@ -274,7 +275,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
           _startTimer(GameConstants.guessTimerSeconds);
         }
         _syncAudioForPhase(phase);
-        if (mounted) setState(() {});
       },
       onGameEnded: (_) {
         if (mounted) {
@@ -567,7 +567,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       });
 
       _startTimer(GameConstants.betTimerSeconds);
-      if (mounted) setState(() {});
     } finally {
       _isRevealingGuesses = false;
     }
@@ -594,7 +593,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     final bets = await gameService.getBets(room.id, gameState.currentRound);
-    gameNotifier.setBets(bets);
     final payouts = gameService.calculatePayouts(
       guesses: gameState.sortedGuesses,
       bets: bets,
@@ -626,9 +624,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
         newScores[entry.key] = 15;
       }
     }
-    gameNotifier.setCorrectAnswer(correctAnswer, winningGuess?.id);
-    gameNotifier.updatePhase(RoundPhase.revealAnswer);
-    gameNotifier.setScores(newScores);
+    gameNotifier.revealAnswer(
+      answer: correctAnswer,
+      winningGuessId: winningGuess?.id,
+      bets: bets,
+      scores: newScores,
+    );
     _syncAudioForPhase(RoundPhase.revealAnswer);
     _startRevealSequence(ref.read(gameStateProvider), payouts: payouts);
 
@@ -652,8 +653,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       'phase': RoundPhase.revealAnswer.name,
       'round': gameState.currentRound,
     });
-
-    if (mounted) setState(() {});
 
     // Auto-advance after 6 seconds for host
     Future.delayed(const Duration(seconds: 6), () {
@@ -1310,7 +1309,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             child: gameState.currentQuestion == null
                 ? const _QuestionLoadingText(color: Color(0xFF0A2C59))
                 : _AdaptiveQuestionText(
-                    text: gameState.currentQuestion!.textTr,
+                    text: gameState.currentQuestion!.getText(locale: 'en'),
                     color: const Color(0xFF0A2C59),
                     minFontSize: 20,
                     maxFontSize: 34,
@@ -1889,7 +1888,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             child: gameState.currentQuestion == null
                 ? const _QuestionLoadingText(color: AppColors.feltDark)
                 : _AdaptiveQuestionText(
-                    text: gameState.currentQuestion!.textTr,
+                    text: gameState.currentQuestion!.getText(locale: 'en'),
                     color: AppColors.feltDark,
                     minFontSize: 22,
                     maxFontSize: 46,

@@ -15,8 +15,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final imageCache = PaintingBinding.instance.imageCache;
-  imageCache.maximumSize = 80;
-  imageCache.maximumSizeBytes = 96 << 20;
+  imageCache.maximumSize = 50;
+  imageCache.maximumSizeBytes = 48 << 20;
 
   // Force portrait orientation
   await SystemChrome.setPreferredOrientations([
@@ -68,7 +68,7 @@ class _TahminAppState extends ConsumerState<TahminApp> {
     _didWarmUpImages = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      AppAssetPaths.warmUpImages(context).catchError((_) {});
+      AppAssetPaths.warmUpStartupImages(context).catchError((_) {});
       // On mobile, start music immediately (no autoplay restriction).
       // On web, we wait for the first user interaction (handled by Listener below).
       if (!kIsWeb) {

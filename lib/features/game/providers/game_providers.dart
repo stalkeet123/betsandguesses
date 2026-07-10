@@ -62,6 +62,20 @@ class GameStateNotifier extends Notifier<GameState> {
     state = state.copyWith(currentQuestion: question);
   }
 
+  void startGame({
+    required int round,
+    required RoundPhase phase,
+    required Question question,
+    Map<String, int>? scores,
+  }) {
+    state = state.copyWith(
+      currentRound: round,
+      phase: phase,
+      currentQuestion: question,
+      scores: scores ?? state.scores,
+    );
+  }
+
   void setGuesses(List<Guess> guesses) {
     final sorted = List<Guess>.of(guesses)
       ..sort((a, b) => a.value.compareTo(b.value));
@@ -124,6 +138,29 @@ class GameStateNotifier extends Notifier<GameState> {
     state = state.copyWith(
       correctAnswer: answer,
       winningGuessId: winningGuessId,
+    );
+  }
+
+  void revealAnswer({
+    required int answer,
+    required String? winningGuessId,
+    List<Bet>? bets,
+    Map<String, int>? scores,
+  }) {
+    state = GameState(
+      roomId: state.roomId,
+      roomCode: state.roomCode,
+      currentRound: state.currentRound,
+      maxRounds: state.maxRounds,
+      phase: RoundPhase.revealAnswer,
+      currentQuestion: state.currentQuestion,
+      guesses: state.guesses,
+      sortedGuesses: state.sortedGuesses,
+      bets: bets ?? state.bets,
+      scores: scores ?? state.scores,
+      correctAnswer: answer,
+      winningGuessId: winningGuessId,
+      hasSubmittedGuess: state.hasSubmittedGuess,
     );
   }
 

@@ -1,34 +1,23 @@
 {
-    "name": "partygame",
-    "short_name": "partygame",
+    "name": "Bets & Guesses",
+    "short_name": "Bets & Guesses",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0F0805",
     "theme_color": "#0F0805",
-    "description": "A new Flutter project.",
+    "description": "Bets & Guesses - The ultimate party trivia game.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
         {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-512.png",
+            "src": "icons/logo.webp",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/webp"
         },
         {
-            "src": "icons/Icon-maskable-192.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "maskable"
-        },
-        {
-            "src": "icons/Icon-maskable-512.png",
+            "src": "icons/logo.webp",
             "sizes": "512x512",
-            "type": "image/png",
+            "type": "image/webp",
             "purpose": "maskable"
         }
     ]

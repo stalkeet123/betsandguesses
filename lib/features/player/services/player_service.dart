@@ -110,12 +110,9 @@ class PlayerService {
   }
 
   Future<void> updateScores(Map<String, int> playerScores) async {
-    for (final entry in playerScores.entries) {
-      await _client
-          .from('players')
-          .update({'score': entry.value})
-          .eq('id', entry.key);
-    }
+    await Future.wait(
+      playerScores.entries.map((entry) => updateScore(entry.key, entry.value)),
+    );
   }
 
   Future<void> leaveRoom(String playerId) async {

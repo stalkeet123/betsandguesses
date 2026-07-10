@@ -31,29 +31,34 @@ class AppAssetPaths {
     return _cacheWidths[asset] ?? 720;
   }
 
-  static Future<void> warmUpImages(BuildContext context) async {
-    Future<void> warmGroup(Map<String, int> assets) {
-      return Future.wait(
-        assets.entries.map(
-          (entry) => precacheImage(
-            ResizeImage(AssetImage(entry.key), width: entry.value),
-            context,
-          ),
-        ),
-      );
-    }
+  static Future<void> warmUpStartupImages(BuildContext context) {
+    return _warmGroup(context, _criticalWarmupAssets);
+  }
 
-    await warmGroup(_criticalWarmupAssets);
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!context.mounted) return;
-    await Future.wait(
-      _deferredWarmupAssets.entries.map(
+  static Future<void> warmUpBoardImages(BuildContext context) {
+    return _warmGroup(context, _deferredWarmupAssets);
+  }
+
+  static Future<void> _warmGroup(
+    BuildContext context,
+    Map<String, int> assets,
+  ) {
+    if (!context.mounted) return Future<void>.value();
+    return Future.wait(
+      assets.entries.map(
         (entry) => precacheImage(
           ResizeImage(AssetImage(entry.key), width: entry.value),
           context,
         ),
       ),
     );
+  }
+
+  static Future<void> warmUpImages(BuildContext context) async {
+    await warmUpStartupImages(context);
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!context.mounted) return;
+    await warmUpBoardImages(context);
   }
 }
 
