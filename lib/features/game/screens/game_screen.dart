@@ -80,19 +80,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final audio = ref.read(audioServiceProvider);
     switch (phase) {
       case RoundPhase.idle:
+        audio.startAmbience();
+        audio.stopSuspense();
+        break;
       case RoundPhase.question:
       case RoundPhase.guessing:
-        audio.startAmbience();
+      case RoundPhase.betting:
         audio.startSuspense();
         break;
-      case RoundPhase.betting:
-        audio.startAmbience();
-        audio.stopSuspense();
-        break;
       case RoundPhase.revealGuesses:
-        audio.startAmbience();
-        audio.stopSuspense();
-        break;
       case RoundPhase.revealAnswer:
       case RoundPhase.scoring:
         audio.startAmbience();
@@ -422,9 +418,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (_timerSeconds > 0) {
         _timerSeconds--;
         ref.read(gameStateProvider.notifier).setTimer(_timerSeconds);
+        if (_timerSeconds == 10) {
+          ref.read(audioServiceProvider).startTicking();
+        }
         setState(() {});
       } else {
         timer.cancel();
+        ref.read(audioServiceProvider).stopTicking();
+        ref.read(audioServiceProvider).playTimeUp();
         _handleTimerFinished();
       }
     });
@@ -508,6 +509,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     _startTimer(GameConstants.guessTimerSeconds);
     if (mounted) setState(() {});
+    ref.read(audioServiceProvider).playQuestionReveal();
   }
 
   Future<void> _revealGuesses() async {
@@ -665,15 +667,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final audio = ref.read(audioServiceProvider);
     if (payout > 0) {
       audio.playPayout();
-      audio.playSuccess();
     } else {
-      audio.playClick();
+      audio.playChipLoss();
     }
   }
 
   void _startRevealSequence(GameState gameState, {Map<String, int>? payouts}) {
     final correctAnswer = gameState.correctAnswer;
     if (correctAnswer == null) return;
+    
+    ref.read(audioServiceProvider).playResultReveal();
 
     final resolvedPayouts =
         payouts ??

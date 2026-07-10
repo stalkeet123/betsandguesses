@@ -10,26 +10,37 @@ class AudioService {
   bool _isMuted = false;
   bool _isAmbiencePlaying = false;
   bool _isSuspensePlaying = false;
+  bool _isTickingPlaying = false;
 
-  AudioSource? _upbeatSource;
-  AudioSource? _suspenseSource;
-  AudioSource? _buttonClickSource;
-  AudioSource? _chipMoveSource;
-  AudioSource? _slotPayoutSource;
-  AudioSource? _successSource;
+  AudioSource? _backgroundSource;
+  AudioSource? _elevatorSource;
+  AudioSource? _questionRevealSource;
+  AudioSource? _tickingClockSource;
+  AudioSource? _timeUpSource;
+  AudioSource? _chipSelectSource;
+  AudioSource? _chipDropSource;
+  AudioSource? _chipLossSource;
+  AudioSource? _resultRevealSource;
+  AudioSource? _payoutWinSource;
+  AudioSource? _epicFanfareSource;
 
   SoundHandle? _ambienceHandle;
   SoundHandle? _suspenseHandle;
+  SoundHandle? _tickingHandle;
   SoundHandle? _payoutHandle;
   Timer? _payoutStopTimer;
 
-  static const _upbeatMusic = 'assets/sound/mixkit-upbeat-jazz-644.mp3';
-  static const _suspenseMusic = 'assets/sound/mixkit-suspense-mystery-bass-685.wav';
-  static const _buttonClick = 'assets/sound/button.wav';
-  static const _chipMove = 'assets/sound/chip1.wav';
-  static const _slotPayout = 'assets/sound/mixkit-slot-machine-payout-alarm-1996.wav';
-  static const _success =
-      'assets/sound/456965__funwithsound__short-success-sound-glockenspiel-treasure-video-game.mp3';
+  static const _backgroundMusic = 'assets/sound/arka plan.mp3';
+  static const _elevatorMusic = 'assets/sound/686020__yellowtree__elevator-music.wav';
+  static const _questionReveal = 'assets/sound/soru-acılma.wav';
+  static const _tickingClock = 'assets/sound/saat.wav';
+  static const _timeUp = 'assets/sound/sürebitti.wav';
+  static const _chipSelect = 'assets/sound/chip1.wav';
+  static const _chipDrop = 'assets/sound/çip2.wav';
+  static const _chipLoss = 'assets/sound/çipkaybolma.wav';
+  static const _resultReveal = 'assets/sound/sonuç açıklanma.flac';
+  static const _payoutWin = 'assets/sound/532861__joma86__allinpushchips.wav';
+  static const _epicFanfare = 'assets/sound/514492__metrostock99__grand-entrance-intro.wav';
 
   AudioService(this._prefs) {
     _isMuted = _prefs.getBool('audio_muted') ?? false;
@@ -42,12 +53,17 @@ class AudioService {
     try {
       await SoLoud.instance.init();
       
-      _upbeatSource = await SoLoud.instance.loadAsset(_upbeatMusic);
-      _suspenseSource = await SoLoud.instance.loadAsset(_suspenseMusic);
-      _buttonClickSource = await SoLoud.instance.loadAsset(_buttonClick);
-      _chipMoveSource = await SoLoud.instance.loadAsset(_chipMove);
-      _slotPayoutSource = await SoLoud.instance.loadAsset(_slotPayout);
-      _successSource = await SoLoud.instance.loadAsset(_success);
+      _backgroundSource = await SoLoud.instance.loadAsset(_backgroundMusic);
+      _elevatorSource = await SoLoud.instance.loadAsset(_elevatorMusic);
+      _questionRevealSource = await SoLoud.instance.loadAsset(_questionReveal);
+      _tickingClockSource = await SoLoud.instance.loadAsset(_tickingClock);
+      _timeUpSource = await SoLoud.instance.loadAsset(_timeUp);
+      _chipSelectSource = await SoLoud.instance.loadAsset(_chipSelect);
+      _chipDropSource = await SoLoud.instance.loadAsset(_chipDrop);
+      _chipLossSource = await SoLoud.instance.loadAsset(_chipLoss);
+      _resultRevealSource = await SoLoud.instance.loadAsset(_resultReveal);
+      _payoutWinSource = await SoLoud.instance.loadAsset(_payoutWin);
+      _epicFanfareSource = await SoLoud.instance.loadAsset(_epicFanfare);
 
       await _applyVolumes();
     } catch (e) {
@@ -63,10 +79,11 @@ class AudioService {
   Future<void> startAmbience() async {
     if (_isMuted || _isAmbiencePlaying || !SoLoud.instance.isInitialized) return;
     try {
-      if (_upbeatSource != null) {
+      await stopSuspense();
+      if (_backgroundSource != null) {
         _ambienceHandle = await SoLoud.instance.play(
-          _upbeatSource!,
-          volume: 0.09,
+          _backgroundSource!,
+          volume: 0.12,
           looping: true,
         );
         _isAmbiencePlaying = true;
@@ -88,11 +105,11 @@ class AudioService {
   Future<void> startSuspense() async {
     if (_isMuted || _isSuspensePlaying || !SoLoud.instance.isInitialized) return;
     try {
-      await startAmbience();
-      if (_suspenseSource != null) {
+      await stopAmbience();
+      if (_elevatorSource != null) {
         _suspenseHandle = await SoLoud.instance.play(
-          _suspenseSource!,
-          volume: 0.18,
+          _elevatorSource!,
+          volume: 0.15,
           looping: true,
         );
         _isSuspensePlaying = true;
@@ -111,9 +128,35 @@ class AudioService {
     }
   }
 
+  Future<void> startTicking() async {
+    if (_isMuted || _isTickingPlaying || !SoLoud.instance.isInitialized) return;
+    try {
+      if (_tickingClockSource != null) {
+        _tickingHandle = await SoLoud.instance.play(
+          _tickingClockSource!,
+          volume: 0.35,
+          looping: true,
+        );
+        _isTickingPlaying = true;
+      }
+    } catch (error) {
+      debugPrint('Audio ticking failed: $error');
+    }
+  }
+
+  Future<void> stopTicking() async {
+    if (!SoLoud.instance.isInitialized) return;
+    _isTickingPlaying = false;
+    if (_tickingHandle != null) {
+      await SoLoud.instance.stop(_tickingHandle!);
+      _tickingHandle = null;
+    }
+  }
+
   Future<void> stopAllLoops() async {
     await stopAmbience();
     await stopSuspense();
+    await stopTicking();
     await stopPayout();
   }
 
@@ -142,25 +185,27 @@ class AudioService {
     }
   }
 
-  Future<void> playClick() => _playSfx(_buttonClickSource, volume: 0.9);
-
-  Future<void> playChip() => _playSfx(_chipMoveSource, volume: 0.78);
-
-  Future<void> playDrop() => playChip();
-
-  Future<void> playClink() => playChip();
-
-  Future<void> playSuccess() => _playSfx(_successSource, volume: 0.86);
+  Future<void> playClick() => _playSfx(_chipSelectSource, volume: 0.9);
+  Future<void> playChip() => _playSfx(_chipSelectSource, volume: 0.78);
+  Future<void> playDrop() => _playSfx(_chipDropSource, volume: 0.85);
+  Future<void> playClink() => _playSfx(_chipDropSource, volume: 0.85);
+  Future<void> playChipLoss() => _playSfx(_chipLossSource, volume: 0.65);
+  Future<void> playQuestionReveal() => _playSfx(_questionRevealSource, volume: 0.8);
+  Future<void> playTimeUp() => _playSfx(_timeUpSource, volume: 0.7);
+  Future<void> playSuccess() => _playSfx(_epicFanfareSource, volume: 0.85);
+  Future<void> playResultReveal() => _playSfx(_resultRevealSource, volume: 0.85);
+  
+  Future<void> playEpicFanfare() => _playSfx(_epicFanfareSource, volume: 0.9);
 
   Future<void> playPayout() async {
-    if (_isMuted || !SoLoud.instance.isInitialized || _slotPayoutSource == null) return;
+    if (_isMuted || !SoLoud.instance.isInitialized || _payoutWinSource == null) return;
     try {
       _payoutStopTimer?.cancel();
       if (_payoutHandle != null) {
         await SoLoud.instance.stop(_payoutHandle!);
       }
-      _payoutHandle = await SoLoud.instance.play(_slotPayoutSource!, volume: 0.72);
-      _payoutStopTimer = Timer(const Duration(seconds: 5), stopPayout);
+      _payoutHandle = await SoLoud.instance.play(_payoutWinSource!, volume: 0.8);
+      _payoutStopTimer = Timer(const Duration(seconds: 4), stopPayout);
     } catch (error) {
       debugPrint('Audio payout failed: $error');
     }
@@ -178,7 +223,7 @@ class AudioService {
 
   Future<void> playRandomChipSound() async {
     final roll = Random().nextInt(4);
-    await _playSfx(_chipMoveSource, volume: roll == 0 ? 0.72 : 0.78);
+    await _playSfx(_chipSelectSource, volume: roll == 0 ? 0.72 : 0.78);
   }
 
   void dispose() {
