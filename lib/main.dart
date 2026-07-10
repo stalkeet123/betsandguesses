@@ -80,7 +80,7 @@ class _TahminAppState extends ConsumerState<TahminApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Tahmin.io',
+      title: 'Bets & Guesses',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       routerConfig: appRouter,
