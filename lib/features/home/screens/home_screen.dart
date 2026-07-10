@@ -44,6 +44,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final skipAutoJoin = ref.read(skipAutoJoinProvider);
+      final shouldShowOnboarding =
+          !skipAutoJoin &&
+          !ref.read(onboardingSeenProvider) &&
+          (_prefilledRoomCode == null || _prefilledRoomCode!.isEmpty);
+      if (shouldShowOnboarding) {
+        if (!mounted) return;
+        context.goNamed('onboarding');
+        return;
+      }
+
       if (skipAutoJoin) {
         ref.read(skipAutoJoinProvider.notifier).set(false);
         final savedName = ref.read(playerNameProvider);

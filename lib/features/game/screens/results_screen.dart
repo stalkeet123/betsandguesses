@@ -1,15 +1,15 @@
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
-import '../../../core/constants/game_constants.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
+import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 
 class ResultsScreen extends ConsumerStatefulWidget {
@@ -83,24 +83,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     }
   }
 
-  Future<void> _shareResults() async {
-    final lines = _sortedPlayers
-        .asMap()
-        .entries
-        .map(
-          (entry) =>
-              '${entry.key + 1}. ${entry.value.name}: ${_formatScore(entry.value.score)}',
-        )
-        .join('\n');
-    await Clipboard.setData(
-      ClipboardData(text: 'Bets & Guesses results\n$lines'),
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Results copied.')));
-  }
-
   String _formatScore(int value) {
     return value.toString().replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
@@ -165,30 +147,30 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                     final contentWidth = constraints.maxWidth
                         .clamp(0.0, 560.0)
                         .toDouble();
+                    final isCompact = constraints.maxHeight < 720;
 
                     return Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: contentWidth,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _buildHeader(),
-                                const SizedBox(height: 10),
-                                _buildWinnerCard(winner),
-                                const SizedBox(height: 10),
-                                _buildScoreboard(),
-                                const SizedBox(height: 10),
-                                _buildHighlights(winner),
-                                const SizedBox(height: 12),
-                                _buildActions(),
-                              ],
-                            ),
+                      child: SizedBox(
+                        width: contentWidth,
+                        height: constraints.maxHeight,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            18,
+                            isCompact ? 6 : 10,
+                            18,
+                            14,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildHeader(compact: isCompact),
+                              SizedBox(height: isCompact ? 8 : 12),
+                              _buildWinnerCard(winner, compact: isCompact),
+                              SizedBox(height: isCompact ? 8 : 12),
+                              Expanded(child: _buildScoreboard()),
+                              SizedBox(height: isCompact ? 8 : 12),
+                              _buildActions(),
+                            ],
                           ),
                         ),
                       ),
@@ -203,14 +185,14 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader({required bool compact}) {
     return Column(
       children: [
         SizedBox(
-          height: 104,
+          height: compact ? 58 : 86,
           child: CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: compact ? 4 : 8),
         Row(
           children: [
             Expanded(child: _buildGoldRule()),
@@ -221,13 +203,13 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               size: 26,
             ),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               'GAME OVER!',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'RehnCondensed',
                 color: AppColors.brassLight,
-                fontSize: 42,
+                fontSize: compact ? 34 : 42,
                 fontWeight: FontWeight.w900,
                 height: 0.9,
                 letterSpacing: 1.1,
@@ -252,30 +234,30 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           ],
         ),
         const SizedBox(height: 4),
-        Text(
-          'Here are the final results',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: AppColors.ivory,
-            fontWeight: FontWeight.w800,
-            shadows: const [
-              Shadow(
-                color: Colors.black54,
-                blurRadius: 6,
-                offset: Offset(0, 2),
-              ),
-            ],
+        if (!compact)
+          Text(
+            'Final leaderboard',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: AppColors.ivory,
+              fontWeight: FontWeight.w800,
+              shadows: const [
+                Shadow(
+                  color: Colors.black54,
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
 
-  Widget _buildWinnerCard(Player? winner) {
+  Widget _buildWinnerCard(Player? winner, {required bool compact}) {
     return Container(
-      height: 178,
-      padding: const EdgeInsets.all(16),
-      decoration: _darkPanelDecoration(radius: 22),
+      padding: EdgeInsets.fromLTRB(16, compact ? 12 : 16, 16, compact ? 12 : 16),
+      decoration: _darkPanelDecoration(radius: 18),
       child: winner == null
           ? Center(
               child: Text(
@@ -285,120 +267,62 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 ).textTheme.headlineSmall?.copyWith(color: AppColors.ivory),
               ),
             )
-          : Row(
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(
-                  width: 142,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: 116,
-                        height: 116,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              winner.color.withValues(alpha: 0.92),
-                              winner.color.withValues(alpha: 0.45),
-                            ],
-                          ),
-                          border: Border.all(
-                            color: AppColors.brassLight,
-                            width: 4,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.brass.withValues(alpha: 0.55),
-                              blurRadius: 28,
-                            ),
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.35),
-                              blurRadius: 18,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            winner.name.isNotEmpty
-                                ? winner.name[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: AppColors.ivory,
-                              fontSize: 58,
-                              fontWeight: FontWeight.w900,
-                              height: 1,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const Positioned(
-                        top: 0,
-                        child: Icon(
-                          Icons.workspace_premium_rounded,
-                          color: AppColors.brassLight,
-                          size: 54,
-                        ),
+                _buildRibbon('WINNER'),
+                SizedBox(height: compact ? 8 : 12),
+                Text(
+                  winner.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    color: AppColors.ivory,
+                    fontSize: compact ? 30 : 36,
+                    fontWeight: FontWeight.w900,
+                    height: 0.95,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 8,
+                        offset: Offset(0, 3),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildRibbon('WINNER'),
-                      const SizedBox(height: 12),
-                      Text(
-                        winner.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.displaySmall
-                            ?.copyWith(
-                              color: AppColors.ivory,
-                              fontWeight: FontWeight.w900,
-                              shadows: const [
-                                Shadow(
-                                  color: Colors.black87,
-                                  blurRadius: 8,
-                                  offset: Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'FINAL SCORE',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: AppColors.brassLight,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.2,
+                SizedBox(height: compact ? 8 : 10),
+                Text(
+                  'FINAL SCORE',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: AppColors.brassLight,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _formatScore(winner.score),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontFamily: 'RehnCondensed',
+                      color: AppColors.brassLight,
+                      fontSize: compact ? 44 : 54,
+                      fontWeight: FontWeight.w900,
+                      height: 0.9,
+                      letterSpacing: 0,
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black87,
+                          blurRadius: 8,
+                          offset: Offset(0, 3),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _formatScore(winner.score),
-                        maxLines: 1,
-                        style: const TextStyle(
-                          fontFamily: 'RehnCondensed',
-                          color: AppColors.brassLight,
-                          fontSize: 54,
-                          fontWeight: FontWeight.w900,
-                          height: 0.9,
-                          letterSpacing: 0,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black87,
-                              blurRadius: 8,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -408,7 +332,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
   Widget _buildScoreboard() {
     return Container(
-      height: 266,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: _darkPanelDecoration(radius: 20),
       child: Column(
@@ -417,10 +340,10 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               children: [
-                SizedBox(width: 52, child: _buildBoardHeader('#')),
+                SizedBox(width: 46, child: _buildBoardHeader('#')),
                 Expanded(child: _buildBoardHeader('PLAYER')),
                 SizedBox(
-                  width: 122,
+                  width: 104,
                   child: _buildBoardHeader('FINAL SCORE', alignRight: true),
                 ),
               ],
@@ -464,9 +387,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     };
 
     return Container(
-      height: 50,
+      constraints: const BoxConstraints(minHeight: 52),
       margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         gradient: isWinner
             ? const LinearGradient(
@@ -489,7 +412,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       child: Row(
         children: [
           SizedBox(
-            width: 52,
+            width: 46,
             child: Row(
               children: [
                 Icon(
@@ -497,8 +420,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                       ? Icons.military_tech_rounded
                       : Icons.circle_rounded,
                   color: rankColor,
-                  size: index < 3 ? 28 : 18,
+                  size: index < 3 ? 24 : 10,
                 ),
+                const SizedBox(width: 4),
                 Text(
                   '${index + 1}',
                   style: TextStyle(
@@ -511,119 +435,48 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               ],
             ),
           ),
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: player.color,
-              border: Border.all(
-                color: isWinner
-                    ? AppColors.ink.withValues(alpha: 0.52)
-                    : AppColors.brassLight,
-                width: 1.8,
-              ),
-            ),
-            child: Text(
-              player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
-              style: const TextStyle(
-                color: AppColors.ivory,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Text(
               player.name,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 color: isWinner ? AppColors.ink : AppColors.ivory,
                 fontWeight: FontWeight.w900,
+                height: 1.05,
               ),
             ),
           ),
-          Text(
-            _formatScore(player.score),
-            style: TextStyle(
-              color: isWinner ? AppColors.feltDark : AppColors.ivory,
-              fontSize: 25,
-              fontWeight: FontWeight.w900,
-              height: 1,
-              shadows: isWinner
-                  ? null
-                  : const [
-                      Shadow(
-                        color: Colors.black54,
-                        blurRadius: 6,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 96,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                _formatScore(player.score),
+                maxLines: 1,
+                style: TextStyle(
+                  color: isWinner ? AppColors.feltDark : AppColors.ivory,
+                  fontSize: 23,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  shadows: isWinner
+                      ? null
+                      : const [
+                          Shadow(
+                            color: Colors.black54,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                ),
+              ),
             ),
           ),
         ],
       ),
     ).animate().fadeIn(delay: (45 * index).ms).slideX(begin: 0.04);
-  }
-
-  Widget _buildHighlights(Player? winner) {
-    final runnerUp = _sortedPlayers.length > 1 ? _sortedPlayers[1] : null;
-
-    return Container(
-      height: 96,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFFFAEE), Color(0xFFF2D9A4), Color(0xFFFFFDF6)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.brassLight.withValues(alpha: 0.84),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildHighlightCell(
-              icon: Icons.emoji_events_rounded,
-              label: 'TOP SCORE',
-              name: winner?.name ?? '-',
-              value: winner == null ? '-' : _formatScore(winner.score),
-            ),
-          ),
-          _buildVerticalDivider(),
-          Expanded(
-            child: _buildHighlightCell(
-              icon: Icons.trending_up_rounded,
-              label: 'RUNNER UP',
-              name: runnerUp?.name ?? '-',
-              value: runnerUp == null ? '-' : _formatScore(runnerUp.score),
-            ),
-          ),
-          _buildVerticalDivider(),
-          Expanded(
-            child: _buildHighlightCell(
-              icon: Icons.groups_rounded,
-              label: 'PLAYERS',
-              name: '${_sortedPlayers.length}',
-              value: 'finished',
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildActions() {
@@ -638,19 +491,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             onTap: () {
               _backToLobby();
             },
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: 300,
-          child: _buildActionButton(
-            label: 'SHARE RESULTS',
-            icon: Icons.share_rounded,
-            isGold: false,
-            onTap: () {
-              _shareResults();
-            },
-            compact: true,
           ),
         ),
         const SizedBox(height: 8),
@@ -714,56 +554,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
   }
 
-  Widget _buildHighlightCell({
-    required IconData icon,
-    required String label,
-    required String name,
-    required String value,
-  }) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.felt,
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-            height: 1,
-          ),
-        ),
-        const SizedBox(height: 5),
-        Icon(icon, color: AppColors.mahogany, size: 27),
-        const SizedBox(height: 3),
-        Text(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.felt,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            height: 1,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.mahogany,
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            height: 1,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildActionButton({
     required String label,
     required IconData icon,
@@ -798,15 +588,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildVerticalDivider() {
-    return Container(
-      width: 1,
-      height: 62,
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      color: AppColors.felt.withValues(alpha: 0.28),
     );
   }
 

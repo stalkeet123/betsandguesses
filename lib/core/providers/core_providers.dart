@@ -88,6 +88,29 @@ class PlayerNameNotifier extends Notifier<String> {
 }
 
 // ── Current Player (after joining a room) ──
+// Onboarding
+final onboardingSeenProvider =
+    NotifierProvider<OnboardingSeenNotifier, bool>(() {
+      return OnboardingSeenNotifier();
+    });
+
+class OnboardingSeenNotifier extends Notifier<bool> {
+  static const _key = 'onboarding_seen_v1';
+
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPrefsProvider);
+    return prefs.getBool(_key) ?? false;
+  }
+
+  Future<void> markSeen() async {
+    final prefs = ref.read(sharedPrefsProvider);
+    await prefs.setBool(_key, true);
+    state = true;
+  }
+}
+
+// Current Player (after joining a room)
 final currentPlayerProvider = NotifierProvider<CurrentPlayerNotifier, Player?>(
   () {
     return CurrentPlayerNotifier();

@@ -1129,7 +1129,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final player = _playerById(playerId);
       return _LeaderboardEntry(
         name: player?.name ?? 'Player',
-        color: player?.color ?? AppColors.brass,
         score: gameState.scores[playerId] ?? player?.score ?? 0,
       );
     }).toList();
@@ -2028,10 +2027,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildRoundResultHero(GameState gameState, Guess? winningGuess) {
     final answer = gameState.correctAnswer;
     final winnerName = winningGuess?.playerName ?? 'Player';
-    final winnerPlayer = winningGuess == null
-        ? null
-        : _playerById(winningGuess.playerId);
-    final winnerColor = winnerPlayer?.color ?? AppColors.brass;
 
     return Container(
       width: double.infinity,
@@ -2102,123 +2097,87 @@ class _GameScreenState extends ConsumerState<GameScreen>
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 74,
-                height: 74,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      winnerColor.withValues(alpha: 0.94),
-                      winnerColor.withValues(alpha: 0.46),
-                    ],
-                  ),
-                  border: Border.all(color: AppColors.brassLight, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.brass.withValues(alpha: 0.36),
-                      blurRadius: 18,
+              Text(
+                winningGuess == null ? 'No winning guess' : winnerName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: AppColors.ivory,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  letterSpacing: 0,
+                  shadows: const [
+                    Shadow(
+                      color: Colors.black87,
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
                     ),
                   ],
-                ),
-                child: Text(
-                  winnerName.isNotEmpty ? winnerName[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                    color: AppColors.ivory,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                  ),
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      winningGuess == null ? 'No winning guess' : winnerName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.outfit(
-                        color: AppColors.ivory,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                        letterSpacing: 0,
-                        shadows: const [
-                          Shadow(
-                            color: Colors.black87,
-                            blurRadius: 8,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
+              const SizedBox(height: 8),
+              Text(
+                winningGuess == null
+                    ? 'Waiting for scores'
+                    : 'Guess ${_formatGuessInput('${winningGuess.value}')}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: AppColors.brassLight,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text(
+                    'ANSWER',
+                    style: GoogleFonts.outfit(
+                      color: AppColors.ivory.withValues(alpha: 0.78),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: AppColors.brassLight.withValues(alpha: 0.46),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  answer == null ? '--' : _formatGuessInput('$answer'),
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontFamily: 'RehnCondensed',
+                    color: AppColors.brassLight,
+                    fontSize: 42,
+                    fontWeight: FontWeight.w900,
+                    height: 0.9,
+                    letterSpacing: 0,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 8,
+                        offset: Offset(0, 3),
                       ),
-                    ),
-                    const SizedBox(height: 7),
-                    Text(
-                      winningGuess == null
-                          ? 'Waiting for scores'
-                          : 'Guess ${_formatGuessInput('${winningGuess.value}')}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.outfit(
-                        color: AppColors.brassLight,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Text(
-                          'ANSWER',
-                          style: GoogleFonts.outfit(
-                            color: AppColors.ivory.withValues(alpha: 0.78),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1,
-                            height: 1,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Container(
-                            height: 1,
-                            color: AppColors.brassLight.withValues(alpha: 0.46),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        answer == null ? '--' : _formatGuessInput('$answer'),
-                        maxLines: 1,
-                        style: const TextStyle(
-                          fontFamily: 'RehnCondensed',
-                          color: AppColors.brassLight,
-                          fontSize: 42,
-                          fontWeight: FontWeight.w900,
-                          height: 0.9,
-                          letterSpacing: 0,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black87,
-                              blurRadius: 8,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -2399,8 +2358,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     };
 
     return Container(
-      height: 58,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         color: isPodium
             ? AppColors.ivory.withValues(alpha: 0.94)
@@ -2416,7 +2375,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       child: Row(
         children: [
           SizedBox(
-            width: 34,
+            width: 42,
             child: Text(
               '#${index + 1}',
               style: GoogleFonts.outfit(
@@ -2428,50 +2387,37 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
             ),
           ),
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: entry.color,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.82),
-                width: 2,
-              ),
-            ),
-            child: Text(
-              entry.name.isNotEmpty ? entry.name[0].toUpperCase() : '?',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: 15,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Text(
               entry.name,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.outfit(
                 color: isPodium ? AppColors.ink : AppColors.ivory,
-                fontSize: 15,
+                fontSize: 16,
                 fontWeight: FontWeight.w900,
-                height: 1,
+                height: 1.05,
                 letterSpacing: 0,
               ),
             ),
           ),
-          Text(
-            '${entry.score}',
-            style: GoogleFonts.outfit(
-              color: isPodium ? AppColors.mahogany : AppColors.brassLight,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              height: 1,
-              letterSpacing: 0,
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 88,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                '${entry.score}',
+                maxLines: 1,
+                style: GoogleFonts.outfit(
+                  color: isPodium ? AppColors.mahogany : AppColors.brassLight,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  letterSpacing: 0,
+                ),
+              ),
             ),
           ),
         ],
@@ -4458,12 +4404,10 @@ enum _BetSlotTone { green, black, gold, red }
 
 class _LeaderboardEntry {
   final String name;
-  final Color color;
   final int score;
 
   const _LeaderboardEntry({
     required this.name,
-    required this.color,
     required this.score,
   });
 }
