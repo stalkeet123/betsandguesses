@@ -4152,7 +4152,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final child = GestureDetector(onTap: onTap, child: visual);
 
     return AnimatedPositioned(
-      key: ValueKey('${bet.playerId}_${bet.slotIndex}_${bet.positionX}_${bet.positionY}'),
+      key: ValueKey(bet.id),
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOutCubic,
       left: globalLeft,
