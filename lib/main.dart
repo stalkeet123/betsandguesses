@@ -87,13 +87,7 @@ class _TahminAppState extends ConsumerState<TahminApp> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 460),
               child: child != null
-                  ? Listener(
-                      behavior: HitTestBehavior.translucent,
-                      onPointerDown: (_) {
-                        ref.read(audioServiceProvider).startMainBgm();
-                      },
-                      child: ClipRect(child: child),
-                    )
+                  ? ClipRect(child: child)
                   : const SizedBox.shrink(),
             ),
           ),

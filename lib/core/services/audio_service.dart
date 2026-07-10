@@ -47,6 +47,8 @@ class AudioService {
     _initPlayers();
   }
 
+  void Function()? _pendingBgmCall;
+
   bool get isMuted => _isMuted;
 
   Future<void> _initPlayers() async {
@@ -66,7 +68,12 @@ class AudioService {
       _payoutWinSource = await SoLoud.instance.loadAsset(_payoutWin);
       _epicFanfareSource = await SoLoud.instance.loadAsset(_epicFanfare);
 
-      await _applyVolumes();
+      _applyVolumes();
+      
+      if (_pendingBgmCall != null) {
+        _pendingBgmCall!();
+        _pendingBgmCall = null;
+      }
     } catch (e) {
       debugPrint('SoLoud init failed: $e');
     }
@@ -78,7 +85,11 @@ class AudioService {
   }
 
   Future<void> _fadeToBgm(AudioSource? source, {double volume = 0.15}) async {
-    if (_isMuted || !SoLoud.instance.isInitialized || source == null) return;
+    if (_isMuted) return;
+    if (!SoLoud.instance.isInitialized || source == null) {
+      _pendingBgmCall = () => _fadeToBgm(source, volume: volume);
+      return;
+    }
     if (_currentBgmSource == source && _bgmHandle != null) return;
 
     final oldHandle = _bgmHandle;
