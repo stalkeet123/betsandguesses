@@ -58,6 +58,7 @@ class TahminApp extends ConsumerStatefulWidget {
 
 class _TahminAppState extends ConsumerState<TahminApp> {
   bool _didWarmUpImages = false;
+  bool _hasInteracted = false;
 
   @override
   void didChangeDependencies() {
@@ -87,7 +88,16 @@ class _TahminAppState extends ConsumerState<TahminApp> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 460),
               child: child != null
-                  ? ClipRect(child: child)
+                  ? Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: (_) {
+                        if (!_hasInteracted) {
+                          _hasInteracted = true;
+                          ref.read(audioServiceProvider).startMainBgm();
+                        }
+                      },
+                      child: ClipRect(child: child),
+                    )
                   : const SizedBox.shrink(),
             ),
           ),
