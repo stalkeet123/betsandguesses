@@ -5,6 +5,18 @@ import '../models/guess_model.dart';
 import '../models/bet_model.dart';
 import '../../../core/constants/game_constants.dart';
 
+// ── Game Timer Provider ──
+final gameTimerProvider = NotifierProvider<GameTimerNotifier, int>(() {
+  return GameTimerNotifier();
+});
+
+class GameTimerNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void setTimer(int seconds) => state = seconds;
+}
+
 // ── Game State Provider ──
 final gameStateProvider = NotifierProvider<GameStateNotifier, GameState>(() {
   return GameStateNotifier();
@@ -117,12 +129,6 @@ class GameStateNotifier extends Notifier<GameState> {
 
   void setGuessSubmitted(bool submitted) {
     state = state.copyWith(hasSubmittedGuess: submitted);
-  }
-
-
-
-  void setTimer(int seconds) {
-    state = state.copyWith(timerSeconds: seconds);
   }
 
   void nextRound() {

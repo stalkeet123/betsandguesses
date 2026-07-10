@@ -46,7 +46,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Map<String, int> _roundPayouts = {};
   Timer? _slotScanTimer;
   final List<Timer> _revealEffectTimers = [];
-  int? _scanSlotIndex;
+  final ValueNotifier<int?> _scanSlotIndexNotifier = ValueNotifier(null);
   bool _showWinnerBadge = false;
   final Set<String> _incomingOtherBetIds = {};
   final Set<String> _playedOtherBetEntryIds = {};
@@ -62,6 +62,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   @override
   void dispose() {
+    _scanSlotIndexNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _cancelRevealEffects();
@@ -189,7 +190,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       },
       onGuessSubmitted: (_) {
         _maybeAutoRevealGuesses();
-        setState(() {});
       },
       onGuessesRevealed: (payload) {
         final guessesData = payload['guesses'] as List<dynamic>?;
@@ -198,7 +198,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
               .map((g) => Guess.fromJson(g as Map<String, dynamic>))
               .toList();
           ref.read(gameStateProvider.notifier).setGuesses(guesses);
-          setState(() {});
         }
       },
       onBetPlaced: (payload) {
@@ -211,7 +210,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
             _playedOtherBetEntryIds.remove(bet.id);
             ref.read(gameStateProvider.notifier).addBet(bet);
           }
-          setState(() {});
         }
       },
       onBetRemoved: (payload) {
@@ -222,14 +220,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           _incomingOtherBetIds.remove(betId);
           _playedOtherBetEntryIds.remove(betId);
           ref.read(gameStateProvider.notifier).removeBetById(betId);
-          setState(() {});
           return;
         }
         if (playerId != null && slotIndex != null) {
           ref
               .read(gameStateProvider.notifier)
               .removeBetForSlot(playerId, slotIndex);
-          setState(() {});
         }
       },
       onScoreUpdate: (payload) {
@@ -237,7 +233,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         if (scoresData != null) {
           final scores = scoresData.map((k, v) => MapEntry(k, v as int));
           ref.read(gameStateProvider.notifier).setScores(scores);
-          setState(() {});
         }
       },
       onAnswerRevealed: (payload) {
@@ -411,15 +406,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _startTimer(int seconds) {
     _timer?.cancel();
     _timerSeconds = seconds;
-    ref.read(gameStateProvider.notifier).setTimer(seconds);
+    
+    // Defer the provider update until after the build cycle
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(gameTimerProvider.notifier).setTimer(seconds);
+      }
+    });
+
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_timerSeconds > 0) {
         _timerSeconds--;
-        ref.read(gameStateProvider.notifier).setTimer(_timerSeconds);
+        ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
         if (_timerSeconds == 10) {
           ref.read(audioServiceProvider).startTicking();
         }
-        setState(() {});
       } else {
         timer.cancel();
         ref.read(audioServiceProvider).stopTicking();
@@ -712,7 +713,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _roundPayouts = resolvedPayouts;
       _roundWinners = winners;
       _showWinnerBadge = false;
-      _scanSlotIndex = scanOrder.isEmpty ? null : scanOrder.first;
+      _scanSlotIndexNotifier.value = scanOrder.isEmpty ? null : scanOrder.first;
     });
 
     _slotScanTimer = Timer.periodic(const Duration(milliseconds: 240), (timer) {
@@ -725,8 +726,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
         timer.cancel();
         setState(() {
           _showWinnerBadge = true;
-          _scanSlotIndex = winningSlotIndex;
         });
+        _scanSlotIndexNotifier.value = winningSlotIndex;
         _playRevealAudioForCurrentPlayer(gameState);
         _revealEffectTimers.add(
           Timer(const Duration(milliseconds: 240), () {
@@ -736,7 +737,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         return;
       }
       ref.read(audioServiceProvider).playClick();
-      setState(() => _scanSlotIndex = scanOrder[step]);
+      _scanSlotIndexNotifier.value = scanOrder[step];
     });
   }
 
@@ -747,7 +748,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       timer.cancel();
     }
     _revealEffectTimers.clear();
-    _scanSlotIndex = null;
+    _scanSlotIndexNotifier.value = null;
     _showWinnerBadge = false;
   }
 
@@ -853,19 +854,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
 
-    final gameService = ref.read(gameServiceProvider);
-    final guesses = await gameService.getGuesses(
-      room.id,
-      gameState.currentRound,
-    );
-    final expectedPlayers = max(
-      1,
-      _players.where((player) => player.isConnected).length,
-    );
     // We intentionally removed auto-reveal here to force players to wait for the 30 second timer.
-    // if (guesses.length >= expectedPlayers) {
-    //   await _revealGuesses();
-    // }
   }
 
   void _appendGuessDigit(String digit) {
@@ -1224,13 +1213,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _InfoPill(
-            icon: isReveal ? Icons.emoji_events_rounded : Icons.timer_rounded,
-            label: isReveal
-                ? 'RESULT'
-                : gameState.timerSeconds > 0
-                ? '0:${gameState.timerSeconds.toString().padLeft(2, '0')}'
-                : '--:--',
+          child: Consumer(
+            builder: (context, ref, child) {
+              final timerSeconds = ref.watch(gameTimerProvider);
+              return _InfoPill(
+                icon: isReveal ? Icons.emoji_events_rounded : Icons.timer_rounded,
+                label: isReveal
+                    ? 'RESULT'
+                    : timerSeconds > 0
+                    ? '0:${timerSeconds.toString().padLeft(2, '0')}'
+                    : '--:--',
+              );
+            },
           ),
         ),
       ],
@@ -3237,9 +3231,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final winningSlotIndex = isReveal
             ? _winningBetSlotIndex(gameState)
             : null;
-        final activeRevealSlotIndex = isReveal
-            ? (_scanSlotIndex ?? winningSlotIndex)
-            : null;
         final orderedSlots = [
           ..._betSlots.where((slot) => !slot.isSweetSpot),
           ..._betSlots.where((slot) => slot.isSweetSpot),
@@ -3247,7 +3238,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: Stack(
+          child: ValueListenableBuilder<int?>(
+            valueListenable: _scanSlotIndexNotifier,
+            builder: (context, activeRevealSlotIndex, _) {
+              if (!isReveal) activeRevealSlotIndex = null;
+              if (isReveal && activeRevealSlotIndex == null) {
+                activeRevealSlotIndex = winningSlotIndex;
+              }
+              return Stack(
             clipBehavior: Clip.none,
             children: [
               for (final spec in orderedSlots)
@@ -3297,9 +3295,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
               if (_showWinnerBadge && winningSlotIndex != null)
                 _buildWinnerOverlayCard(size, winningSlotIndex),
             ],
-          ),
-        );
-      },
+          );
+         },
+        ),
+      );
+    },
     );
   }
 

@@ -17,7 +17,6 @@ class GameState {
   final Map<String, int> scores;    // playerId -> total score
   final int? correctAnswer;
   final String? winningGuessId;
-  final int timerSeconds;
   final bool hasSubmittedGuess;
 
 
@@ -34,7 +33,6 @@ class GameState {
     this.scores = const {},
     this.correctAnswer,
     this.winningGuessId,
-    this.timerSeconds = 0,
     this.hasSubmittedGuess = false,
   });
 
@@ -54,7 +52,6 @@ class GameState {
     Map<String, int>? scores,
     int? correctAnswer,
     String? winningGuessId,
-    int? timerSeconds,
     bool? hasSubmittedGuess,
   }) {
     return GameState(
@@ -70,7 +67,6 @@ class GameState {
       scores: scores ?? this.scores,
       correctAnswer: correctAnswer ?? this.correctAnswer,
       winningGuessId: winningGuessId ?? this.winningGuessId,
-      timerSeconds: timerSeconds ?? this.timerSeconds,
       hasSubmittedGuess: hasSubmittedGuess ?? this.hasSubmittedGuess,
     );
   }
