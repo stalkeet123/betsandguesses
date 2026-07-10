@@ -67,7 +67,7 @@ class _TahminAppState extends ConsumerState<TahminApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       AppAssetPaths.warmUpImages(context).catchError((_) {});
-      ref.read(audioServiceProvider).startAmbience();
+      ref.read(audioServiceProvider).startLobbyMusic();
     });
   }
 
@@ -90,7 +90,7 @@ class _TahminAppState extends ConsumerState<TahminApp> {
                   ? Listener(
                       behavior: HitTestBehavior.translucent,
                       onPointerDown: (_) {
-                        ref.read(audioServiceProvider).startAmbience();
+                        ref.read(audioServiceProvider).startLobbyMusic();
                       },
                       child: ClipRect(child: child),
                     )

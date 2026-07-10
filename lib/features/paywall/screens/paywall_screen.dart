@@ -32,7 +32,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       upperBound: 1.0,
     )..repeat(reverse: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(audioServiceProvider).startAmbience();
+      ref.read(audioServiceProvider).startLobbyMusic();
       _loadRevenueCat();
     });
   }

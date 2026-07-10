@@ -47,7 +47,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     _loadPlayers();
     _setupRealtimeListener();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(audioServiceProvider).startAmbience();
+      ref.read(audioServiceProvider).startLobbyMusic();
       ref.read(gameServiceProvider).prefetchQuestions();
     });
   }
