@@ -80,19 +80,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final audio = ref.read(audioServiceProvider);
     switch (phase) {
       case RoundPhase.idle:
-        audio.startAmbience();
-        audio.stopSuspense();
+        audio.startLobbyMusic();
         break;
       case RoundPhase.question:
       case RoundPhase.guessing:
-      case RoundPhase.betting:
-        audio.startSuspense();
+        audio.startQuestionMusic();
         break;
+      case RoundPhase.betting:
       case RoundPhase.revealGuesses:
       case RoundPhase.revealAnswer:
       case RoundPhase.scoring:
-        audio.startAmbience();
-        audio.stopSuspense();
+        audio.startBettingMusic();
         break;
     }
   }

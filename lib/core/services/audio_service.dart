@@ -8,12 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AudioService {
   final SharedPreferences _prefs;
   bool _isMuted = false;
-  bool _isAmbiencePlaying = false;
-  bool _isSuspensePlaying = false;
   bool _isTickingPlaying = false;
 
   AudioSource? _backgroundSource;
   AudioSource? _elevatorSource;
+  AudioSource? _questionSuspenseSource;
   AudioSource? _questionRevealSource;
   AudioSource? _tickingClockSource;
   AudioSource? _timeUpSource;
@@ -24,14 +23,15 @@ class AudioService {
   AudioSource? _payoutWinSource;
   AudioSource? _epicFanfareSource;
 
-  SoundHandle? _ambienceHandle;
-  SoundHandle? _suspenseHandle;
+  SoundHandle? _bgmHandle;
+  AudioSource? _currentBgmSource;
   SoundHandle? _tickingHandle;
   SoundHandle? _payoutHandle;
   Timer? _payoutStopTimer;
 
   static const _backgroundMusic = 'assets/sound/arka plan.mp3';
   static const _elevatorMusic = 'assets/sound/686020__yellowtree__elevator-music.wav';
+  static const _questionSuspenseMusic = 'assets/sound/mixkit-game-show-suspense-waiting-667.wav';
   static const _questionReveal = 'assets/sound/soru-acılma.wav';
   static const _tickingClock = 'assets/sound/saat.wav';
   static const _timeUp = 'assets/sound/sürebitti.wav';
@@ -55,6 +55,7 @@ class AudioService {
       
       _backgroundSource = await SoLoud.instance.loadAsset(_backgroundMusic);
       _elevatorSource = await SoLoud.instance.loadAsset(_elevatorMusic);
+      _questionSuspenseSource = await SoLoud.instance.loadAsset(_questionSuspenseMusic);
       _questionRevealSource = await SoLoud.instance.loadAsset(_questionReveal);
       _tickingClockSource = await SoLoud.instance.loadAsset(_tickingClock);
       _timeUpSource = await SoLoud.instance.loadAsset(_timeUp);
@@ -76,55 +77,49 @@ class AudioService {
     SoLoud.instance.setGlobalVolume(_isMuted ? 0.0 : 1.0);
   }
 
-  Future<void> startAmbience() async {
-    if (_isMuted || _isAmbiencePlaying || !SoLoud.instance.isInitialized) return;
+  Future<void> _fadeToBgm(AudioSource? source, {double volume = 0.15}) async {
+    if (_isMuted || !SoLoud.instance.isInitialized || source == null) return;
+    if (_currentBgmSource == source && _bgmHandle != null) return;
+
+    final oldHandle = _bgmHandle;
+    if (oldHandle != null) {
+      SoLoud.instance.fadeVolume(oldHandle, 0.0, const Duration(seconds: 1));
+      Timer(const Duration(seconds: 1), () {
+        if (SoLoud.instance.isInitialized) {
+          SoLoud.instance.stop(oldHandle);
+        }
+      });
+    }
+
+    _currentBgmSource = source;
     try {
-      await stopSuspense();
-      if (_backgroundSource != null) {
-        _ambienceHandle = await SoLoud.instance.play(
-          _backgroundSource!,
-          volume: 0.12,
-          looping: true,
-        );
-        _isAmbiencePlaying = true;
-      }
-    } catch (error) {
-      debugPrint('Audio ambience failed: $error');
+      _bgmHandle = await SoLoud.instance.play(
+        source,
+        volume: 0.0,
+        looping: true,
+      );
+      SoLoud.instance.fadeVolume(_bgmHandle!, volume, const Duration(seconds: 1));
+    } catch (e) {
+      debugPrint('Fade to BGM failed: $e');
     }
   }
 
-  Future<void> stopAmbience() async {
+  Future<void> startLobbyMusic() => _fadeToBgm(_elevatorSource, volume: 0.12);
+  Future<void> startQuestionMusic() => _fadeToBgm(_questionSuspenseSource, volume: 0.12);
+  Future<void> startBettingMusic() => _fadeToBgm(_backgroundSource, volume: 0.12);
+
+  Future<void> stopBackgroundMusic() async {
     if (!SoLoud.instance.isInitialized) return;
-    _isAmbiencePlaying = false;
-    if (_ambienceHandle != null) {
-      await SoLoud.instance.stop(_ambienceHandle!);
-      _ambienceHandle = null;
-    }
-  }
-
-  Future<void> startSuspense() async {
-    if (_isMuted || _isSuspensePlaying || !SoLoud.instance.isInitialized) return;
-    try {
-      await stopAmbience();
-      if (_elevatorSource != null) {
-        _suspenseHandle = await SoLoud.instance.play(
-          _elevatorSource!,
-          volume: 0.15,
-          looping: true,
-        );
-        _isSuspensePlaying = true;
-      }
-    } catch (error) {
-      debugPrint('Audio suspense failed: $error');
-    }
-  }
-
-  Future<void> stopSuspense() async {
-    if (!SoLoud.instance.isInitialized) return;
-    _isSuspensePlaying = false;
-    if (_suspenseHandle != null) {
-      await SoLoud.instance.stop(_suspenseHandle!);
-      _suspenseHandle = null;
+    final handle = _bgmHandle;
+    if (handle != null) {
+      SoLoud.instance.fadeVolume(handle, 0.0, const Duration(seconds: 1));
+      Timer(const Duration(seconds: 1), () {
+        if (SoLoud.instance.isInitialized) {
+          SoLoud.instance.stop(handle);
+        }
+      });
+      _bgmHandle = null;
+      _currentBgmSource = null;
     }
   }
 
@@ -154,8 +149,7 @@ class AudioService {
   }
 
   Future<void> stopAllLoops() async {
-    await stopAmbience();
-    await stopSuspense();
+    await stopBackgroundMusic();
     await stopTicking();
     await stopPayout();
   }
@@ -172,7 +166,7 @@ class AudioService {
     if (_isMuted) {
       await stopAllLoops();
     } else {
-      await startAmbience();
+      await startLobbyMusic();
     }
   }
 
