@@ -2793,7 +2793,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   style: TextStyle(
                                     fontFamily: 'RehnCondensed',
                                     color: AppColors.feltDark,
-                                    fontSize: isComma ? 37 : 40,
+                                    fontSize: 40,
                                     fontWeight: FontWeight.w900,
                                     height: 0.86,
                                     letterSpacing: 0,
