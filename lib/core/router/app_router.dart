@@ -7,9 +7,15 @@ import '../../features/game/screens/results_screen.dart';
 import '../../features/onboarding/screens/onboarding_screen.dart';
 import '../../features/paywall/screens/paywall_screen.dart';
 
+import 'package:flutter/widgets.dart';
+
+/// Global route observer for stopping animations when screens are hidden
+final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+
 /// App router using GoRouter
 final appRouter = GoRouter(
   initialLocation: '/',
+  observers: [routeObserver],
   redirect: (context, state) {
     if (kIsWeb && state.uri.path == '/premium') return '/';
     return null;

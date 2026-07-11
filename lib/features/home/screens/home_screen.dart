@@ -10,6 +10,7 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
+import '../../../core/router/app_router.dart';
 import '../../../features/room/providers/room_providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -21,7 +22,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   final _nameController = TextEditingController();
   final _roomCodeController = TextEditingController();
   final _nameFocusNode = FocusNode();
@@ -90,7 +91,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPushNext() {
+    _pulseController.stop();
+  }
+
+  @override
+  void didPopNext() {
+    _pulseController.repeat(reverse: true);
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _pulseController.dispose();
     _nameFocusNode.dispose();
     _nameController.dispose();

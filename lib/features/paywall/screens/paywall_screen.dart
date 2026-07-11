@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/revenuecat_constants.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
@@ -15,7 +16,7 @@ class PaywallScreen extends ConsumerStatefulWidget {
 }
 
 class _PaywallScreenState extends ConsumerState<PaywallScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   late final AnimationController _glowController;
   Map<String, String> _packagePrices = const {};
   String? _busyPackageIdentifier;
@@ -38,7 +39,24 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPushNext() {
+    _glowController.stop();
+  }
+
+  @override
+  void didPopNext() {
+    _glowController.repeat(reverse: true);
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _glowController.dispose();
     super.dispose();
   }
