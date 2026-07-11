@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/constants/revenuecat_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
@@ -781,14 +782,17 @@ class _PlanCard extends StatelessWidget {
                 if (fakeOldPrice != null)
                   Text(
                     fakeOldPrice!,
-                    style: TextStyle(
-                      color: AppColors.textMuted.withValues(alpha: 0.6),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
                       decoration: TextDecoration.lineThrough,
-                      decorationColor: AppColors.textMuted.withValues(alpha: 0.8),
+                      decorationColor: Colors.redAccent,
+                      decorationThickness: 2.5,
                     ),
-                  ),
+                  ).animate(onPlay: (controller) => controller.repeat(reverse: true))
+                   .shimmer(color: Colors.white54, duration: 2.seconds)
+                   .scale(end: const Offset(1.02, 1.02), duration: 1.seconds),
                 if (fakeOldPrice != null) const SizedBox(height: 2),
                 _PriceButton(
                   price: displayPrice ?? price!,
@@ -830,7 +834,8 @@ class _PlanCard extends StatelessWidget {
                   height: 1,
                 ),
               ),
-            ),
+            ).animate(onPlay: (controller) => controller.repeat(reverse: true))
+             .scale(end: const Offset(1.05, 1.05), duration: 800.ms),
           ),
       ],
     );
