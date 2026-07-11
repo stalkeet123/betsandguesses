@@ -30,15 +30,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isLoading = false;
   String? _prefilledRoomCode;
   bool _showQrJoinGuide = false;
-  late final AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
     _prefilledRoomCode = widget.prefilledRoomCode;
     if (_prefilledRoomCode != null && _prefilledRoomCode!.isNotEmpty) {
       _roomCodeController.text = _prefilledRoomCode!;
@@ -97,19 +92,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   @override
-  void didPushNext() {
-    _pulseController.stop();
-  }
-
-  @override
-  void didPopNext() {
-    _pulseController.repeat(reverse: true);
-  }
-
-  @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _pulseController.dispose();
     _nameFocusNode.dispose();
     _nameController.dispose();
     _roomCodeController.dispose();
@@ -1246,50 +1230,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
           ),
           const SizedBox(height: 16),
-          AnimatedBuilder(
-            animation: _pulseController,
-            builder: (context, child) {
-              final glowAlpha = _showQrJoinGuide
-                  ? 0.35 + 0.55 * _pulseController.value
-                  : 0.0;
-              return Container(
-                height: 66,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF0B3D2A),
-                      Color(0xFF042416),
-                      Color(0xFF1C120C),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: _showQrJoinGuide
-                        ? AppColors.brassLight.withValues(alpha: glowAlpha)
-                        : AppColors.brassLight.withValues(alpha: 0.32),
-                    width: _showQrJoinGuide ? 2.4 : 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                    if (_showQrJoinGuide)
-                      BoxShadow(
-                        color: AppColors.brassLight.withValues(
-                          alpha: glowAlpha * 0.6,
-                        ),
-                        blurRadius: 22,
-                        spreadRadius: 2,
-                      ),
-                  ],
+          Container(
+            height: 66,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF0B3D2A),
+                  Color(0xFF042416),
+                  Color(0xFF1C120C),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _showQrJoinGuide
+                    ? AppColors.brassLight.withValues(alpha: 0.9)
+                    : AppColors.brassLight.withValues(alpha: 0.32),
+                width: _showQrJoinGuide ? 2.4 : 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
                 ),
-                child: child,
-              );
-            },
+                if (_showQrJoinGuide)
+                  BoxShadow(
+                    color: AppColors.brassLight.withValues(alpha: 0.6),
+                    blurRadius: 22,
+                    spreadRadius: 2,
+                  ),
+              ],
+            ),
             child: TextField(
               controller: _nameController,
               focusNode: _nameFocusNode,
@@ -1333,9 +1306,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (!_showQrJoinGuide) return panel;
 
-    return panel
-        .animate(onPlay: (c) => c.repeat(reverse: true))
-        .scaleXY(end: 1.012, duration: 900.ms, curve: Curves.easeInOut);
+    return panel;
   }
 
   Widget _buildHeroActionButton({
@@ -1494,66 +1465,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (!_showQrJoinGuide) return button;
 
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        final scale = 1.0 + 0.06 * _pulseController.value;
-        return Transform.scale(
-          scale: scale,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.brassLight.withValues(
-                    alpha: 0.3 + 0.4 * _pulseController.value,
-                  ),
-                  blurRadius: 16 + 10 * _pulseController.value,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: child,
-          ),
-        );
-      },
-      child: button,
-    );
+    return button;
   }
 
   Widget _buildRoomCodeField() {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        final codeGlow = _showQrJoinGuide
-            ? 0.2 + 0.32 * _pulseController.value
-            : 0.0;
-        return Container(
-          height: 60,
-          decoration: BoxDecoration(
-            color: const Color(0xFF042819).withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: _showQrJoinGuide
-                  ? AppColors.brassLight.withValues(
-                      alpha: 0.52 + 0.38 * _pulseController.value,
-                    )
-                  : AppColors.brassLight.withValues(alpha: 0.32),
-              width: _showQrJoinGuide ? 1.8 : 1.4,
-            ),
-            boxShadow: _showQrJoinGuide
-                ? [
-                    BoxShadow(
-                      color: AppColors.brassLight.withValues(alpha: codeGlow),
-                      blurRadius: 14,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : null,
-          ),
-          child: child,
-        );
-      },
+    return Container(
+      height: 60,
+      decoration: BoxDecoration(
+        color: const Color(0xFF042819).withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _showQrJoinGuide
+              ? AppColors.brassLight.withValues(alpha: 0.9)
+              : AppColors.brassLight.withValues(alpha: 0.32),
+          width: _showQrJoinGuide ? 1.8 : 1.4,
+        ),
+        boxShadow: _showQrJoinGuide
+            ? [
+                BoxShadow(
+                  color: AppColors.brassLight.withValues(alpha: 0.5),
+                  blurRadius: 14,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
+      ),
       child: TextField(
         controller: _roomCodeController,
         textAlign: TextAlign.left,
