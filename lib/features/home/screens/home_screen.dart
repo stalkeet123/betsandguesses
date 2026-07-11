@@ -45,6 +45,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final skipAutoJoin = ref.read(skipAutoJoinProvider);
       final shouldShowOnboarding =
+          !kIsWeb &&
           !skipAutoJoin &&
           !ref.read(onboardingSeenProvider) &&
           (_prefilledRoomCode == null || _prefilledRoomCode!.isEmpty);

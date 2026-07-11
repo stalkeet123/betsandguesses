@@ -100,7 +100,7 @@ class OnboardingSeenNotifier extends Notifier<bool> {
   @override
   bool build() {
     final prefs = ref.watch(sharedPrefsProvider);
-    return false; // Force onboarding for testing
+    return prefs.getBool(_key) ?? false;
   }
 
   Future<void> markSeen() async {
