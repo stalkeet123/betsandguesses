@@ -527,12 +527,12 @@ class _ChipPit extends StatelessWidget {
 
     if (isLocked) {
       chip = chip
-          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .animate()
           .scale(
             begin: const Offset(1, 1),
-            end: const Offset(1.09, 1.09),
-            duration: 900.ms,
-            curve: Curves.easeInOut,
+            end: const Offset(1.04, 1.04),
+            duration: 300.ms,
+            curve: Curves.easeOutBack,
           );
     }
 
