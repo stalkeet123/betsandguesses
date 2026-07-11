@@ -387,7 +387,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
     const webAppUrl = String.fromEnvironment(
       'WEB_APP_URL',
-      defaultValue: 'https://stalkeet123.github.io/betsandguesses',
+      defaultValue: 'https://bets-and-guesses.com',
     );
     return '$webAppUrl/#/?room=${widget.roomCode}';
   }

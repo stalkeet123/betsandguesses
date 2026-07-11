@@ -486,7 +486,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             icon: Icons.privacy_tip_rounded,
             label: 'PRIVACY POLICY',
             onTap: () => _launchURL(
-              'https://stalkeet123.github.io/betsandguesses/privacy.html',
+              'https://bets-and-guesses.com/privacy.html',
             ),
           ),
         ],
