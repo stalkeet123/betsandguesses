@@ -80,9 +80,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     if (result.cancelled) return;
 
     if (result.success) {
-      _showSnack('Premium unlocked.');
+      _showSuccessDialog('Purchase Successful!', 'You now have full access to all premium features.');
     } else {
-      _showSnack(result.message ?? 'Purchase failed.');
+      _showErrorDialog('Purchase Failed', result.message ?? 'Unable to complete purchase.');
     }
   }
 
@@ -102,9 +102,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     });
 
     if (result.success) {
-      _showSnack('Purchases restored.');
+      _showSuccessDialog('Purchases Restored!', 'Your premium features have been restored successfully.');
     } else {
-      _showSnack(result.message ?? 'No active purchase found.');
+      _showErrorDialog('Restore Failed', result.message ?? 'No active purchase found.');
     }
   }
 
@@ -533,6 +533,72 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showSuccessDialog(String title, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.feltDark,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppColors.neonGreen, width: 2),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.check_circle_outline_rounded, color: AppColors.neonGreen, size: 28),
+              const SizedBox(width: 8),
+              Expanded(child: Text(title, style: const TextStyle(color: AppColors.ivory, fontWeight: FontWeight.w900))),
+            ],
+          ),
+          content: Text(message, style: const TextStyle(color: AppColors.ivory, fontSize: 16)),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // pop dialog
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop(); // pop paywall
+                } else {
+                  context.goNamed('home'); // go home
+                }
+              },
+              child: const Text('LET\'S GO!', style: TextStyle(color: AppColors.neonGreen, fontWeight: FontWeight.w900)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.feltDark,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Colors.redAccent, width: 2),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
+              const SizedBox(width: 8),
+              Expanded(child: Text(title, style: const TextStyle(color: AppColors.ivory, fontWeight: FontWeight.w900))),
+            ],
+          ),
+          content: Text(message, style: const TextStyle(color: AppColors.ivory, fontSize: 16)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w900)),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 
