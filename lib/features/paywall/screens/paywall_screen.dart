@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/constants/revenuecat_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
@@ -310,38 +309,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     );
   }
 
-  String? _calculateFakeOldPrice(String? formattedPrice) {
-    if (formattedPrice == null || formattedPrice.isEmpty) return null;
-    final numericString = formattedPrice.replaceAll(RegExp(r'[^\d.,]'), '');
-    if (numericString.isEmpty) return null;
-    final symbol = formattedPrice.replaceAll(RegExp(r'[\d.,\s]'), '');
-    
-    try {
-      final normalized = numericString.replaceAll(',', '.');
-      final lastDotIndex = normalized.lastIndexOf('.');
-      String cleanNumber = normalized;
-      if (lastDotIndex != -1) {
-         final before = normalized.substring(0, lastDotIndex).replaceAll('.', '');
-         final after = normalized.substring(lastDotIndex + 1);
-         cleanNumber = '$before.$after';
-      }
-      final priceValue = double.parse(cleanNumber);
-      final oldPriceValue = priceValue * 2.5; // 60% discount
-      
-      String resultNum = oldPriceValue.toStringAsFixed(2);
-      if (numericString.contains(',')) resultNum = resultNum.replaceAll('.', ',');
-      
-      return formattedPrice.startsWith(symbol) ? '$symbol$resultNum' : '$resultNum $symbol'.trim();
-    } catch (_) {
-      return null;
-    }
-  }
 
   Widget _buildPlans(BuildContext context) {
     return AnimatedBuilder(
       animation: _glowController,
       builder: (context, _) {
-        final lifetimePrice = _packagePrices[RevenueCatConstants.lifetimePackageIdentifier];
         final cards = [
           _PlanCard(
             title: 'PARTY PASS',
@@ -376,8 +348,6 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           _PlanCard(
             title: 'FULL ACCESS',
             subtitle: 'One-time purchase',
-            badge: 'NEWCOMER DEAL: 60% OFF',
-            fakeOldPrice: _calculateFakeOldPrice(lifetimePrice ?? '₺199,99'),
             crownColor: AppColors.neonGreen,
             features: const [
               _PlanFeature(Icons.workspace_premium_rounded, 'Lifetime access'),
@@ -387,7 +357,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.block_rounded, 'No ads'),
             ],
             price: '₺199,99',
-            displayPrice: lifetimePrice,
+            displayPrice:
+                _packagePrices[RevenueCatConstants.lifetimePackageIdentifier],
             footer: 'LIFETIME ACCESS',
             isGreenPrice: true,
             isLoading:
@@ -624,7 +595,6 @@ class _PlanCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? badge;
-  final String? fakeOldPrice;
   final Color crownColor;
   final Gradient? background;
   final List<_PlanFeature> features;
@@ -640,7 +610,6 @@ class _PlanCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.badge,
-    this.fakeOldPrice,
     this.crownColor = AppColors.brassLight,
     this.background,
     required this.features,
@@ -779,21 +748,6 @@ class _PlanCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               if (price != null) ...[
-                if (fakeOldPrice != null)
-                  Text(
-                    fakeOldPrice!,
-                    style: const TextStyle(
-                      color: Colors.redAccent,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      decoration: TextDecoration.lineThrough,
-                      decorationColor: Colors.redAccent,
-                      decorationThickness: 2.5,
-                    ),
-                  ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-                   .shimmer(color: Colors.white54, duration: 2.seconds)
-                   .scale(end: const Offset(1.02, 1.02), duration: 1.seconds),
-                if (fakeOldPrice != null) const SizedBox(height: 2),
                 _PriceButton(
                   price: displayPrice ?? price!,
                   isGreen: isGreenPrice,
@@ -834,8 +788,7 @@ class _PlanCard extends StatelessWidget {
                   height: 1,
                 ),
               ),
-            ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-             .scale(end: const Offset(1.05, 1.05), duration: 800.ms),
+            ),
           ),
       ],
     );
