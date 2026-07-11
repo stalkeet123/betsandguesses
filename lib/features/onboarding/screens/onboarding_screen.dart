@@ -1,9 +1,10 @@
+import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
@@ -21,32 +22,25 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   static final _slides = [
     _OnboardingSlide(
-      icon: Icons.psychology_alt_rounded,
-      title: 'Guess first.',
-      kicker: 'Secret answers. Loud confidence.',
-      body: 'Everyone locks in a number before the table sees the spread.',
-      accent: AppColors.neonCyan,
-      chips: const ['30s', 'Blind', 'Closest'],
-    ),
-    _OnboardingSlide(
-      icon: Icons.casino_rounded,
-      title: 'Bet smart.',
-      kicker: 'Trust the range, not the ego.',
-      body: 'Place chips after the guesses reveal. Big reads pay bigger.',
-      accent: AppColors.brassLight,
-      chips: const ['Risk', 'Read', 'Payout'],
-    ),
-    _OnboardingSlide(
-      icon: Icons.workspace_premium_rounded,
-      title: 'Go bigger.',
-      kicker: 'Premium turns the table up.',
-      body: 'Host larger rooms, longer games, and focused categories.',
+      icon: Icons.qr_code_2_rounded,
+      title: 'NO DOWNLOADS\nFOR FRIENDS',
+      kicker: 'They scan. They play. You host.',
+      body: 'The only party game where only the host needs the app. Pure chaos in seconds.',
       accent: AppColors.neonPurple,
-      chips: [
-        '${GameConstants.maxPlayers} players',
-        '${GameConstants.maxRounds} rounds',
-        'Categories',
-      ],
+    ),
+    _OnboardingSlide(
+      icon: Icons.psychology_alt_rounded,
+      title: 'GUESS FIRST.\nBET SECOND.',
+      kicker: 'Blind answers. Loud confidence.',
+      body: 'Everyone locks in a number. Then bet your chips on who you think is closest.',
+      accent: AppColors.neonCyan,
+    ),
+    _OnboardingSlide(
+      icon: Icons.local_fire_department_rounded,
+      title: 'PROVE YOU\'RE\nTHE SMARTEST',
+      kicker: 'Read the room.',
+      body: 'Trust the odds, not the ego. Big risks pay bigger.',
+      accent: AppColors.brassLight,
     ),
   ];
 
@@ -66,14 +60,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     super.dispose();
   }
 
-  Future<void> _finish({bool openPremium = false}) async {
+  Future<void> _finish() async {
     await ref.read(onboardingSeenProvider.notifier).markSeen();
     if (!mounted) return;
-    if (openPremium && !kIsWeb) {
+    if (!kIsWeb) {
       context.goNamed('premium');
-      return;
+    } else {
+      context.goNamed('home');
     }
-    context.goNamed('home');
   }
 
   void _next() {
@@ -82,8 +76,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       return;
     }
     _pageController.nextPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.fastOutSlowIn,
     );
   }
 
@@ -93,9 +87,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       body: Stack(
         children: [
           const Positioned.fill(
-            child: CachedAssetImage(
-              AppAssetPaths.background,
-              fit: BoxFit.cover,
+            child: RepaintBoundary(
+              child: CachedAssetImage(
+                AppAssetPaths.background,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           Positioned.fill(
@@ -105,9 +101,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    AppColors.feltLight.withValues(alpha: 0.22),
-                    AppColors.feltDark.withValues(alpha: 0.28),
-                    Colors.black.withValues(alpha: 0.62),
+                    AppColors.feltDark.withValues(alpha: 0.1),
+                    AppColors.feltDark.withValues(alpha: 0.4),
+                    Colors.black.withValues(alpha: 0.8),
                   ],
                 ),
               ),
@@ -124,15 +120,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(
                         20,
-                        isShort ? 10 : 18,
+                        isShort ? 10 : 24,
                         20,
-                        16,
+                        24,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _Header(onSkip: () => _finish()),
-                          SizedBox(height: isShort ? 12 : 24),
+                          _Header(onSkip: _finish),
+                          SizedBox(height: isShort ? 12 : 32),
                           Expanded(
                             child: PageView.builder(
                               controller: _pageController,
@@ -143,22 +139,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                               itemBuilder: (context, index) {
                                 return _SlidePanel(
                                   slide: _slides[index],
+                                  isActive: index == _pageIndex,
                                   compact: isShort,
                                 );
                               },
                             ),
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 24),
                           _ProgressRail(
                             count: _slides.length,
                             activeIndex: _pageIndex,
                           ),
-                          const SizedBox(height: 18),
-                          _Actions(
+                          const SizedBox(height: 32),
+                          _ActionPanel(
                             isLast: _pageIndex == _slides.length - 1,
-                            showPremium: !kIsWeb,
                             onNext: _next,
-                            onPremium: () => _finish(openPremium: true),
                           ),
                         ],
                       ),
@@ -184,36 +179,37 @@ class _Header extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 36,
-          height: 36,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: AppColors.goldGradient,
             boxShadow: [
               BoxShadow(
-                color: AppColors.brass.withValues(alpha: 0.28),
-                blurRadius: 16,
-                spreadRadius: -4,
+                color: AppColors.brass.withValues(alpha: 0.4),
+                blurRadius: 12,
+                spreadRadius: 2,
               ),
             ],
           ),
-          child: const Icon(Icons.track_changes_rounded, color: AppColors.ink),
-        ),
+          child: const Icon(Icons.track_changes_rounded, color: AppColors.ink, size: 22),
+        ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
         const Spacer(),
         TextButton(
           onPressed: onSkip,
           style: TextButton.styleFrom(
             foregroundColor: AppColors.textSecondary,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           ),
           child: const Text(
             'SKIP',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 14,
               fontWeight: FontWeight.w900,
+              letterSpacing: 1.2,
             ),
           ),
-        ),
+        ).animate().fadeIn(delay: 200.ms),
       ],
     );
   }
@@ -221,176 +217,152 @@ class _Header extends StatelessWidget {
 
 class _SlidePanel extends StatelessWidget {
   final _OnboardingSlide slide;
+  final bool isActive;
   final bool compact;
 
-  const _SlidePanel({required this.slide, required this.compact});
+  const _SlidePanel({
+    required this.slide,
+    required this.isActive,
+    required this.compact,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (!isActive) return const SizedBox.shrink();
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _HeroChip(slide: slide, compact: compact),
-        SizedBox(height: compact ? 24 : 34),
+        _HeroGlass(slide: slide, compact: compact),
+        SizedBox(height: compact ? 32 : 48),
         Text(
           slide.title,
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: 'RehnCondensed',
             color: AppColors.ivory,
-            fontSize: compact ? 46 : 56,
+            fontSize: compact ? 48 : 58,
             fontWeight: FontWeight.w900,
-            height: 0.9,
+            height: 0.95,
+            shadows: [
+              Shadow(
+                color: slide.accent.withValues(alpha: 0.4),
+                blurRadius: 24,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
+        )
+            .animate()
+            .fadeIn(duration: 400.ms)
+            .slideY(begin: 0.1, end: 0, curve: Curves.easeOutCubic),
+        const SizedBox(height: 16),
+        Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: slide.accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: slide.accent.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              slide.kicker,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: slide.accent,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+              ),
+            ),
+          )
+              .animate()
+              .fadeIn(delay: 150.ms, duration: 400.ms)
+              .scale(begin: const Offset(0.9, 0.9)),
         ),
-        const SizedBox(height: 10),
-        Text(
-          slide.kicker,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: slide.accent,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            slide.body,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          slide.body,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            height: 1.32,
-          ),
-        ),
-        const SizedBox(height: 22),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final chip in slide.chips)
-              _SmallChip(label: chip, color: slide.accent),
-          ],
-        ),
+        ).animate().fadeIn(delay: 300.ms, duration: 400.ms),
       ],
     );
   }
 }
 
-class _HeroChip extends StatelessWidget {
+class _HeroGlass extends StatelessWidget {
   final _OnboardingSlide slide;
   final bool compact;
 
-  const _HeroChip({required this.slide, required this.compact});
+  const _HeroGlass({required this.slide, required this.compact});
 
   @override
   Widget build(BuildContext context) {
-    final size = compact ? 164.0 : 196.0;
+    final size = compact ? 180.0 : 220.0;
     return Center(
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.feltDark,
-                border: Border.all(color: AppColors.brassLight, width: 5),
-                boxShadow: [
-                  BoxShadow(
-                    color: slide.accent.withValues(alpha: 0.35),
-                    blurRadius: 38,
-                    spreadRadius: -4,
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    blurRadius: 24,
-                    offset: const Offset(0, 14),
-                  ),
-                ],
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.05),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 1.5,
               ),
-            ),
-            for (var i = 0; i < 8; i++)
-              Transform.rotate(
-                angle: i * 0.785398,
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: Container(
-                    width: size * 0.16,
-                    height: size * 0.22,
-                    margin: EdgeInsets.only(top: size * 0.04),
-                    decoration: BoxDecoration(
-                      color: i.isEven ? AppColors.mahogany : AppColors.ink,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: AppColors.brass.withValues(alpha: 0.65),
-                      ),
-                    ),
-                  ),
+              boxShadow: [
+                BoxShadow(
+                  color: slide.accent.withValues(alpha: 0.2),
+                  blurRadius: 40,
+                  spreadRadius: -10,
                 ),
-              ),
-            Container(
-              width: size * 0.68,
-              height: size * 0.68,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.ivory, width: 13),
-              ),
+              ],
             ),
-            Container(
-              width: size * 0.42,
-              height: size * 0.42,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.felt,
-                border: Border.all(color: AppColors.brass, width: 5),
-              ),
+            child: Center(
+              child: Container(
+                width: size * 0.5,
+                height: size * 0.5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: slide.accent.withValues(alpha: 0.15),
+                  boxShadow: [
+                    BoxShadow(
+                      color: slide.accent.withValues(alpha: 0.4),
+                      blurRadius: 30,
+                      spreadRadius: 5,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  slide.icon,
+                  color: Colors.white,
+                  size: size * 0.25,
+                ),
+              )
+                  .animate(onPlay: (controller) => controller.repeat(reverse: true))
+                  .scale(end: const Offset(1.05, 1.05), duration: 2.seconds)
+                  .shimmer(duration: 3.seconds, color: Colors.white24),
             ),
-            Container(
-              width: size * 0.24,
-              height: size * 0.24,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: AppColors.goldGradient,
-              ),
-              child: Icon(slide.icon, color: AppColors.ink, size: size * 0.13),
-            ),
-          ],
+          ),
         ),
       ),
-    );
-  }
-}
-
-class _SmallChip extends StatelessWidget {
-  final String label;
-  final Color color;
-
-  const _SmallChip({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.ink.withValues(alpha: 0.44),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.62)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.ivory,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
+    )
+        .animate()
+        .scale(duration: 500.ms, curve: Curves.easeOutBack)
+        .fadeIn(duration: 400.ms);
   }
 }
 
@@ -407,15 +379,24 @@ class _ProgressRail extends StatelessWidget {
       children: [
         for (var index = 0; index < count; index++)
           AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: index == activeIndex ? 30 : 7,
-            height: 7,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.fastOutSlowIn,
+            width: index == activeIndex ? 36 : 10,
+            height: 6,
             margin: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: index == activeIndex
-                  ? AppColors.brassLight
-                  : AppColors.textMuted.withValues(alpha: 0.65),
+                  ? AppColors.ivory
+                  : Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(999),
+              boxShadow: index == activeIndex
+                  ? [
+                      BoxShadow(
+                        color: AppColors.ivory.withValues(alpha: 0.4),
+                        blurRadius: 8,
+                      )
+                    ]
+                  : null,
             ),
           ),
       ],
@@ -423,71 +404,54 @@ class _ProgressRail extends StatelessWidget {
   }
 }
 
-class _Actions extends StatelessWidget {
+class _ActionPanel extends StatelessWidget {
   final bool isLast;
-  final bool showPremium;
   final VoidCallback onNext;
-  final VoidCallback onPremium;
 
-  const _Actions({
+  const _ActionPanel({
     required this.isLast,
-    required this.showPremium,
     required this.onNext,
-    required this.onPremium,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: onNext,
-            icon: Icon(
-              isLast ? Icons.play_arrow_rounded : Icons.arrow_forward_rounded,
-            ),
-            label: Text(isLast ? 'START PLAYING' : 'CONTINUE'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.brassLight,
-              foregroundColor: AppColors.ink,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+    return SizedBox(
+      height: 64,
+      child: FilledButton(
+        onPressed: onNext,
+        style: FilledButton.styleFrom(
+          backgroundColor: isLast ? AppColors.brassLight : AppColors.ivory,
+          foregroundColor: AppColors.ink,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: isLast ? 8 : 0,
+          shadowColor: AppColors.brassLight.withValues(alpha: 0.5),
+        ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: Row(
+            key: ValueKey(isLast),
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                isLast ? 'START PLAYING' : 'CONTINUE',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
               ),
-              textStyle: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+              const SizedBox(width: 8),
+              Icon(
+                isLast ? Icons.local_fire_department_rounded : Icons.arrow_forward_rounded,
+                size: 20,
               ),
-            ),
+            ],
           ),
         ),
-        if (showPremium) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 46,
-            child: TextButton.icon(
-              onPressed: onPremium,
-              icon: const Icon(Icons.workspace_premium_rounded, size: 20),
-              label: const Text('SEE PREMIUM'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.brassLight,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                    color: AppColors.brassLight.withValues(alpha: 0.68),
-                  ),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
+      ),
+    ).animate().slideY(begin: 0.5, end: 0, duration: 400.ms, curve: Curves.easeOutBack);
   }
 }
 
@@ -497,7 +461,6 @@ class _OnboardingSlide {
   final String kicker;
   final String body;
   final Color accent;
-  final List<String> chips;
 
   const _OnboardingSlide({
     required this.icon,
@@ -505,6 +468,5 @@ class _OnboardingSlide {
     required this.kicker,
     required this.body,
     required this.accent,
-    required this.chips,
   });
 }
