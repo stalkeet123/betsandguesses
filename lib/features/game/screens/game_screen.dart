@@ -4966,21 +4966,24 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Icon(
-                      Icons.phone_android_rounded,
+                      Icons.apple,
                       color: AppColors.brassLight,
                       size: 24,
                     ),
                     const SizedBox(width: 8),
                     Flexible(
-                      child: Text(
-                        'GET THE APP',
-                        style: GoogleFonts.outfit(
-                          color: AppColors.ivory,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                          letterSpacing: 1.2,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'DOWNLOAD ON APP STORE',
+                          style: GoogleFonts.outfit(
+                            color: AppColors.ivory,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            letterSpacing: 1.2,
+                          ),
+                          maxLines: 1,
                         ),
-                        maxLines: 1,
                       ),
                     ),
                   ],

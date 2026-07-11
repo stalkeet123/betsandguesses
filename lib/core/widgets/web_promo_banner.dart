@@ -48,13 +48,13 @@ class WebPromoBanner extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(
-                Icons.phone_android_rounded,
+                Icons.apple,
                 color: AppColors.brassLight,
                 size: 20,
               ),
               const SizedBox(width: 8),
               Text(
-                'GET THE APP',
+                'DOWNLOAD ON APP STORE',
                 style: GoogleFonts.outfit(
                   color: AppColors.ivory,
                   fontSize: 14,
