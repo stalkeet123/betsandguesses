@@ -1372,41 +1372,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _buildJoinLobbyPanel() {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        final borderGlow = _showQrJoinGuide
-            ? 0.78 + 0.22 * _pulseController.value
-            : 0.78;
-        final panelGlow = _showQrJoinGuide
-            ? 0.18 * _pulseController.value
-            : 0.0;
-        return Container(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-          decoration: BoxDecoration(
-            color: const Color(0xFF062E1F).withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(
-              color: AppColors.brassLight.withValues(alpha: borderGlow),
-              width: _showQrJoinGuide ? 2.4 : 1.8,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.28),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-              if (_showQrJoinGuide)
-                BoxShadow(
-                  color: AppColors.brassLight.withValues(alpha: panelGlow),
-                  blurRadius: 28,
-                  spreadRadius: 4,
-                ),
-            ],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF062E1F).withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(
+          color: AppColors.brassLight.withValues(alpha: 0.78),
+          width: _showQrJoinGuide ? 2.4 : 1.8,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
-          child: child,
-        );
-      },
+          if (_showQrJoinGuide)
+            BoxShadow(
+              color: AppColors.brassLight.withValues(alpha: 0.3),
+              blurRadius: 28,
+              spreadRadius: 4,
+            ),
+        ],
+      ),
       child: Column(
         children: [
           Row(
