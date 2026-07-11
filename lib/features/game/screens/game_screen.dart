@@ -4981,19 +4981,22 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
                           letterSpacing: 1.2,
                         ),
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'Tap to download for a better party experience!',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    color: AppColors.ivory.withValues(alpha: 0.8),
-                    fontSize: 11,
-                    height: 1.2,
+                Flexible(
+                  child: Text(
+                    'Tap to download for a better party experience!',
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      color: AppColors.ivory.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      height: 1.2,
+                    ),
                   ),
                 ),
               ],

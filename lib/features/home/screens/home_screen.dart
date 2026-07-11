@@ -1043,10 +1043,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               ],
                               SizedBox(height: kIsWeb ? 14 : 16),
                               _dimIfGuide(child: _buildBottomActions()),
-                              if (kIsWeb) ...[
-                                const SizedBox(height: 12),
-                                _dimIfGuide(child: const WebPromoBanner()),
-                              ],
                             ],
                           ),
                         ),
@@ -1057,6 +1053,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
           ),
+          if (kIsWeb)
+            const Positioned(
+              right: 24,
+              bottom: 24,
+              child: WebPromoBanner(),
+            ),
         ],
       ),
     );

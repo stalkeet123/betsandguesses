@@ -24,68 +24,43 @@ class WebPromoBanner extends StatelessWidget {
       child: GestureDetector(
         onTap: _launchStore,
         child: Container(
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.feltDark.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(12),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF2C2C2C), Color(0xFF141414)],
+            ),
+            borderRadius: BorderRadius.circular(30),
             border: Border.all(
-              color: AppColors.brassLight.withValues(alpha: 0.6),
+              color: AppColors.brassLight.withValues(alpha: 0.5),
               width: 1.5,
             ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 8,
+                blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.brassLight.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.phone_iphone_rounded,
-                  color: AppColors.brassLight,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'GET THE APP',
-                      style: GoogleFonts.outfit(
-                        color: AppColors.ivory,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'For the best gaming experience',
-                      style: GoogleFonts.outfit(
-                        color: AppColors.ivory.withValues(alpha: 0.7),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               const Icon(
-                Icons.chevron_right_rounded,
+                Icons.phone_android_rounded,
                 color: AppColors.brassLight,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'GET THE APP',
+                style: GoogleFonts.outfit(
+                  color: AppColors.ivory,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
               ),
             ],
           ),

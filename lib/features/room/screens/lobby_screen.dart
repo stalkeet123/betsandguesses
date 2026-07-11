@@ -505,10 +505,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                               _buildPlayersPanel(activePlayers),
                               const SizedBox(height: 10),
                               _buildActionsPanel(isHost, currentPlayer),
-                              if (kIsWeb) ...[
-                                const SizedBox(height: 12),
-                                const WebPromoBanner(),
-                              ],
                             ],
                           ),
                         ),
@@ -519,6 +515,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               ),
             ),
           ),
+          if (kIsWeb)
+            const Positioned(
+              right: 24,
+              bottom: 24,
+              child: WebPromoBanner(),
+            ),
         ],
       ),
     );
