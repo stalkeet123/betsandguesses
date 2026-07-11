@@ -1194,9 +1194,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildPortraitLogo({bool allowWebPromo = true}) {
     if (kIsWeb && allowWebPromo) {
-      return const _WebPromoLogo();
+      return const RepaintBoundary(child: _WebPromoLogo());
     }
-    return const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain);
+    return const RepaintBoundary(
+      child: CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
+    );
   }
 
   Widget _buildRoundTimer(GameState gameState) {
