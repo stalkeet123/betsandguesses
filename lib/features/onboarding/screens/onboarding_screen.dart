@@ -42,6 +42,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       body: 'Trust the odds, not the ego. Big risks pay bigger.',
       accent: AppColors.brassLight,
     ),
+    _OnboardingSlide(
+      icon: Icons.workspace_premium_rounded,
+      title: 'HOST LIKE\nA VIP',
+      kicker: 'Unlock the ultimate experience.',
+      body: 'Up to 12 players. Infinite rounds. Exclusive categories. No limits.',
+      accent: AppColors.chipGold,
+    ),
   ];
 
   @override

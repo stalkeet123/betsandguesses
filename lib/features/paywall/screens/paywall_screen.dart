@@ -309,10 +309,38 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     );
   }
 
+  String? _calculateFakeOldPrice(String? formattedPrice) {
+    if (formattedPrice == null || formattedPrice.isEmpty) return null;
+    final numericString = formattedPrice.replaceAll(RegExp(r'[^\d.,]'), '');
+    if (numericString.isEmpty) return null;
+    final symbol = formattedPrice.replaceAll(RegExp(r'[\d.,\s]'), '');
+    
+    try {
+      final normalized = numericString.replaceAll(',', '.');
+      final lastDotIndex = normalized.lastIndexOf('.');
+      String cleanNumber = normalized;
+      if (lastDotIndex != -1) {
+         final before = normalized.substring(0, lastDotIndex).replaceAll('.', '');
+         final after = normalized.substring(lastDotIndex + 1);
+         cleanNumber = '$before.$after';
+      }
+      final priceValue = double.parse(cleanNumber);
+      final oldPriceValue = priceValue * 2.5; // 60% discount
+      
+      String resultNum = oldPriceValue.toStringAsFixed(2);
+      if (numericString.contains(',')) resultNum = resultNum.replaceAll('.', ',');
+      
+      return formattedPrice.startsWith(symbol) ? '$symbol$resultNum' : '$resultNum $symbol'.trim();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Widget _buildPlans(BuildContext context) {
     return AnimatedBuilder(
       animation: _glowController,
       builder: (context, _) {
+        final lifetimePrice = _packagePrices[RevenueCatConstants.lifetimePackageIdentifier];
         final cards = [
           _PlanCard(
             title: 'PARTY PASS',
@@ -347,6 +375,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           _PlanCard(
             title: 'FULL ACCESS',
             subtitle: 'One-time purchase',
+            badge: 'NEWCOMER DEAL: 60% OFF',
+            fakeOldPrice: _calculateFakeOldPrice(lifetimePrice ?? '₺199,99'),
             crownColor: AppColors.neonGreen,
             features: const [
               _PlanFeature(Icons.workspace_premium_rounded, 'Lifetime access'),
@@ -356,8 +386,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.block_rounded, 'No ads'),
             ],
             price: '₺199,99',
-            displayPrice:
-                _packagePrices[RevenueCatConstants.lifetimePackageIdentifier],
+            displayPrice: lifetimePrice,
             footer: 'LIFETIME ACCESS',
             isGreenPrice: true,
             isLoading:
@@ -594,6 +623,7 @@ class _PlanCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? badge;
+  final String? fakeOldPrice;
   final Color crownColor;
   final Gradient? background;
   final List<_PlanFeature> features;
@@ -608,16 +638,17 @@ class _PlanCard extends StatelessWidget {
   const _PlanCard({
     required this.title,
     required this.subtitle,
-    required this.features,
-    required this.footer,
     this.badge,
+    this.fakeOldPrice,
     this.crownColor = AppColors.brassLight,
     this.background,
+    required this.features,
+    required this.footer,
     this.price,
     this.displayPrice,
     this.isGreenPrice = false,
     this.isLoading = false,
-    this.glowValue = 0,
+    this.glowValue = 0.0,
     this.onTap,
   });
 
@@ -747,6 +778,18 @@ class _PlanCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               if (price != null) ...[
+                if (fakeOldPrice != null)
+                  Text(
+                    fakeOldPrice!,
+                    style: TextStyle(
+                      color: AppColors.textMuted.withValues(alpha: 0.6),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      decoration: TextDecoration.lineThrough,
+                      decorationColor: AppColors.textMuted.withValues(alpha: 0.8),
+                    ),
+                  ),
+                if (fakeOldPrice != null) const SizedBox(height: 2),
                 _PriceButton(
                   price: displayPrice ?? price!,
                   isGreen: isGreenPrice,
