@@ -61,6 +61,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   DateTime? _phaseEndsAt;
   int _timerGeneration = 0;
   Timer? _nextRoundTimer;
+  Timer? _roomRecoveryTimer;
+  StreamSubscription<List<Map<String, dynamic>>>? _roomSubscription;
+  final Set<String> _activeDeviceIds = {};
 
   @override
   void initState() {
@@ -79,6 +82,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _nextRoundTimer?.cancel();
+    _roomRecoveryTimer?.cancel();
+    _roomSubscription?.cancel();
     _cancelRevealEffects();
     ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     super.dispose();
@@ -152,6 +157,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
 
     _setupRealtime();
+    _setupRoomRecoveryStream(room.id);
 
     final isHost = ref.read(isHostProvider);
     if (isHost && room.roundPhase == RoundPhase.question) {
@@ -164,6 +170,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   void _setupRealtime() {
     final realtimeService = ref.read(realtimeServiceProvider);
+    final currentPlayer = ref.read(currentPlayerProvider);
     realtimeService.joinRoom(
       widget.roomCode,
       onPhaseChange: (payload) {
@@ -353,6 +360,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
           _resyncFromServer();
         }
       },
+      presencePayload: currentPlayer == null
+          ? null
+          : {
+              'device_id': currentPlayer.deviceId,
+              'player_id': currentPlayer.id,
+            },
+      onPresenceChanged: (deviceIds) {
+        _activeDeviceIds
+          ..clear()
+          ..addAll(deviceIds);
+        _attemptExpiredPhaseAdvance();
+      },
     );
   }
 
@@ -380,8 +399,49 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return null;
   }
 
+  void _setupRoomRecoveryStream(String roomId) {
+    _roomSubscription?.cancel();
+    _roomSubscription = ref
+        .read(roomServiceProvider)
+        .streamRoom(roomId)
+        .listen(
+          (rows) {
+            if (!mounted || rows.isEmpty) return;
+            final room = Room.fromJson(rows.first);
+            if (!_roomSnapshotIsAhead(room)) return;
+
+            _roomRecoveryTimer?.cancel();
+            _roomRecoveryTimer = Timer(const Duration(milliseconds: 450), () {
+              if (!mounted || !_roomSnapshotIsAhead(room)) return;
+              unawaited(_resyncFromServer(roomOverride: room));
+            });
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Room recovery stream error: $error\n$stackTrace');
+          },
+        );
+  }
+
+  bool _roomSnapshotIsAhead(Room room) {
+    final state = ref.read(gameStateProvider);
+    if (room.status == RoomStatus.finished) return true;
+    if (room.stateVersion > state.stateVersion) return true;
+    if (room.currentRound > state.currentRound) return true;
+    return room.currentRound == state.currentRound &&
+        room.roundPhase != state.phase;
+  }
+
+  bool get _isEngineLeader {
+    final currentPlayer = ref.read(currentPlayerProvider);
+    if (currentPlayer == null) return false;
+    if (_activeDeviceIds.isEmpty) return currentPlayer.isHost;
+
+    final sortedDeviceIds = _activeDeviceIds.toList()..sort();
+    return sortedDeviceIds.first == currentPlayer.deviceId;
+  }
+
   void _attemptExpiredPhaseAdvance() {
-    if (!mounted || !ref.read(isHostProvider)) return;
+    if (!mounted || !_isEngineLeader) return;
     final state = ref.read(gameStateProvider);
     final deadline = state.phaseEndsAt ?? _phaseEndsAt;
     if (deadline != null && _remainingSeconds(deadline) > 0) return;
