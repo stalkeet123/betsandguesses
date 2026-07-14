@@ -24,6 +24,7 @@ class RealtimeService {
     void Function(Map<String, dynamic> payload)? onPlayerLeft,
     Map<String, dynamic>? presencePayload,
     void Function(Set<String> deviceIds)? onPresenceChanged,
+    void Function(RealtimeSubscribeStatus status)? onStatusChanged,
   }) {
     final channelName = 'room:$roomCode';
 
@@ -116,6 +117,7 @@ class RealtimeService {
           },
         )
         .subscribe((status, error) async {
+          onStatusChanged?.call(status);
           if (status == RealtimeSubscribeStatus.subscribed &&
               presencePayload != null) {
             await channel.track(presencePayload);

@@ -18,6 +18,7 @@ class GameService {
   static const _questionCandidateSelectColumns = 'id, category';
 
   List<_QuestionCandidate>? _cachedQuestionCandidates;
+  final Map<String, Question> _questionCache = {};
 
   /// Fetch lightweight question candidates once and cache them.
   Future<void> prefetchQuestions() async {
@@ -103,13 +104,18 @@ class GameService {
   }
 
   Future<Question?> getQuestionById(String questionId) async {
+    final cached = _questionCache[questionId];
+    if (cached != null) return cached;
+
     final response = await _client
         .from('questions')
         .select(_questionSelectColumns)
         .eq('id', questionId)
         .maybeSingle();
     if (response == null) return null;
-    return Question.fromJson(response);
+    final question = Question.fromJson(response);
+    _questionCache[questionId] = question;
+    return question;
   }
 
   // ── Guesses ──
@@ -122,17 +128,33 @@ class GameService {
     required String questionId,
     required int value,
   }) async {
-    final response = await _client
-        .from('guesses')
-        .insert({
-          'room_id': roomId,
-          'round_number': roundNumber,
-          'player_id': playerId,
-          'question_id': questionId,
-          'value': value,
-        })
-        .select()
-        .single();
+    final payload = {
+      'room_id': roomId,
+      'round_number': roundNumber,
+      'player_id': playerId,
+      'question_id': questionId,
+      'value': value,
+    };
+
+    dynamic response;
+    try {
+      response = await _client
+          .from('guesses')
+          .upsert(payload, onConflict: 'room_id,round_number,player_id')
+          .select()
+          .single();
+    } on PostgrestException catch (error) {
+      final message = error.message.toLowerCase();
+      if (!message.contains('no unique or exclusion constraint') &&
+          !message.contains('room_id,round_number,player_id')) {
+        rethrow;
+      }
+      response = await _client
+          .from('guesses')
+          .insert(payload)
+          .select()
+          .single();
+    }
     return Guess.fromJson(response);
   }
 
@@ -308,6 +330,7 @@ class GameService {
     required int chips,
     double? positionX,
     double? positionY,
+    String? clientActionId,
   }) async {
     final multiplier = GameConstants.boardOdds[slotIndex];
     final payload = {
@@ -320,6 +343,7 @@ class GameService {
       'payout_multiplier': multiplier,
       if (positionX != null) 'position_x': positionX,
       if (positionY != null) 'position_y': positionY,
+      if (clientActionId != null) 'client_action_id': clientActionId,
     };
 
     final response = await _insertBetWithPositionFallback(payload);
@@ -351,12 +375,20 @@ class GameService {
     Map<String, dynamic> payload,
   ) async {
     try {
+      if (payload['client_action_id'] != null) {
+        return await _client
+            .from('bets')
+            .upsert(payload, onConflict: 'client_action_id')
+            .select()
+            .single();
+      }
       return await _client.from('bets').insert(payload).select().single();
     } on PostgrestException catch (error) {
-      if (!_isMissingPositionColumn(error)) rethrow;
+      if (!_isMissingOptionalBetColumn(error)) rethrow;
       final fallbackPayload = Map<String, dynamic>.from(payload)
         ..remove('position_x')
-        ..remove('position_y');
+        ..remove('position_y')
+        ..remove('client_action_id');
       return await _client
           .from('bets')
           .insert(fallbackPayload)
@@ -393,6 +425,13 @@ class GameService {
   bool _isMissingPositionColumn(PostgrestException error) {
     final message = error.message.toLowerCase();
     return message.contains('position_x') || message.contains('position_y');
+  }
+
+  bool _isMissingOptionalBetColumn(PostgrestException error) {
+    final message = error.message.toLowerCase();
+    return _isMissingPositionColumn(error) ||
+        message.contains('client_action_id') ||
+        message.contains('no unique or exclusion constraint');
   }
 
   /// Get all bets for a round

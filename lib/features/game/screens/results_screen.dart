@@ -9,7 +9,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
-
 import '../../../features/room/providers/room_providers.dart';
 
 class ResultsScreen extends ConsumerStatefulWidget {
