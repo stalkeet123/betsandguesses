@@ -154,15 +154,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
     realtimeService.joinRoom(
       widget.roomCode,
       onPhaseChange: (payload) {
-        final phase = RoundPhase.fromString(
-          payload['phase'] as String? ?? 'idle',
-        );
-        final round = payload['round'] as int?;
-        final gameNotifier = ref.read(gameStateProvider.notifier);
+        try {
+          final phase = RoundPhase.fromString(
+            payload['phase'] as String? ?? 'idle',
+          );
+          final round = (payload['round'] as num?)?.toInt();
+          final gameNotifier = ref.read(gameStateProvider.notifier);
 
-        gameNotifier.updatePhase(phase);
-        if (round != null) gameNotifier.setRound(round);
-        _syncAudioForPhase(phase);
+          gameNotifier.updatePhase(phase);
+          if (round != null) gameNotifier.setRound(round);
+          _syncAudioForPhase(phase);
 
         if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
           final questionData = payload['question'] as Map<String, dynamic>?;
@@ -186,8 +187,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
           _startTimer(GameConstants.betTimerSeconds);
         }
 
-        if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
-          _timer?.cancel();
+          if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
+            _timer?.cancel();
+          }
+        } catch (e, st) {
+          debugPrint('Error in onPhaseChange: $e\n$st');
         }
       },
       onGuessSubmitted: (_) {
@@ -203,31 +207,39 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
       },
       onBetPlaced: (payload) {
-        final betData = payload['bet'] as Map<String, dynamic>?;
-        if (betData != null) {
-          final currentPlayer = ref.read(currentPlayerProvider);
-          final bet = Bet.fromJson(betData);
-          if (bet.playerId != currentPlayer?.id) {
-            _incomingOtherBetIds.add(bet.id);
-            _playedOtherBetEntryIds.remove(bet.id);
-            ref.read(gameStateProvider.notifier).addBet(bet);
+        try {
+          final betData = payload['bet'] as Map<String, dynamic>?;
+          if (betData != null) {
+            final currentPlayer = ref.read(currentPlayerProvider);
+            final bet = Bet.fromJson(betData);
+            if (bet.playerId != currentPlayer?.id) {
+              _incomingOtherBetIds.add(bet.id);
+              _playedOtherBetEntryIds.remove(bet.id);
+              ref.read(gameStateProvider.notifier).addBet(bet);
+            }
           }
+        } catch (e, st) {
+          debugPrint('Error in onBetPlaced: $e\n$st');
         }
       },
       onBetRemoved: (payload) {
-        final betId = payload['bet_id'] as String?;
-        final playerId = payload['player_id'] as String?;
-        final slotIndex = payload['slot_index'] as int?;
-        if (betId != null) {
-          _incomingOtherBetIds.remove(betId);
-          _playedOtherBetEntryIds.remove(betId);
-          ref.read(gameStateProvider.notifier).removeBetById(betId);
-          return;
-        }
-        if (playerId != null && slotIndex != null) {
-          ref
-              .read(gameStateProvider.notifier)
-              .removeBetForSlot(playerId, slotIndex);
+        try {
+          final betId = payload['bet_id'] as String?;
+          final playerId = payload['player_id'] as String?;
+          final slotIndex = (payload['slot_index'] as num?)?.toInt();
+          if (betId != null) {
+            _incomingOtherBetIds.remove(betId);
+            _playedOtherBetEntryIds.remove(betId);
+            ref.read(gameStateProvider.notifier).removeBetById(betId);
+            return;
+          }
+          if (playerId != null && slotIndex != null) {
+            ref
+                .read(gameStateProvider.notifier)
+                .removeBetForSlot(playerId, slotIndex);
+          }
+        } catch (e, st) {
+          debugPrint('Error in onBetRemoved: $e\n$st');
         }
       },
       onScoreUpdate: (payload) {
@@ -238,15 +250,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
       },
       onAnswerRevealed: (payload) {
-        final answer = payload['answer'] as int?;
-        final winningGuessId = payload['winning_guess_id'] as String?;
-        if (answer != null) {
-          ref.read(gameStateProvider.notifier).revealAnswer(
-                answer: answer,
-                winningGuessId: winningGuessId,
-              );
-          _syncAudioForPhase(RoundPhase.revealAnswer);
-          _startRevealSequence(ref.read(gameStateProvider));
+        try {
+          final answer = (payload['answer'] as num?)?.toInt();
+          final winningGuessId = payload['winning_guess_id'] as String?;
+          if (answer != null) {
+            ref.read(gameStateProvider.notifier).revealAnswer(
+                  answer: answer,
+                  winningGuessId: winningGuessId,
+                );
+            _syncAudioForPhase(RoundPhase.revealAnswer);
+            _startRevealSequence(ref.read(gameStateProvider));
+          }
+        } catch (e, st) {
+          debugPrint('Error in onAnswerRevealed: $e\n$st');
         }
       },
       onGameStarted: (payload) {
@@ -920,6 +936,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     final targetGuessId = _targetGuessIdForSlot(slotIndex, gameState);
 
+    final safeDx = (position != null && position.dx.isFinite) ? position.dx : null;
+    final safeDy = (position != null && position.dy.isFinite) ? position.dy : null;
+
     final optimisticId = 'local-${DateTime.now().microsecondsSinceEpoch}';
     final optimisticBet = Bet(
       id: optimisticId,
@@ -932,8 +951,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
       payoutMultiplier: GameConstants.boardOdds[slotIndex],
       playerName: player.name,
       playerColor: player.avatarColor,
-      positionX: position?.dx,
-      positionY: position?.dy,
+      positionX: safeDx,
+      positionY: safeDy,
     );
 
     final gameNotifier = ref.read(gameStateProvider.notifier);
@@ -948,15 +967,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
         targetGuessId: targetGuessId,
         slotIndex: slotIndex,
         chips: chips,
-        positionX: position?.dx,
-        positionY: position?.dy,
+        positionX: safeDx,
+        positionY: safeDy,
       );
 
       final placedBet = bet.copyWith(
         playerName: player.name,
         playerColor: player.avatarColor,
-        positionX: position?.dx,
-        positionY: position?.dy,
+        positionX: safeDx,
+        positionY: safeDy,
       );
 
       gameNotifier.replaceBet(optimisticId, placedBet);
@@ -997,12 +1016,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final oldBet = sourceBet;
     final targetGuessId = _targetGuessIdForSlot(targetSlotIndex, gameState);
+    final safeDx = (position != null && position.dx.isFinite) ? position.dx : null;
+    final safeDy = (position != null && position.dy.isFinite) ? position.dy : null;
+
     final optimisticBet = sourceBet.copyWith(
       targetGuessId: targetGuessId,
       slotIndex: targetSlotIndex,
       payoutMultiplier: GameConstants.boardOdds[targetSlotIndex],
-      positionX: position?.dx,
-      positionY: position?.dy,
+      positionX: safeDx,
+      positionY: safeDy,
     );
 
     _isBetOperationInFlight = true;
@@ -1015,15 +1037,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
         betId: sourceBet.id,
         targetGuessId: targetGuessId,
         slotIndex: targetSlotIndex,
-        positionX: position?.dx,
-        positionY: position?.dy,
+        positionX: safeDx,
+        positionY: safeDy,
       );
 
       final placedBet = movedBet.copyWith(
         playerName: sourceBet.playerName,
         playerColor: sourceBet.playerColor,
-        positionX: position?.dx,
-        positionY: position?.dy,
+        positionX: safeDx,
+        positionY: safeDy,
       );
       gameNotifier.addBet(placedBet);
 

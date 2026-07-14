@@ -11,14 +11,13 @@ class GameState {
   final int maxRounds;
   final RoundPhase phase;
   final Question? currentQuestion;
-  final List<Guess> guesses;        // current round's guesses
-  final List<Guess> sortedGuesses;  // sorted ascending for the board
-  final List<Bet> bets;             // current round's bets
-  final Map<String, int> scores;    // playerId -> total score
+  final List<Guess> guesses; // current round's guesses
+  final List<Guess> sortedGuesses; // sorted ascending for the board
+  final List<Bet> bets; // current round's bets
+  final Map<String, int> scores; // playerId -> total score
   final int? correctAnswer;
   final String? winningGuessId;
   final bool hasSubmittedGuess;
-
 
   const GameState({
     required this.roomId,
