@@ -36,11 +36,6 @@ class GameStateNotifier extends Notifier<GameState> {
     RoundPhase? phase,
     Question? currentQuestion,
     Map<String, int>? scores,
-    List<Guess>? guesses,
-    List<Bet>? bets,
-    bool? hasSubmittedGuess,
-    int? stateVersion,
-    DateTime? phaseEndsAt,
   }) {
     final sameRoom = state.roomId == roomId;
     state = GameState(
@@ -52,73 +47,11 @@ class GameStateNotifier extends Notifier<GameState> {
       currentQuestion:
           currentQuestion ?? (sameRoom ? state.currentQuestion : null),
       scores: scores ?? (sameRoom ? state.scores : const {}),
-      guesses: guesses ?? (sameRoom ? state.guesses : const []),
-      sortedGuesses: guesses == null
-          ? (sameRoom ? state.sortedGuesses : const [])
-          : (List<Guess>.of(guesses)
-              ..sort((a, b) => a.value.compareTo(b.value))),
-      bets: bets ?? (sameRoom ? state.bets : const []),
-      hasSubmittedGuess:
-          hasSubmittedGuess ?? (sameRoom && state.hasSubmittedGuess),
-      stateVersion: stateVersion ?? (sameRoom ? state.stateVersion : 0),
-      phaseEndsAt: phaseEndsAt,
     );
   }
 
   void updatePhase(RoundPhase phase) {
     state = state.copyWith(phase: phase);
-  }
-
-  bool applyServerPhase({
-    required RoundPhase phase,
-    int? round,
-    Question? question,
-    int? stateVersion,
-    DateTime? phaseEndsAt,
-    bool resetRoundData = false,
-  }) {
-    final nextVersion = stateVersion ?? state.stateVersion;
-    if (stateVersion != null && stateVersion < state.stateVersion) {
-      return false;
-    }
-
-    final nextRound = round ?? state.currentRound;
-    if (nextRound < state.currentRound) return false;
-
-    final isNewRound = nextRound > state.currentRound || resetRoundData;
-    final sorted = isNewRound
-        ? const <Guess>[]
-        : (List<Guess>.of(state.guesses)
-            ..sort((a, b) => a.value.compareTo(b.value)));
-
-    state = GameState(
-      roomId: state.roomId,
-      roomCode: state.roomCode,
-      currentRound: nextRound,
-      maxRounds: state.maxRounds,
-      phase: phase,
-      currentQuestion: question ?? state.currentQuestion,
-      guesses: isNewRound ? const [] : state.guesses,
-      sortedGuesses: sorted,
-      bets: isNewRound ? const [] : state.bets,
-      scores: state.scores,
-      hasSubmittedGuess: isNewRound ? false : state.hasSubmittedGuess,
-      stateVersion: nextVersion,
-      phaseEndsAt: phaseEndsAt,
-    );
-    return true;
-  }
-
-  void setPhaseMetadata({
-    int? stateVersion,
-    DateTime? phaseEndsAt,
-    bool clearPhaseEndsAt = false,
-  }) {
-    state = state.copyWith(
-      stateVersion: stateVersion,
-      phaseEndsAt: phaseEndsAt,
-      clearPhaseEndsAt: clearPhaseEndsAt,
-    );
   }
 
   void setRound(int round) {
@@ -179,10 +112,7 @@ class GameStateNotifier extends Notifier<GameState> {
       );
       return;
     }
-    final hasOptimisticBet = state.bets.any((b) => b.id == oldId);
-    final updatedBets = hasOptimisticBet
-        ? state.bets.map((b) => b.id == oldId ? bet : b).toList()
-        : [...state.bets, bet];
+    final updatedBets = state.bets.map((b) => b.id == oldId ? bet : b).toList();
     state = state.copyWith(bets: updatedBets);
   }
 
@@ -231,8 +161,6 @@ class GameStateNotifier extends Notifier<GameState> {
       correctAnswer: answer,
       winningGuessId: winningGuessId,
       hasSubmittedGuess: state.hasSubmittedGuess,
-      stateVersion: state.stateVersion,
-      phaseEndsAt: state.phaseEndsAt,
     );
   }
 
@@ -253,8 +181,6 @@ class GameStateNotifier extends Notifier<GameState> {
       phase: state.phase,
       currentQuestion: state.currentQuestion,
       scores: state.scores,
-      stateVersion: state.stateVersion,
-      phaseEndsAt: state.phaseEndsAt,
     );
   }
 

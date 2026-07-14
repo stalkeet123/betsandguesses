@@ -18,8 +18,6 @@ class GameState {
   final int? correctAnswer;
   final String? winningGuessId;
   final bool hasSubmittedGuess;
-  final int stateVersion;
-  final DateTime? phaseEndsAt;
 
   const GameState({
     required this.roomId,
@@ -35,8 +33,6 @@ class GameState {
     this.correctAnswer,
     this.winningGuessId,
     this.hasSubmittedGuess = false,
-    this.stateVersion = 0,
-    this.phaseEndsAt,
   });
 
   bool get isLastRound => currentRound >= maxRounds;
@@ -56,12 +52,6 @@ class GameState {
     int? correctAnswer,
     String? winningGuessId,
     bool? hasSubmittedGuess,
-    int? stateVersion,
-    DateTime? phaseEndsAt,
-    bool clearCurrentQuestion = false,
-    bool clearCorrectAnswer = false,
-    bool clearWinningGuessId = false,
-    bool clearPhaseEndsAt = false,
   }) {
     return GameState(
       roomId: roomId ?? this.roomId,
@@ -69,18 +59,14 @@ class GameState {
       currentRound: currentRound ?? this.currentRound,
       maxRounds: maxRounds ?? this.maxRounds,
       phase: phase ?? this.phase,
-      currentQuestion:
-          clearCurrentQuestion ? null : currentQuestion ?? this.currentQuestion,
+      currentQuestion: currentQuestion ?? this.currentQuestion,
       guesses: guesses ?? this.guesses,
       sortedGuesses: sortedGuesses ?? this.sortedGuesses,
       bets: bets ?? this.bets,
       scores: scores ?? this.scores,
-      correctAnswer: clearCorrectAnswer ? null : correctAnswer ?? this.correctAnswer,
-      winningGuessId:
-          clearWinningGuessId ? null : winningGuessId ?? this.winningGuessId,
+      correctAnswer: correctAnswer ?? this.correctAnswer,
+      winningGuessId: winningGuessId ?? this.winningGuessId,
       hasSubmittedGuess: hasSubmittedGuess ?? this.hasSubmittedGuess,
-      stateVersion: stateVersion ?? this.stateVersion,
-      phaseEndsAt: clearPhaseEndsAt ? null : phaseEndsAt ?? this.phaseEndsAt,
     );
   }
 
@@ -93,7 +79,6 @@ class GameState {
       maxRounds: maxRounds,
       phase: RoundPhase.question,
       scores: scores,
-      stateVersion: stateVersion,
     );
   }
 }

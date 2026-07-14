@@ -275,14 +275,18 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           )
           .toList();
 
-      final startedRoom = await roomService.startGame(
-        room.id,
-        currentQuestionId: question.id,
-      );
+      await roomService.startGame(room.id, currentQuestionId: question.id);
       _seedGameState(room, question, scores: startingScores);
       ref
           .read(currentRoomProvider.notifier)
-          .set(startedRoom.copyWith(status: RoomStatus.playing));
+          .set(
+            room.copyWith(
+              status: RoomStatus.playing,
+              currentRound: 1,
+              roundPhase: RoundPhase.guessing,
+              currentQuestionId: question.id,
+            ),
+          );
 
       final realtimeService = ref.read(realtimeServiceProvider);
       await realtimeService.broadcast(widget.roomCode, 'game_started', {
@@ -291,8 +295,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         'phase': RoundPhase.guessing.name,
         'question': question.toJson(),
         'scores': startingScores,
-        'state_version': startedRoom.stateVersion,
-        'phase_ends_at': startedRoom.phaseEndsAt?.toUtc().toIso8601String(),
       });
 
       if (mounted) {

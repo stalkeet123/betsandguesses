@@ -118,148 +118,39 @@ class RoomService {
   }
 
   /// Update round phase
-  Future<Room> updatePhase(
+  Future<void> updatePhase(
     String roomId,
     String phase, {
     int? round,
     String? currentQuestionId,
-    int? durationSeconds,
-    int? expectedVersion,
   }) async {
-    try {
-      final response = await _client.rpc(
-        'transition_game_phase',
-        params: {
-          'p_room_id': roomId,
-          'p_expected_version': expectedVersion,
-          'p_phase': phase,
-          'p_round': round,
-          'p_question_id': currentQuestionId,
-          'p_duration_seconds': durationSeconds,
-        },
-      );
-      return Room.fromJson(Map<String, dynamic>.from(response as Map));
-    } on PostgrestException catch (error) {
-      if (!_isMissingGameEngineRpc(error)) rethrow;
-    }
-
     final data = <String, dynamic>{'round_phase': phase};
     if (round != null) data['current_round'] = round;
     if (currentQuestionId != null) {
       data['current_question_id'] = currentQuestionId;
     }
     await _client.from('rooms').update(data).eq('id', roomId);
-    return getRoom(roomId);
-  }
-
-  Future<DateTime> getServerTime() async {
-    try {
-      final response = await _client.rpc('game_server_time');
-      if (response is String) return DateTime.parse(response).toUtc();
-    } on PostgrestException catch (error) {
-      if (!_isMissingGameEngineRpc(error)) rethrow;
-    }
-    return DateTime.now().toUtc();
-  }
-
-  /// Commits the winner, every player score, and the reveal phase in one
-  /// database transaction. The fallback keeps older backends usable until the
-  /// game engine migration is installed.
-  Future<Room> settleRound({
-    required String roomId,
-    required int expectedVersion,
-    required int round,
-    required String? winningGuessId,
-    required Map<String, int> scores,
-    int durationSeconds = 6,
-  }) async {
-    try {
-      final response = await _client.rpc(
-        'settle_game_round',
-        params: {
-          'p_room_id': roomId,
-          'p_expected_version': expectedVersion,
-          'p_round': round,
-          'p_winning_guess_id': winningGuessId,
-          'p_scores': scores,
-          'p_duration_seconds': durationSeconds,
-        },
-      );
-      return Room.fromJson(Map<String, dynamic>.from(response as Map));
-    } on PostgrestException catch (error) {
-      if (!_isMissingGameEngineRpc(error)) rethrow;
-    }
-
-    await _client
-        .from('guesses')
-        .update({'is_winner': false})
-        .eq('room_id', roomId)
-        .eq('round_number', round);
-    if (winningGuessId != null) {
-      await _client
-          .from('guesses')
-          .update({'is_winner': true})
-          .eq('id', winningGuessId);
-    }
-    await Future.wait(
-      scores.entries.map(
-        (entry) => _client
-            .from('players')
-            .update({'score': entry.value})
-            .eq('id', entry.key),
-      ),
-    );
-    return updatePhase(
-      roomId,
-      RoundPhase.revealAnswer.name,
-      round: round,
-      durationSeconds: durationSeconds,
-      expectedVersion: expectedVersion,
-    );
-  }
-
-  bool _isMissingGameEngineRpc(PostgrestException error) {
-    final message = error.message.toLowerCase();
-    return error.code == 'PGRST202' ||
-        message.contains('could not find the function') ||
-        message.contains('schema cache');
   }
 
   /// Start the game
-  Future<Room> startGame(String roomId, {String? currentQuestionId}) async {
-    await _client.from('rooms').update({'status': 'playing'}).eq('id', roomId);
-
-    final phase = currentQuestionId == null
-        ? RoundPhase.question.name
-        : RoundPhase.guessing.name;
-    return updatePhase(
-      roomId,
-      phase,
-      round: 1,
-      currentQuestionId: currentQuestionId,
-      durationSeconds: currentQuestionId == null
-          ? null
-          : GameConstants.guessTimerSeconds,
-    );
+  Future<void> startGame(String roomId, {String? currentQuestionId}) async {
+    final data = {
+      'status': 'playing',
+      'current_round': 1,
+      'round_phase': currentQuestionId == null
+          ? RoundPhase.question.name
+          : RoundPhase.guessing.name,
+      if (currentQuestionId != null) 'current_question_id': currentQuestionId,
+    };
+    await _client.from('rooms').update(data).eq('id', roomId);
   }
 
   /// End the game
-  Future<Room> endGame(String roomId, {required int expectedVersion}) async {
-    try {
-      final response = await _client.rpc(
-        'finish_game',
-        params: {'p_room_id': roomId, 'p_expected_version': expectedVersion},
-      );
-      return Room.fromJson(Map<String, dynamic>.from(response as Map));
-    } on PostgrestException catch (error) {
-      if (!_isMissingGameEngineRpc(error)) rethrow;
-    }
-
+  Future<void> endGame(String roomId) async {
     await _client
         .from('rooms')
         .update({'status': 'finished', 'round_phase': 'idle'})
         .eq('id', roomId);
-    return getRoom(roomId);
   }
 
   /// Reset a room so players can return to the lobby after a game.

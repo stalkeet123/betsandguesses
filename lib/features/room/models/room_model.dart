@@ -12,9 +12,6 @@ class Room {
   final String? category;
   final RoundPhase roundPhase;
   final String? currentQuestionId;
-  final int stateVersion;
-  final DateTime? phaseStartedAt;
-  final DateTime? phaseEndsAt;
   final DateTime createdAt;
 
   const Room({
@@ -28,9 +25,6 @@ class Room {
     this.category,
     this.roundPhase = RoundPhase.idle,
     this.currentQuestionId,
-    this.stateVersion = 0,
-    this.phaseStartedAt,
-    this.phaseEndsAt,
     required this.createdAt,
   });
 
@@ -48,9 +42,6 @@ class Room {
         json['round_phase'] as String? ?? 'idle',
       ),
       currentQuestionId: json['current_question_id'] as String?,
-      stateVersion: (json['state_version'] as num?)?.toInt() ?? 0,
-      phaseStartedAt: _parseUtc(json['phase_started_at']),
-      phaseEndsAt: _parseUtc(json['phase_ends_at']),
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -67,9 +58,6 @@ class Room {
       'category': category,
       'round_phase': roundPhase.name,
       'current_question_id': currentQuestionId,
-      'state_version': stateVersion,
-      'phase_started_at': phaseStartedAt?.toUtc().toIso8601String(),
-      'phase_ends_at': phaseEndsAt?.toUtc().toIso8601String(),
     };
   }
 
@@ -86,9 +74,6 @@ class Room {
     String? category,
     RoundPhase? roundPhase,
     String? currentQuestionId,
-    int? stateVersion,
-    DateTime? phaseStartedAt,
-    DateTime? phaseEndsAt,
     DateTime? createdAt,
   }) {
     return Room(
@@ -102,15 +87,7 @@ class Room {
       category: category ?? this.category,
       roundPhase: roundPhase ?? this.roundPhase,
       currentQuestionId: currentQuestionId ?? this.currentQuestionId,
-      stateVersion: stateVersion ?? this.stateVersion,
-      phaseStartedAt: phaseStartedAt ?? this.phaseStartedAt,
-      phaseEndsAt: phaseEndsAt ?? this.phaseEndsAt,
       createdAt: createdAt ?? this.createdAt,
     );
-  }
-
-  static DateTime? _parseUtc(Object? value) {
-    if (value is! String || value.isEmpty) return null;
-    return DateTime.tryParse(value)?.toUtc();
   }
 }

@@ -13,7 +13,6 @@ class Bet {
   final String? playerColor;
   final double? positionX;
   final double? positionY;
-  final String? clientActionId;
 
   const Bet({
     required this.id,
@@ -29,7 +28,6 @@ class Bet {
     this.playerColor,
     this.positionX,
     this.positionY,
-    this.clientActionId,
   });
 
   factory Bet.fromJson(Map<String, dynamic> json) {
@@ -47,7 +45,6 @@ class Bet {
       playerColor: json['player_color'] as String?,
       positionX: (json['position_x'] as num?)?.toDouble(),
       positionY: (json['position_y'] as num?)?.toDouble(),
-      clientActionId: json['client_action_id'] as String?,
     );
   }
 
@@ -62,7 +59,6 @@ class Bet {
       'payout_multiplier': payoutMultiplier,
       if (positionX != null) 'position_x': positionX,
       if (positionY != null) 'position_y': positionY,
-      if (clientActionId != null) 'client_action_id': clientActionId,
     };
   }
 
@@ -80,7 +76,6 @@ class Bet {
     String? playerColor,
     double? positionX,
     double? positionY,
-    String? clientActionId,
   }) {
     return Bet(
       id: id ?? this.id,
@@ -96,7 +91,6 @@ class Bet {
       playerColor: playerColor ?? this.playerColor,
       positionX: positionX ?? this.positionX,
       positionY: positionY ?? this.positionY,
-      clientActionId: clientActionId ?? this.clientActionId,
     );
   }
 }
