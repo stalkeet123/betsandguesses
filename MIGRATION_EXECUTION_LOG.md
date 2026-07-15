@@ -88,7 +88,7 @@ Git'e almak, sonra idempotent settlement RPC ve rollback eklemektir.
 
 ## Faz 3 - Atomik Round Settlement
 
-Durum: `KOD TAMAM, CANLI MIGRATION BEKLIYOR`
+Durum: `CANLIDA AKTIF`
 
 - Migration: `supabase/migrations/20260715033000_atomic_round_settlement.sql`
 - Rollback: `supabase/rollbacks/20260715033000_atomic_round_settlement.sql`
@@ -100,9 +100,13 @@ Durum: `KOD TAMAM, CANLI MIGRATION BEKLIYOR`
   kullanir. Bu nedenle migration ve client farkli zamanlarda yayinlanabilir.
 - RPC disindaki SQL/ag hatalari legacy yazima dusmez; snapshot resync yapar.
 - `flutter analyze` ve 15 test basarili.
+- Migration Supabase SQL Editor ile 2026-07-15 tarihinde uygulandi.
+- RPC imzasi, room state-version trigger'i ve anon/authenticated execute
+  izinleri read-only SQL ile dogrulandi.
+- Publishable anon key ile bos oda RPC smoke testi fonksiyona ulasti ve beklenen
+  `Room not found` guard sonucunu verdi; canli oyun verisi degismedi.
 
 ## Sonraki Adim
 
-Faz 3 migration'ini Supabase SQL Editor veya CLI ile uygula. Ardindan iki
-client ile bir round settlement smoke testi yap ve RPC yolunun kullanildigini
-dogrula.
+Yeni client ile iki oyunculu bir round settlement smoke testi yap. Sonraki
+server adimindan once bu migration ve rollback dosyalarini kaynak kabul et.
