@@ -37,7 +37,7 @@ ilerletebilir.
    yapar. Client oyun tablolarina dogrudan INSERT/UPDATE/DELETE yapamaz.
 5. Her oyun `15` parayla baslar. Round sonunda `15` altindaki oyuncu tekrar
    `15`e tamamlanir; ustundeki kazanc yalnizca o mac boyunca korunur.
-6. Sonuclar `7` saniye, yeni-round katmani `2` saniye ortak server deadline ile
+6. Sonuclar `7` saniye, yeni-round katmani `1` saniye ortak server deadline ile
    gosterilir. Katman mevcut oyun ekranindadir; yeni route veya sayfa yoktur.
 7. Sesler once yuklenir, soru/phase degisimi ses politikasini tetikler. Buyuk
    WAV dosyalari yaklasik 17.8 MB'dan 3.6 MB'a dusuruldu.

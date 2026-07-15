@@ -336,6 +336,20 @@ Durum: `CANLIDA AKTIF, MANUEL GORSEL KABUL BEKLIYOR`
 - Canli katalog sorgusu uc saniyelik ilk-round deadline, question phase ve
   authenticated execute izni icin `true` dondu.
 
+## Faz 14 - Tek Saniyelik Round Gecisi ve Ses Siralamasi
+
+Durum: `CANLIDA AKTIF, STATIK DOGRULAMA TAMAM`
+
+- Migration: `supabase/migrations/20260715150000_one_second_round_transition.sql`
+- Rollback: `supabase/rollbacks/20260715150000_one_second_round_transition.sql`
+- Ilk round ve sonraki round katmanlari ortak server deadline ile bir saniyeye
+  indirildi. Host olmayan istemcinin failover payi `900 ms` yerine `250 ms`dir.
+- `question` gecis fazinda BGM hemen durur ve whoosh ilk frame'de bir kez calar.
+  Soru muzigi ancak authoritative `guessing` fazi basladiginda devreye girer.
+- Canli katalog sorgusu `start_game_v2` govdesinde bir saniyelik deadline ve
+  authenticated execute izni icin `true / true` dondu.
+- `dart analyze` temiz gecti.
+
 ## Sonraki Adim
 
 Bir Web + bir mobil istemciyle tek bir normal tam oyun kabul turu yapilmalidir:
