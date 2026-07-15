@@ -314,6 +314,36 @@ class GameService {
     await _client.from('guesses').update({'is_winner': true}).eq('id', guessId);
   }
 
+  /// Settles a round in one Postgres transaction when the v1 RPC is installed.
+  /// Returns null only when the migration is not installed, allowing old and
+  /// new deployments to coexist during rollout.
+  Future<RoundSettlementResult?> settleRound({
+    required String roomId,
+    required int roundNumber,
+    required String? winningGuessId,
+    required int winningSlotIndex,
+    required Map<String, int> scores,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'settle_game_round_v1',
+        params: {
+          'p_room_id': roomId,
+          'p_round_number': roundNumber,
+          'p_winning_guess_id': winningGuessId,
+          'p_winning_slot_index': winningSlotIndex,
+          'p_scores': scores,
+        },
+      );
+      return RoundSettlementResult.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
+    } on PostgrestException catch (error) {
+      if (error.code == 'PGRST202' || error.code == '42883') return null;
+      rethrow;
+    }
+  }
+
   // ── Bets ──
 
   /// Place a bet
@@ -473,6 +503,40 @@ class _QuestionCandidate {
     return _QuestionCandidate(
       id: json['id'] as String,
       category: json['category'] as String?,
+    );
+  }
+}
+
+class RoundSettlementResult {
+  final bool didSettle;
+  final int stateVersion;
+  final String? winningGuessId;
+  final int winningSlotIndex;
+  final Map<String, int> scores;
+
+  const RoundSettlementResult({
+    required this.didSettle,
+    required this.stateVersion,
+    required this.winningGuessId,
+    required this.winningSlotIndex,
+    required this.scores,
+  });
+
+  factory RoundSettlementResult.fromJson(Map<String, dynamic> json) {
+    final rawScores = json['scores'];
+    final scores = rawScores is Map
+        ? rawScores.map(
+            (key, value) =>
+                MapEntry('$key', value is int ? value : int.parse('$value')),
+          )
+        : <String, int>{};
+
+    return RoundSettlementResult(
+      didSettle: json['status'] == 'settled',
+      stateVersion: (json['state_version'] as num?)?.toInt() ?? 0,
+      winningGuessId: json['winning_guess_id'] as String?,
+      winningSlotIndex: (json['winning_slot_index'] as num?)?.toInt() ?? 0,
+      scores: scores,
     );
   }
 }

@@ -16,6 +16,7 @@ import '../../../features/game/models/bet_model.dart';
 import '../../../features/game/models/guess_model.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/providers/game_providers.dart';
+import '../../../features/game/services/game_service.dart';
 import '../../../features/game/services/game_sync_policy.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/models/room_model.dart';
@@ -781,19 +782,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       correctAnswer,
     );
     final bets = await gameService.getBets(room.id, gameState.currentRound);
-    final claimedRoom = await roomService.claimPhaseTransition(
-      roomId: room.id,
-      round: gameState.currentRound,
-      expectedPhase: RoundPhase.betting.name,
-      nextPhase: RoundPhase.revealAnswer.name,
-    );
-    if (claimedRoom == null) {
-      await _resyncFromServer();
-      return;
-    }
-    if (winningGuess != null) {
-      await gameService.markWinner(winningGuess.id);
-    }
 
     final payouts = gameService.calculatePayouts(
       guesses: gameState.sortedGuesses,
@@ -827,6 +815,65 @@ class _GameScreenState extends ConsumerState<GameScreen>
         newScores[entry.key] = 15;
       }
     }
+
+    final winningSlotIndex = gameService.determineWinningBetSlotIndex(
+      gameState.sortedGuesses,
+      correctAnswer,
+    );
+    if (winningSlotIndex == null) {
+      await _resyncFromServer();
+      return;
+    }
+
+    RoundSettlementResult? settlement;
+    try {
+      settlement = await gameService.settleRound(
+        roomId: room.id,
+        roundNumber: gameState.currentRound,
+        winningGuessId: winningGuess?.id,
+        winningSlotIndex: winningSlotIndex,
+        scores: newScores,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Atomic round settlement failed: $error\n$stackTrace');
+      await _resyncFromServer();
+      return;
+    }
+
+    if (settlement == null) {
+      final claimedRoom = await roomService.claimPhaseTransition(
+        roomId: room.id,
+        round: gameState.currentRound,
+        expectedPhase: RoundPhase.betting.name,
+        nextPhase: RoundPhase.revealAnswer.name,
+      );
+      if (claimedRoom == null) {
+        await _resyncFromServer();
+        return;
+      }
+      ref.read(currentRoomProvider.notifier).set(claimedRoom);
+      if (winningGuess != null) {
+        await gameService.markWinner(winningGuess.id);
+      }
+      await ref.read(playerServiceProvider).updateScores(newScores);
+    } else {
+      if (!settlement.didSettle) {
+        await _resyncFromServer();
+        return;
+      }
+      newScores
+        ..clear()
+        ..addAll(settlement.scores);
+      ref
+          .read(currentRoomProvider.notifier)
+          .set(
+            room.copyWith(
+              roundPhase: RoundPhase.revealAnswer,
+              stateVersion: settlement.stateVersion,
+            ),
+          );
+    }
+
     gameNotifier.revealAnswer(
       answer: correctAnswer,
       winningGuessId: winningGuess?.id,
@@ -837,9 +884,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     unawaited(
       _startRevealSequence(ref.read(gameStateProvider), payouts: payouts),
     );
-
-    final playerService = ref.read(playerServiceProvider);
-    await playerService.updateScores(newScores);
 
     await realtimeService.broadcast(widget.roomCode, 'answer_revealed', {
       'round': gameState.currentRound,

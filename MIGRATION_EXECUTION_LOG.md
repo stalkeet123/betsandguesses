@@ -86,7 +86,23 @@ politikalari ve canli schema dump'i bulunmadigi icin bu fonksiyon tahminle
 eklenmedi. Sonraki server adimi once canli semayi migration baseline olarak
 Git'e almak, sonra idempotent settlement RPC ve rollback eklemektir.
 
+## Faz 3 - Atomik Round Settlement
+
+Durum: `KOD TAMAM, CANLI MIGRATION BEKLIYOR`
+
+- Migration: `supabase/migrations/20260715033000_atomic_round_settlement.sql`
+- Rollback: `supabase/rollbacks/20260715033000_atomic_round_settlement.sql`
+- `settle_game_round_v1` tek transaction icinde winner, bet sonucu, oyuncu
+  skorlari ve room phase alanlarini yazar.
+- Room update'lerinde `state_version` otomatik artar.
+- Ayni round ikinci kez settle edilirse yeni mutation yapilmaz.
+- Yeni client RPC kuruluysa atomik yolu, kurulu degilse mevcut legacy yolu
+  kullanir. Bu nedenle migration ve client farkli zamanlarda yayinlanabilir.
+- RPC disindaki SQL/ag hatalari legacy yazima dusmez; snapshot resync yapar.
+- `flutter analyze` ve 15 test basarili.
+
 ## Sonraki Adim
 
-Faz 2 paketini platform build'leriyle son kez dogrula ve commit et. Ardindan
-Supabase schema/RLS baseline'i alinmadan canli DB davranisi degistirme.
+Faz 3 migration'ini Supabase SQL Editor veya CLI ile uygula. Ardindan iki
+client ile bir round settlement smoke testi yap ve RPC yolunun kullanildigini
+dogrula.
