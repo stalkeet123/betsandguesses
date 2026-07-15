@@ -1,9 +1,11 @@
 import 'dart:math';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/question_model.dart';
 import '../models/guess_model.dart';
 import '../models/bet_model.dart';
 import '../../../core/constants/game_constants.dart';
+import '../../room/models/room_model.dart';
 
 /// Service for game logic: questions, guesses, bets, scoring
 class GameService {
@@ -13,108 +15,69 @@ class GameService {
 
   // ── Questions ──
 
-  static const _questionSelectColumns =
-      'id, text_tr, text_en, answer, answer_unit, category, difficulty, source';
-  static const _questionCandidateSelectColumns = 'id, category';
   static const _guessSelectColumns =
       'id, room_id, round_number, player_id, question_id, value, is_winner';
   static const _betSelectColumns =
       'id, room_id, round_number, player_id, target_guess_id, slot_index, '
       'chips, payout_multiplier, position_x, position_y';
 
-  List<_QuestionCandidate>? _cachedQuestionCandidates;
+  List<String>? _cachedQuestionCategories;
 
-  /// Fetch lightweight question candidates once and cache them.
   Future<void> prefetchQuestions() async {
-    if (_cachedQuestionCandidates != null) return;
+    if (_cachedQuestionCategories != null) return;
     try {
-      final response = await _client
-          .from('questions')
-          .select(_questionCandidateSelectColumns);
-      _cachedQuestionCandidates = (response as List)
-          .map((e) => _QuestionCandidate.fromJson(e))
-          .toList();
-    } catch (e) {
-      // Ignore, we will try again
+      await getQuestionCategories();
+    } catch (_) {
+      // The lobby remains usable if optional category prefetch fails.
     }
-  }
-
-  /// Get a random question not yet used in this room
-  Future<Question?> getRandomQuestion(
-    String roomId,
-    List<String> usedQuestionIds, {
-    String? category,
-  }) async {
-    await prefetchQuestions();
-
-    if (_cachedQuestionCandidates == null ||
-        _cachedQuestionCandidates!.isEmpty) {
-      // Fallback: fetch candidates directly if cache failed or is empty.
-      final response = await _client
-          .from('questions')
-          .select(_questionCandidateSelectColumns);
-      _cachedQuestionCandidates = (response as List)
-          .map((e) => _QuestionCandidate.fromJson(e))
-          .toList();
-      if (_cachedQuestionCandidates!.isEmpty) return null;
-    }
-
-    final normalizedCategory = category?.trim();
-    final useCategory =
-        normalizedCategory != null &&
-        normalizedCategory.isNotEmpty &&
-        normalizedCategory != GameConstants.defaultCategory;
-
-    final usedIds = usedQuestionIds.toSet();
-    var available = _cachedQuestionCandidates!
-        .where((q) => !usedIds.contains(q.id))
-        .toList();
-
-    if (useCategory) {
-      final categoryQuestions = available
-          .where((q) => q.category?.trim() == normalizedCategory)
-          .toList();
-      if (categoryQuestions.isNotEmpty) {
-        available = categoryQuestions;
-      }
-    }
-
-    if (available.isEmpty) return null;
-    available.shuffle(Random());
-    for (final candidate in available) {
-      final question = await getQuestionById(candidate.id);
-      if (question != null) return question;
-    }
-    return null;
   }
 
   Future<List<String>> getQuestionCategories() async {
-    await prefetchQuestions();
-    if (_cachedQuestionCandidates == null ||
-        _cachedQuestionCandidates!.isEmpty) {
-      return [];
-    }
-
-    final categories =
-        _cachedQuestionCandidates!
-            .map((q) => q.category?.trim())
-            .whereType<String>()
-            .where((category) => category.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-
+    final cached = _cachedQuestionCategories;
+    if (cached != null) return cached;
+    final response = await _client.rpc('get_question_categories_v2');
+    final categories = (response as List).map((value) => '$value').toList();
+    _cachedQuestionCategories = categories;
     return categories;
   }
 
-  Future<Question?> getQuestionById(String questionId) async {
-    final response = await _client
-        .from('questions')
-        .select(_questionSelectColumns)
-        .eq('id', questionId)
-        .maybeSingle();
+  Future<Question?> getQuestionForRoom(String roomId) async {
+    final response = await _client.rpc(
+      'get_current_question_v2',
+      params: {'p_room_id': roomId},
+    );
     if (response == null) return null;
-    return Question.fromJson(response);
+    return Question.fromJson(Map<String, dynamic>.from(response as Map));
+  }
+
+  Future<SecureGameStart> startGameSecure({
+    required String roomId,
+    required int durationSeconds,
+  }) async {
+    final response = await _client.rpc(
+      'start_game_v2',
+      params: {'p_room_id': roomId, 'p_duration_seconds': durationSeconds},
+    );
+    return SecureGameStart.fromJson(Map<String, dynamic>.from(response as Map));
+  }
+
+  Future<SecureRoundQuestion?> claimNextQuestion({
+    required String roomId,
+    required int roundNumber,
+    required int durationSeconds,
+  }) async {
+    final response = await _client.rpc(
+      'claim_next_question_v2',
+      params: {
+        'p_room_id': roomId,
+        'p_round_number': roundNumber,
+        'p_duration_seconds': durationSeconds,
+      },
+    );
+    if (response == null) return null;
+    return SecureRoundQuestion.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   // ── Guesses ──
@@ -127,31 +90,11 @@ class GameService {
     required String questionId,
     required int value,
   }) async {
-    try {
-      final response = await _client
-          .from('guesses')
-          .insert({
-            'room_id': roomId,
-            'round_number': roundNumber,
-            'player_id': playerId,
-            'question_id': questionId,
-            'value': value,
-          })
-          .select(_guessSelectColumns)
-          .single();
-      return Guess.fromJson(response);
-    } on PostgrestException catch (error) {
-      if (error.code != '23505') rethrow;
-      final existing = await _client
-          .from('guesses')
-          .select(_guessSelectColumns)
-          .eq('room_id', roomId)
-          .eq('round_number', roundNumber)
-          .eq('player_id', playerId)
-          .maybeSingle();
-      if (existing == null) rethrow;
-      return Guess.fromJson(existing);
-    }
+    final response = await _client.rpc(
+      'submit_guess_v2',
+      params: {'p_room_id': roomId, 'p_value': value},
+    );
+    return Guess.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   /// Get all guesses for a round
@@ -309,39 +252,17 @@ class GameService {
     return result;
   }
 
-  /// Mark the winning guess in DB
-  Future<void> markWinner(String guessId) async {
-    await _client.from('guesses').update({'is_winner': true}).eq('id', guessId);
-  }
-
-  /// Settles a round in one Postgres transaction when the v1 RPC is installed.
-  /// Returns null only when the migration is not installed, allowing old and
-  /// new deployments to coexist during rollout.
-  Future<RoundSettlementResult?> settleRound({
+  Future<RoundSettlementResult> settleRound({
     required String roomId,
     required int roundNumber,
-    required String? winningGuessId,
-    required int winningSlotIndex,
-    required Map<String, int> scores,
   }) async {
-    try {
-      final response = await _client.rpc(
-        'settle_game_round_v1',
-        params: {
-          'p_room_id': roomId,
-          'p_round_number': roundNumber,
-          'p_winning_guess_id': winningGuessId,
-          'p_winning_slot_index': winningSlotIndex,
-          'p_scores': scores,
-        },
-      );
-      return RoundSettlementResult.fromJson(
-        Map<String, dynamic>.from(response as Map),
-      );
-    } on PostgrestException catch (error) {
-      if (error.code == 'PGRST202' || error.code == '42883') return null;
-      rethrow;
-    }
+    final response = await _client.rpc(
+      'settle_game_round_v2',
+      params: {'p_room_id': roomId, 'p_round_number': roundNumber},
+    );
+    return RoundSettlementResult.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   // ── Bets ──
@@ -358,26 +279,18 @@ class GameService {
     double? positionX,
     double? positionY,
   }) async {
-    final multiplier = GameConstants.boardOdds[slotIndex];
-    final payload = {
-      'room_id': roomId,
-      'round_number': roundNumber,
-      'player_id': playerId,
-      'target_guess_id': targetGuessId,
-      'slot_index': slotIndex,
-      'chips': chips,
-      'payout_multiplier': multiplier,
-      'client_action_id': clientActionId,
-      if (positionX != null) 'position_x': positionX,
-      if (positionY != null) 'position_y': positionY,
-    };
-
-    final response = await _client
-        .from('bets')
-        .insert(payload)
-        .select(_betSelectColumns)
-        .single();
-    return Bet.fromJson(response);
+    final response = await _client.rpc(
+      'place_bet_v2',
+      params: {
+        'p_room_id': roomId,
+        'p_slot_index': slotIndex,
+        'p_chips': chips,
+        'p_client_action_id': clientActionId,
+        'p_position_x': positionX,
+        'p_position_y': positionY,
+      },
+    );
+    return Bet.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   /// Move an existing bet without creating duplicate bet rows.
@@ -388,22 +301,16 @@ class GameService {
     double? positionX,
     double? positionY,
   }) async {
-    final multiplier = GameConstants.boardOdds[slotIndex];
-    final payload = {
-      'target_guess_id': targetGuessId,
-      'slot_index': slotIndex,
-      'payout_multiplier': multiplier,
-      if (positionX != null) 'position_x': positionX,
-      if (positionY != null) 'position_y': positionY,
-    };
-
-    final response = await _client
-        .from('bets')
-        .update(payload)
-        .eq('id', betId)
-        .select(_betSelectColumns)
-        .single();
-    return Bet.fromJson(response);
+    final response = await _client.rpc(
+      'move_bet_v2',
+      params: {
+        'p_bet_id': betId,
+        'p_slot_index': slotIndex,
+        'p_position_x': positionX,
+        'p_position_y': positionY,
+      },
+    );
+    return Bet.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   /// Get all bets for a round
@@ -418,42 +325,7 @@ class GameService {
 
   /// Remove a bet
   Future<void> removeBet(String betId) async {
-    await _client.from('bets').delete().eq('id', betId);
-  }
-
-  /// Remove all bets for a player in a round
-  Future<void> removePlayerBets(
-    String roomId,
-    int roundNumber,
-    String playerId,
-  ) async {
-    await _client
-        .from('bets')
-        .delete()
-        .eq('room_id', roomId)
-        .eq('round_number', roundNumber)
-        .eq('player_id', playerId);
-  }
-
-  /// Remove all bets for a player on a specific slot in a round
-  Future<void> removePlayerBetForSlot(
-    String roomId,
-    int roundNumber,
-    String playerId,
-    int slotIndex,
-  ) async {
-    await _client
-        .from('bets')
-        .delete()
-        .eq('room_id', roomId)
-        .eq('round_number', roundNumber)
-        .eq('player_id', playerId)
-        .eq('slot_index', slotIndex);
-  }
-
-  Future<void> clearRoomGameData(String roomId) async {
-    await _client.from('bets').delete().eq('room_id', roomId);
-    await _client.from('guesses').delete().eq('room_id', roomId);
+    await _client.rpc('remove_bet_v2', params: {'p_bet_id': betId});
   }
 
   // ── Scoring ──
@@ -484,33 +356,42 @@ class GameService {
   }
 
   // ── Used Questions ──
+}
 
-  /// Get question IDs already used in this room
-  Future<List<String>> getUsedQuestionIds(String roomId) async {
-    final response = await _client
-        .from('guesses')
-        .select('question_id')
-        .eq('room_id', roomId);
-    final ids = (response as List)
-        .map((e) => e['question_id'] as String?)
-        .where((id) => id != null)
-        .cast<String>()
-        .toSet()
-        .toList();
-    return ids;
+class SecureGameStart {
+  final Room room;
+  final Question question;
+  final Map<String, int> scores;
+
+  const SecureGameStart({
+    required this.room,
+    required this.question,
+    required this.scores,
+  });
+
+  factory SecureGameStart.fromJson(Map<String, dynamic> json) {
+    return SecureGameStart(
+      room: Room.fromJson(Map<String, dynamic>.from(json['room'] as Map)),
+      question: Question.fromJson(
+        Map<String, dynamic>.from(json['question'] as Map),
+      ),
+      scores: _intMap(json['scores']),
+    );
   }
 }
 
-class _QuestionCandidate {
-  final String id;
-  final String? category;
+class SecureRoundQuestion {
+  final Room room;
+  final Question question;
 
-  const _QuestionCandidate({required this.id, this.category});
+  const SecureRoundQuestion({required this.room, required this.question});
 
-  factory _QuestionCandidate.fromJson(Map<String, dynamic> json) {
-    return _QuestionCandidate(
-      id: json['id'] as String,
-      category: json['category'] as String?,
+  factory SecureRoundQuestion.fromJson(Map<String, dynamic> json) {
+    return SecureRoundQuestion(
+      room: Room.fromJson(Map<String, dynamic>.from(json['room'] as Map)),
+      question: Question.fromJson(
+        Map<String, dynamic>.from(json['question'] as Map),
+      ),
     );
   }
 }
@@ -518,33 +399,44 @@ class _QuestionCandidate {
 class RoundSettlementResult {
   final bool didSettle;
   final int stateVersion;
+  final int answer;
   final String? winningGuessId;
   final int winningSlotIndex;
   final Map<String, int> scores;
+  final Map<String, int> payouts;
+  final DateTime? phaseEndsAt;
 
   const RoundSettlementResult({
     required this.didSettle,
     required this.stateVersion,
+    required this.answer,
     required this.winningGuessId,
     required this.winningSlotIndex,
     required this.scores,
+    required this.payouts,
+    required this.phaseEndsAt,
   });
 
   factory RoundSettlementResult.fromJson(Map<String, dynamic> json) {
-    final rawScores = json['scores'];
-    final scores = rawScores is Map
-        ? rawScores.map(
-            (key, value) =>
-                MapEntry('$key', value is int ? value : int.parse('$value')),
-          )
-        : <String, int>{};
-
     return RoundSettlementResult(
       didSettle: json['status'] == 'settled',
       stateVersion: (json['state_version'] as num?)?.toInt() ?? 0,
+      answer: (json['answer'] as num).toInt(),
       winningGuessId: json['winning_guess_id'] as String?,
       winningSlotIndex: (json['winning_slot_index'] as num?)?.toInt() ?? 0,
-      scores: scores,
+      scores: _intMap(json['scores']),
+      payouts: _intMap(json['payouts']),
+      phaseEndsAt: json['phase_ends_at'] == null
+          ? null
+          : DateTime.tryParse('${json['phase_ends_at']}')?.toUtc(),
     );
   }
+}
+
+Map<String, int> _intMap(Object? value) {
+  if (value is! Map) return <String, int>{};
+  return value.map(
+    (key, item) =>
+        MapEntry('$key', item is int ? item : int.tryParse('$item') ?? 0),
+  );
 }

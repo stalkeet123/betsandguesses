@@ -71,38 +71,11 @@ class _JoinRoomDialogState extends ConsumerState<JoinRoomDialog> {
         return;
       }
 
-      final existingPlayers = await playerService.getPlayers(room.id);
-      final activePlayers = existingPlayers
-          .where((player) => player.isConnected)
-          .toList();
-      final isReturningPlayer = activePlayers.any(
-        (player) => player.deviceId == deviceId,
-      );
-
-      if (!isReturningPlayer && activePlayers.length >= room.maxPlayers) {
-        setState(() => _error = 'That table is full.');
-        return;
-      }
-
-      final normalizedName = widget.playerName.trim().toLowerCase();
-      final nameTaken = activePlayers.any(
-        (player) =>
-            player.deviceId != deviceId &&
-            player.name.trim().toLowerCase() == normalizedName,
-      );
-      if (nameTaken) {
-        setState(() => _error = 'That name is already taken in this lobby.');
-        return;
-      }
-
-      final usedColors = existingPlayers.map((p) => p.avatarColor).toSet();
-      final availableColor = _pickAvatarColor(usedColors);
-
       final player = await playerService.joinRoom(
         roomId: room.id,
         deviceId: deviceId,
         name: widget.playerName,
-        avatarColor: availableColor,
+        avatarColor: _pickAvatarColor(const {}),
       );
 
       ref.read(currentPlayerProvider.notifier).set(player);

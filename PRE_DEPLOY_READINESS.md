@@ -6,8 +6,8 @@ Tarih: 2026-07-15
 
 - Kontrollu beta: Yeni round gecisinin manuel cihaz testi sonrasinda hazir.
 - Performans ve maliyet: 100 adet dort kisilik eszamanli lobi icin uygun.
-- Herkese acik production: Henuz tam hazir degil. Kalan ana konu anonim
-  oyuncularin genis yazma RLS politikalaridir; performans degil guvenliktir.
+- Herkese acik production: Temel veri guvenligi hazir. Kalan konular cihaz kabul
+  turu, abuse/CAPTCHA sertlestirmesi ve yuk altinda operasyon gozlemidir.
 
 ## Nereden Nereye Geldik
 
@@ -29,11 +29,12 @@ ilerletebilir.
    provider parcalariyla rebuild olur.
 2. Her istemci oda icin tek Realtime kanalina baglanir. Bu kanal Presence,
    Broadcast, `rooms` UPDATE ve `bets` degisikliklerini tasir.
-3. Tahmin ve bahis once veritabanina yazilir. Broadcast yalnizca dusuk gecikme
-   icin kullanilir; kacarsa DB event'i veya snapshot state'i tamamlar.
-4. `start_game_v1`, `claim_game_phase_v1`, `settle_game_round_v1` ve
-   `reset_room_to_lobby_v1` kritik yazimlari atomik Postgres transaction olarak
-   yapar.
+3. Tahmin ve bahis authenticated oyuncunun kimligini, room uyeligini, round'u,
+   fazi ve bakiyeyi kontrol eden RPC'lerle veritabanina yazilir. Broadcast
+   yalnizca dusuk gecikme icin kullanilir; kacarsa DB event'i veya snapshot
+   state'i tamamlar.
+4. `*_v2` oyun komutlari kritik yazimlari atomik Postgres transaction olarak
+   yapar. Client oyun tablolarina dogrudan INSERT/UPDATE/DELETE yapamaz.
 5. Her oyun `15` parayla baslar. Round sonunda `15` altindaki oyuncu tekrar
    `15`e tamamlanir; ustundeki kazanc yalnizca o mac boyunca korunur.
 6. Sonuclar `7` saniye, yeni-round katmani `2` saniye ortak server deadline ile
@@ -42,6 +43,11 @@ ilerletebilir.
    WAV dosyalari yaklasik 17.8 MB'dan 3.6 MB'a dusuruldu.
 8. Polling yoktur. Realtime yeniden baglandiginda tek snapshot ile reconciliation
    yapilir; surekli bos DB sorgusu uretilmez.
+9. Her kurulum Supabase Anonymous Auth ile `auth.uid()` alir. Room/player
+   sahipligi bu kimlige baglidir; private Broadcast/Presence room uyeligiyle,
+   Postgres Changes ise JWT ve RLS ile korunur.
+10. Soru cevabi reveal/settlement fazindan once client payload'ina girmez;
+    authenticated istemci `questions` tablosunu dogrudan okuyamaz.
 
 ## 100 Lobi Kapasite Tahmini
 
@@ -90,9 +96,9 @@ Kaynaklar: [Realtime Reports](https://supabase.com/docs/guides/realtime/reports)
 - Manuel: Bir Web + bir mobil ile en az uc round; yeni round animasyonu,
   timer, eski soru temizligi, chip gorunurlugu ve ses gecisleri.
 - Olcekleme: 400 baglantili kademeli k6 testi ve dashboard metrik kaydi.
-- Guvenlik: Anonymous Supabase Auth veya sunucunun urettigi oyuncu token'i;
-  ardindan istemcinin dogrudan tablo mutation'larini RPC'lere tasima ve kalan
-  alti permissive RLS uyarisini kapatma.
+- Guvenlik: Anonymous Auth, RPC-only mutation, cevap gizliligi ve private
+  Realtime tamamlandi. Acik Web yayini oncesi Turnstile/CAPTCHA ile bot oda
+  olusturma ve anonymous sign-in kotasi korunmali.
 - Operasyon: Production migration'larini Supabase CLI/CI ile sirali uygulama,
   rollback dosyalarini koruma ve hata/latency alarmi ekleme.
 
@@ -101,8 +107,11 @@ Kaynaklar: [Realtime Reports](https://supabase.com/docs/guides/realtime/reports)
 - Oyun senkronizasyonu ve veri mimarisi: `8.5/10`
 - Performans ve maliyet verimliligi: `8/10`
 - Kontrollu beta hazirligi: `8/10` (manuel gecis testi bekliyor)
-- Herkese acik production guvenligi: `5.5/10` (RLS/kimlik fazi bekliyor)
+- Herkese acik production guvenligi: `8/10` (Auth/RLS/RPC tamam; CAPTCHA ve
+  operasyon alarmlari sonraki sertlestirme)
 
-Bir sonraki optimizasyon olarak her client'in soru katalogunu bir kez cekmesi
-yerine sunucu tarafli `claim_next_question` RPC dusunulebilir. Bu, 400 istemcide
-katalog okumasini azaltir; mevcut 100 lobi hedefi icin yayin engeli degildir.
+Soru katalogu artik istemcilere dagitilmaz; kategori ve sonraki soru secimi
+sunucu RPC'lerindedir. Free plan baslangic ve kontrollu beta icin yeterlidir;
+Pro zorunlu degildir. Ancak Free plandaki 200 peak Realtime connection siniri
+nedeniyle 100 adet dort kisilik eszamanli lobi hedefi Pro veya daha yuksek
+kapasite gerektirir.

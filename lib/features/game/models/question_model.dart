@@ -3,7 +3,7 @@ class Question {
   final String id;
   final String textTr;
   final String? textEn;
-  final int answer;
+  final int? answer;
   final String? answerUnit;
   final String? category;
   final int difficulty;
@@ -13,7 +13,7 @@ class Question {
     required this.id,
     required this.textTr,
     this.textEn,
-    required this.answer,
+    this.answer,
     this.answerUnit,
     this.category,
     this.difficulty = 3,
@@ -31,7 +31,7 @@ class Question {
       id: json['id'] as String,
       textTr: json['text_tr'] as String,
       textEn: json['text_en'] as String?,
-      answer: json['answer'] as int,
+      answer: (json['answer'] as num?)?.toInt(),
       answerUnit: json['answer_unit'] as String?,
       category: json['category'] as String?,
       difficulty: json['difficulty'] as int? ?? 3,
@@ -44,7 +44,7 @@ class Question {
       'id': id,
       'text_tr': textTr,
       'text_en': textEn,
-      'answer': answer,
+      if (answer != null) 'answer': answer,
       'answer_unit': answerUnit,
       'category': category,
       'difficulty': difficulty,

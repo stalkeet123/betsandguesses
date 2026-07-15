@@ -7,7 +7,6 @@ import '../models/room_model.dart';
 class RoomService {
   final SupabaseClient _client;
   Duration _serverClockOffset = Duration.zero;
-  bool _hasServerClock = false;
   DateTime? _lastServerClockSyncAt;
 
   static const _serverClockCacheDuration = Duration(minutes: 1);
@@ -33,14 +32,13 @@ class RoomService {
       requestFinishedAt.difference(requestStartedAt) ~/ 2,
     );
     _serverClockOffset = serverTime.difference(midpoint);
-    _hasServerClock = true;
     _lastServerClockSyncAt = requestFinishedAt;
     return serverNow;
   }
 
   /// Create a new room, returns the created Room
   Future<Room> createRoom(
-    String hostId, {
+    String _, {
     int maxRounds = GameConstants.defaultRounds,
     int maxPlayers = GameConstants.freeMaxPlayers,
     String? category,
@@ -48,40 +46,20 @@ class RoomService {
     for (var attempt = 0; attempt < 12; attempt++) {
       final code = Helpers.generateRoomCode();
       try {
-        final insertData = {
-          'code': code,
-          'host_id': hostId,
-          'status': 'waiting',
-          'current_round': 0,
-          'max_rounds': maxRounds,
-          'max_players': maxPlayers,
-          'category': category == GameConstants.defaultCategory
-              ? null
-              : category,
-          'round_phase': 'idle',
-        };
-        final response = await _insertRoom(insertData);
-        return Room.fromJson(response);
-      } on PostgrestException catch (error) {
-        if (error.code == '23505') continue;
-        if (_isMissingOptionalRoomColumn(error)) {
-          final fallbackData = {
-            'code': code,
-            'host_id': hostId,
-            'status': 'waiting',
-            'current_round': 0,
-            'max_rounds': maxRounds,
-            'round_phase': 'idle',
-          };
-          final response = await _insertRoom(fallbackData);
-          return Room.fromJson({
-            ...response,
-            'max_players': maxPlayers,
-            'category': category == GameConstants.defaultCategory
+        final response = await _client.rpc(
+          'create_room_v2',
+          params: {
+            'p_code': code,
+            'p_max_rounds': maxRounds,
+            'p_max_players': maxPlayers,
+            'p_category': category == GameConstants.defaultCategory
                 ? null
                 : category,
-          });
-        }
+          },
+        );
+        return Room.fromJson(Map<String, dynamic>.from(response as Map));
+      } on PostgrestException catch (error) {
+        if (error.code == '23505') continue;
         rethrow;
       }
     }
@@ -89,34 +67,14 @@ class RoomService {
     throw StateError('Could not generate a unique room code.');
   }
 
-  Future<Map<String, dynamic>> _insertRoom(Map<String, dynamic> data) async {
-    final response = await _client.from('rooms').insert(data).select().single();
-    return response;
-  }
-
-  bool _isMissingOptionalRoomColumn(PostgrestException error) {
-    final message = error.message.toLowerCase();
-    return message.contains('max_players') || message.contains('category');
-  }
-
   /// Find a room by its code
   Future<Room?> findRoomByCode(String code) async {
-    final response = await _client
-        .from('rooms')
-        .select()
-        .eq('code', code.toUpperCase())
-        .order('created_at', ascending: false)
-        .limit(20);
-    final rows = response as List;
-    if (rows.isEmpty) return null;
-
-    final rooms = rows
-        .map((row) => Room.fromJson(row as Map<String, dynamic>))
-        .toList();
-    return rooms.firstWhere(
-      (room) => room.canJoinLobby,
-      orElse: () => rooms.first,
+    final response = await _client.rpc(
+      'find_room_by_code_v2',
+      params: {'p_code': code},
     );
+    if (response == null) return null;
+    return Room.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   /// Get room by ID
@@ -133,29 +91,6 @@ class RoomService {
     return _client.from('rooms').stream(primaryKey: ['id']).eq('id', roomId);
   }
 
-  /// Update room status
-  Future<void> updateRoom(String roomId, Map<String, dynamic> data) async {
-    await _client.from('rooms').update(data).eq('id', roomId);
-  }
-
-  /// Update round phase
-  Future<DateTime?> updatePhase(
-    String roomId,
-    String phase, {
-    int? round,
-    String? currentQuestionId,
-    int? durationSeconds,
-  }) async {
-    final data = <String, dynamic>{'round_phase': phase};
-    if (round != null) data['current_round'] = round;
-    if (currentQuestionId != null) {
-      data['current_question_id'] = currentQuestionId;
-    }
-    final deadline = await _addPhaseTiming(data, durationSeconds);
-    await _updateRoomWithTimingFallback(roomId, data);
-    return deadline;
-  }
-
   Future<Room?> claimPhaseTransition({
     required String roomId,
     required int round,
@@ -165,210 +100,39 @@ class RoomService {
     int? nextRound,
     String? currentQuestionId,
   }) async {
-    try {
-      final response = await _client.rpc(
-        'claim_game_phase_v1',
-        params: {
-          'p_room_id': roomId,
-          'p_round_number': round,
-          'p_expected_phase': expectedPhase,
-          'p_next_phase': nextPhase,
-          'p_duration_seconds': durationSeconds,
-          'p_next_round': nextRound,
-          'p_current_question_id': currentQuestionId,
-        },
-      );
-      if (response == null) return null;
-      return Room.fromJson(Map<String, dynamic>.from(response as Map));
-    } on PostgrestException catch (error) {
-      if (!_isMissingRpc(error)) rethrow;
-    }
-
-    final data = <String, dynamic>{
-      'round_phase': nextPhase,
-      if (nextRound != null) 'current_round': nextRound,
-      if (currentQuestionId != null) 'current_question_id': currentQuestionId,
-    };
-    await _addPhaseTiming(data, durationSeconds);
-
-    try {
-      final response = await _client
-          .from('rooms')
-          .update(data)
-          .eq('id', roomId)
-          .eq('current_round', round)
-          .eq('round_phase', expectedPhase)
-          .select()
-          .maybeSingle();
-      return response == null ? null : Room.fromJson(response);
-    } on PostgrestException catch (error) {
-      if (!_isMissingTimingColumn(error)) rethrow;
-      final legacyData = Map<String, dynamic>.from(data)
-        ..remove('phase_started_at')
-        ..remove('phase_ends_at');
-      final response = await _client
-          .from('rooms')
-          .update(legacyData)
-          .eq('id', roomId)
-          .eq('current_round', round)
-          .eq('round_phase', expectedPhase)
-          .select()
-          .maybeSingle();
-      return response == null ? null : Room.fromJson(response);
-    }
-  }
-
-  Future<Room?> startGameAtomic(
-    String roomId, {
-    required String currentQuestionId,
-    required int durationSeconds,
-    required Map<String, int> scores,
-  }) async {
-    try {
-      final response = await _client.rpc(
-        'start_game_v1',
-        params: {
-          'p_room_id': roomId,
-          'p_current_question_id': currentQuestionId,
-          'p_duration_seconds': durationSeconds,
-          'p_scores': scores,
-        },
-      );
-      return Room.fromJson(Map<String, dynamic>.from(response as Map));
-    } on PostgrestException catch (error) {
-      if (_isMissingRpc(error)) return null;
-      rethrow;
-    }
+    final response = await _client.rpc(
+      'claim_game_phase_v1',
+      params: {
+        'p_room_id': roomId,
+        'p_round_number': round,
+        'p_expected_phase': expectedPhase,
+        'p_next_phase': nextPhase,
+        'p_duration_seconds': durationSeconds,
+        'p_next_round': nextRound,
+        'p_current_question_id': currentQuestionId,
+      },
+    );
+    if (response == null) return null;
+    return Room.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   Future<bool> finishGameIfCurrent({
     required String roomId,
     required int round,
   }) async {
-    final response = await _client
-        .from('rooms')
-        .update({
-          'status': 'finished',
-          'round_phase': 'idle',
-          'phase_ends_at': null,
-        })
-        .eq('id', roomId)
-        .eq('current_round', round)
-        .eq('round_phase', RoundPhase.revealAnswer.name)
-        .select('id');
-    return (response as List).isNotEmpty;
-  }
-
-  /// Start the game
-  Future<DateTime?> startGame(
-    String roomId, {
-    String? currentQuestionId,
-    int? durationSeconds,
-  }) async {
-    final data = <String, dynamic>{
-      'status': 'playing',
-      'current_round': 1,
-      'round_phase': currentQuestionId == null
-          ? RoundPhase.question.name
-          : RoundPhase.guessing.name,
-      if (currentQuestionId != null) 'current_question_id': currentQuestionId,
-    };
-    final deadline = await _addPhaseTiming(data, durationSeconds);
-    await _updateRoomWithTimingFallback(roomId, data);
-    return deadline;
-  }
-
-  /// End the game
-  Future<void> endGame(String roomId) async {
-    await _client
-        .from('rooms')
-        .update({
-          'status': 'finished',
-          'round_phase': 'idle',
-          'phase_ends_at': null,
-        })
-        .eq('id', roomId);
-  }
-
-  /// Reset a room so players can return to the lobby after a game.
-  Future<void> resetToLobby(String roomId) async {
-    await _client
-        .from('players')
-        .update({'score': GameConstants.startingScore})
-        .eq('room_id', roomId);
-    await _client
-        .from('rooms')
-        .update({
-          'status': 'waiting',
-          'current_round': 0,
-          'round_phase': 'idle',
-          'current_question_id': null,
-          'phase_started_at': null,
-          'phase_ends_at': null,
-        })
-        .eq('id', roomId);
+    final response = await _client.rpc(
+      'finish_game_v2',
+      params: {'p_room_id': roomId, 'p_round_number': round},
+    );
+    return response == true;
   }
 
   Future<Room?> resetToLobbyAtomic(String roomId) async {
-    try {
-      final response = await _client.rpc(
-        'reset_room_to_lobby_v1',
-        params: {'p_room_id': roomId},
-      );
-      return Room.fromJson(Map<String, dynamic>.from(response as Map));
-    } on PostgrestException catch (error) {
-      if (_isMissingRpc(error)) return null;
-      rethrow;
-    }
-  }
-
-  /// Delete room
-  Future<void> deleteRoom(String roomId) async {
-    await _client.from('rooms').delete().eq('id', roomId);
-  }
-
-  Future<DateTime?> _addPhaseTiming(
-    Map<String, dynamic> data,
-    int? durationSeconds,
-  ) async {
-    DateTime now;
-    try {
-      now = await synchronizeServerClock();
-    } catch (_) {
-      now = _hasServerClock ? serverNow : DateTime.now().toUtc();
-    }
-
-    final deadline = durationSeconds == null
-        ? null
-        : now.add(Duration(seconds: durationSeconds));
-    data['phase_started_at'] = now.toIso8601String();
-    data['phase_ends_at'] = deadline?.toIso8601String();
-    return deadline;
-  }
-
-  Future<void> _updateRoomWithTimingFallback(
-    String roomId,
-    Map<String, dynamic> data,
-  ) async {
-    try {
-      await _client.from('rooms').update(data).eq('id', roomId);
-    } on PostgrestException catch (error) {
-      if (!_isMissingTimingColumn(error)) rethrow;
-      final legacyData = Map<String, dynamic>.from(data)
-        ..remove('phase_started_at')
-        ..remove('phase_ends_at');
-      await _client.from('rooms').update(legacyData).eq('id', roomId);
-    }
-  }
-
-  bool _isMissingTimingColumn(PostgrestException error) {
-    final message = error.message.toLowerCase();
-    return message.contains('phase_started_at') ||
-        message.contains('phase_ends_at');
-  }
-
-  bool _isMissingRpc(PostgrestException error) {
-    return error.code == 'PGRST202' || error.code == '42883';
+    final response = await _client.rpc(
+      'reset_room_to_lobby_v1',
+      params: {'p_room_id': roomId},
+    );
+    return Room.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   DateTime _parseServerTime(Object? value) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -88,7 +89,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     } else if (phase == RoundPhase.betting) {
       _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
     }
-    _playQuestionRevealForRoundOnce(max(1, room.currentRound));
+    if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
+      _playQuestionRevealForRoundOnce(max(1, room.currentRound));
+    }
   }
 
   @override
@@ -159,7 +162,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (currentQuestionId != null && currentQuestion?.id != currentQuestionId) {
       currentQuestion = await ref
           .read(gameServiceProvider)
-          .getQuestionById(currentQuestionId);
+          .getQuestionForRoom(room.id);
     }
 
     gameNotifier.initialize(
@@ -178,7 +181,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     unawaited(_setupRealtime());
 
     if (room.roundPhase == RoundPhase.question) {
-      _scheduleQuestionStart(room);
+      _playQuestionRevealForRoundOnce(max(1, room.currentRound));
+      _scheduleQuestionStart(room, primary: ref.read(isHostProvider));
       return;
     }
 
@@ -196,7 +200,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _playQuestionRevealForRoundOnce(int round) {
     if (_revealedQuestionAudioRound == round) return;
     _revealedQuestionAudioRound = round;
-    unawaited(ref.read(audioServiceProvider).playQuestionReveal());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = ref.read(gameStateProvider);
+      if (state.currentRound != round) return;
+      unawaited(ref.read(audioServiceProvider).playQuestionReveal());
+    });
   }
 
   Player? _restoreCurrentPlayer(String roomId) {
@@ -531,6 +540,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
 
       _syncAudioForPhase(room.roundPhase);
+      if (room.roundPhase == RoundPhase.question) {
+        _playQuestionRevealForRoundOnce(max(1, room.currentRound));
+      }
       if (room.roundPhase == RoundPhase.guessing) {
         _questionStartTimer?.cancel();
         _startTimer(
@@ -662,15 +674,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           );
         }).toList();
         bets = await gameService.getBets(room.id, round);
-        final questionId =
-            room.currentQuestionId ??
-            enrichedGuesses
-                .map((guess) => guess.questionId)
-                .whereType<String>()
-                .firstOrNull;
-        question = questionId == null
+        final hasQuestion =
+            room.currentQuestionId != null ||
+            enrichedGuesses.any((guess) => guess.questionId != null);
+        question = !hasQuestion
             ? (oldState.currentRound == round ? oldState.currentQuestion : null)
-            : await gameService.getQuestionById(questionId);
+            : await gameService.getQuestionForRoom(room.id);
 
         if (question != null) {
           if (!_usedQuestionIds.contains(question.id)) {
@@ -706,6 +715,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
             currentPlayer != null &&
             enrichedGuesses.any((guess) => guess.playerId == currentPlayer.id),
       );
+      if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
+        _playQuestionRevealOnce(question);
+      }
 
       _incomingOtherBetIds.clear();
       _playedOtherBetEntryIds.clear();
@@ -758,7 +770,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
       } else if (phase == RoundPhase.question && round > 0) {
         _stopTimer();
-        unawaited(_startRound(round));
       }
       if (mounted) setState(() {});
     } finally {
@@ -840,30 +851,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _questionStartTimer?.cancel();
 
     final gameService = ref.read(gameServiceProvider);
-    final roomService = ref.read(roomServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
 
-    final question = await gameService.getRandomQuestion(
-      room.id,
-      _usedQuestionIds,
-      category: room.category,
-    );
-    if (question == null) return;
-    _usedQuestionIds.add(question.id);
-
-    final claimedRoom = await roomService.claimPhaseTransition(
+    final secureQuestion = await gameService.claimNextQuestion(
       roomId: room.id,
-      round: round,
-      expectedPhase: RoundPhase.question.name,
-      nextPhase: RoundPhase.guessing.name,
-      currentQuestionId: question.id,
+      roundNumber: round,
       durationSeconds: GameConstants.guessTimerSeconds,
     );
-    if (claimedRoom == null) {
+    if (secureQuestion == null) {
       await _resyncFromServer();
       return;
     }
+    final question = secureQuestion.question;
+    _usedQuestionIds.add(question.id);
+    final claimedRoom = secureQuestion.room;
     ref.read(currentRoomProvider.notifier).set(claimedRoom);
 
     gameNotifier.setRound(round);
@@ -970,111 +972,40 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (room == null) return;
 
     final gameService = ref.read(gameServiceProvider);
-    final roomService = ref.read(roomServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final gameState = ref.read(gameStateProvider);
     _stopTimer();
 
-    final correctAnswer = gameState.currentQuestion!.answer;
-    final winningGuess = gameService.determineWinner(
-      gameState.sortedGuesses,
-      correctAnswer,
-    );
     final bets = await gameService.getBets(room.id, gameState.currentRound);
-
-    final payouts = gameService.calculatePayouts(
-      guesses: gameState.sortedGuesses,
-      bets: bets,
-      correctAnswer: correctAnswer,
-    );
-
-    final newScores = Map<String, int>.from(gameState.scores);
-
-    // Calculate total bets per player
-    final totalBets = <String, int>{};
-    for (final bet in bets) {
-      totalBets[bet.playerId] = (totalBets[bet.playerId] ?? 0) + bet.chips;
-    }
-
-    // Subtract bets from starting scores
-    for (final playerId in totalBets.keys) {
-      final startingScore =
-          newScores[playerId] ?? _playerById(playerId)?.score ?? 0;
-      newScores[playerId] = startingScore - totalBets[playerId]!;
-    }
-
-    // Add payouts for winning bets
-    for (final entry in payouts.entries) {
-      newScores[entry.key] = (newScores[entry.key] ?? 0) + entry.value;
-    }
-
-    // The base bankroll is reusable, so every round starts with at least 15.
-    for (final entry in newScores.entries) {
-      newScores[entry.key] = max(GameConstants.startingScore, entry.value);
-    }
-
-    final winningSlotIndex = gameService.determineWinningBetSlotIndex(
-      gameState.sortedGuesses,
-      correctAnswer,
-    );
-    if (winningSlotIndex == null) {
-      await _resyncFromServer();
-      return;
-    }
-
-    RoundSettlementResult? settlement;
+    late final RoundSettlementResult settlement;
     try {
       settlement = await gameService.settleRound(
         roomId: room.id,
         roundNumber: gameState.currentRound,
-        winningGuessId: winningGuess?.id,
-        winningSlotIndex: winningSlotIndex,
-        scores: newScores,
       );
     } catch (error, stackTrace) {
       debugPrint('Atomic round settlement failed: $error\n$stackTrace');
       await _resyncFromServer();
       return;
     }
-
-    if (settlement == null) {
-      final claimedRoom = await roomService.claimPhaseTransition(
-        roomId: room.id,
-        round: gameState.currentRound,
-        expectedPhase: RoundPhase.betting.name,
-        nextPhase: RoundPhase.revealAnswer.name,
-      );
-      if (claimedRoom == null) {
-        await _resyncFromServer();
-        return;
-      }
-      ref.read(currentRoomProvider.notifier).set(claimedRoom);
-      if (winningGuess != null) {
-        await gameService.markWinner(winningGuess.id);
-      }
-      await ref.read(playerServiceProvider).updateScores(newScores);
-    } else {
-      if (!settlement.didSettle) {
-        await _resyncFromServer();
-        return;
-      }
-      newScores
-        ..clear()
-        ..addAll(settlement.scores);
-      ref
-          .read(currentRoomProvider.notifier)
-          .set(
-            room.copyWith(
-              roundPhase: RoundPhase.revealAnswer,
-              stateVersion: settlement.stateVersion,
-            ),
-          );
-    }
+    final correctAnswer = settlement.answer;
+    final winningGuessId = settlement.winningGuessId;
+    final newScores = settlement.scores;
+    final payouts = settlement.payouts;
+    ref
+        .read(currentRoomProvider.notifier)
+        .set(
+          room.copyWith(
+            roundPhase: RoundPhase.revealAnswer,
+            stateVersion: settlement.stateVersion,
+            phaseEndsAt: settlement.phaseEndsAt,
+          ),
+        );
 
     gameNotifier.revealAnswer(
       answer: correctAnswer,
-      winningGuessId: winningGuess?.id,
+      winningGuessId: winningGuessId,
       bets: bets,
       scores: newScores,
     );
@@ -1086,7 +1017,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     await realtimeService.broadcast(widget.roomCode, 'answer_revealed', {
       'round': gameState.currentRound,
       'answer': correctAnswer,
-      'winning_guess_id': winningGuess?.id,
+      'winning_guess_id': winningGuessId,
     });
     await realtimeService.broadcast(widget.roomCode, 'score_update', {
       'round': gameState.currentRound,
@@ -1097,7 +1028,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       'round': gameState.currentRound,
     });
 
-    _scheduleRoundAdvance();
+    _scheduleRoundAdvance(deadline: settlement.phaseEndsAt);
   }
 
   void _playRevealAudioForCurrentPlayer(GameState gameState) {
@@ -1279,6 +1210,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           .read(gameStateProvider.notifier)
           .beginAuthoritativeRound(nextRound, RoundPhase.question);
       _syncAudioForPhase(RoundPhase.question);
+      _playQuestionRevealForRoundOnce(nextRound);
       if (mounted) setState(() {});
       _scheduleQuestionStart(claimedRoom, primary: true);
     }
@@ -1401,6 +1333,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _guessInput.length >= 10) {
       return;
     }
+    _playButtonFeedback();
     if (_guessInput == '0') {
       setState(() => _guessInput = digit);
     } else {
@@ -1415,6 +1348,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _guessInput.isEmpty) {
       return;
     }
+    _playButtonFeedback();
     setState(
       () => _guessInput = _guessInput.substring(0, _guessInput.length - 1),
     );
@@ -1423,13 +1357,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _clearGuessInput() {
     final gameState = ref.read(gameStateProvider);
     if (gameState.hasSubmittedGuess || _isSubmittingGuess) return;
+    _playButtonFeedback();
     setState(() => _guessInput = '');
   }
 
   Future<void> _submitNumpadGuess() async {
     final value = int.tryParse(_guessInput);
     if (value == null) return;
+    _playButtonFeedback();
     await _submitGuess(value);
+  }
+
+  void _playButtonFeedback() {
+    unawaited(ref.read(audioServiceProvider).playButtonTap());
+    unawaited(HapticFeedback.selectionClick());
   }
 
   Future<void> _placeBet(int slotIndex, int chips, {Offset? position}) async {
@@ -1506,16 +1447,27 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
       gameNotifier.replaceBet(optimisticId, placedBet);
 
-      await realtimeService.broadcast(widget.roomCode, 'bet_placed', {
-        'bet': {
-          ...placedBet.toJson(),
-          'id': bet.id,
-          'player_name': player.name,
-          'player_color': player.avatarColor,
-        },
-      });
-    } catch (_) {
+      unawaited(
+        realtimeService
+            .broadcast(widget.roomCode, 'bet_placed', {
+              'bet': {
+                ...placedBet.toJson(),
+                'id': bet.id,
+                'player_name': player.name,
+                'player_color': player.avatarColor,
+              },
+            })
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint('Bet broadcast failed: $error\n$stackTrace');
+            }),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Bet placement failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       gameNotifier.removeBetById(optimisticId);
+      if (mounted) {
+        unawaited(_resyncFromServer(synchronizeClock: false));
+      }
     } finally {
       _isBetOperationInFlight = false;
     }
@@ -1579,16 +1531,26 @@ class _GameScreenState extends ConsumerState<GameScreen>
       );
       gameNotifier.addBet(placedBet);
 
-      await realtimeService.broadcast(widget.roomCode, 'bet_placed', {
-        'bet': {
-          ...placedBet.toJson(),
-          'id': placedBet.id,
-          'player_name': placedBet.playerName,
-          'player_color': placedBet.playerColor,
-        },
-      });
-    } catch (_) {
+      unawaited(
+        realtimeService
+            .broadcast(widget.roomCode, 'bet_placed', {
+              'bet': {
+                ...placedBet.toJson(),
+                'id': placedBet.id,
+                'player_name': placedBet.playerName,
+                'player_color': placedBet.playerColor,
+              },
+            })
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint('Bet move broadcast failed: $error\n$stackTrace');
+            }),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Bet move failed: $error\n$stackTrace');
       gameNotifier.addBet(oldBet);
+      if (mounted) {
+        unawaited(_resyncFromServer(synchronizeClock: false));
+      }
     } finally {
       _isBetOperationInFlight = false;
     }
@@ -1618,15 +1580,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
     try {
       if (!bet.id.startsWith('local-')) {
         await gameService.removeBet(bet.id);
-        await realtimeService.broadcast(widget.roomCode, 'bet_removed', {
-          'round': bet.roundNumber,
-          'bet_id': bet.id,
-          'player_id': bet.playerId,
-          'slot_index': bet.slotIndex,
-        });
+        unawaited(
+          realtimeService
+              .broadcast(widget.roomCode, 'bet_removed', {
+                'round': bet.roundNumber,
+                'bet_id': bet.id,
+                'player_id': bet.playerId,
+                'slot_index': bet.slotIndex,
+              })
+              .catchError((Object error, StackTrace stackTrace) {
+                debugPrint('Bet removal broadcast failed: $error\n$stackTrace');
+              }),
+        );
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Bet removal failed: $error\n$stackTrace');
       gameNotifier.addBet(bet);
+      if (mounted) {
+        unawaited(_resyncFromServer(synchronizeClock: false));
+      }
     } finally {
       _isBetOperationInFlight = false;
     }
@@ -1880,8 +1852,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final totalBets = _currentPlayerTotalBets(gameState);
     final netProfit = payout - totalBets;
     final didWin = netProfit > 0;
-    final answer = gameState.correctAnswer ?? gameState.currentQuestion?.answer;
     final resultSettled = _showWinnerBadge;
+    final answer = resultSettled
+        ? gameState.correctAnswer ?? gameState.currentQuestion?.answer
+        : null;
     final accent = didWin && resultSettled
         ? AppColors.chipGold
         : AppColors.brassLight;
@@ -3131,7 +3105,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
-            onTap: isHost ? _nextRound : null,
+            onTap: isHost
+                ? () {
+                    _playButtonFeedback();
+                    unawaited(_nextRound());
+                  }
+                : null,
             child: Center(
               child: Text(
                 isHost
@@ -4928,6 +4907,40 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return null;
   }
 
+  Widget _buildPhaseSurfaceTransition({
+    required String surfaceKey,
+    required Widget child,
+  }) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 430),
+      reverseDuration: const Duration(milliseconds: 360),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        fit: StackFit.expand,
+        children: [...previousChildren, if (currentChild != null) currentChild],
+      ),
+      transitionBuilder: (transitionChild, animation) {
+        final enteringBoard =
+            transitionChild.key == const ValueKey<String>('betting-surface');
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        final slide = Tween<Offset>(
+          begin: Offset(enteringBoard ? 0.11 : -0.11, 0),
+          end: Offset.zero,
+        ).animate(curved);
+        return SlideTransition(
+          position: slide,
+          child: FadeTransition(opacity: curved, child: transitionChild),
+        );
+      },
+      child: KeyedSubtree(key: ValueKey<String>(surfaceKey), child: child),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final routeState = ref.watch(
@@ -4951,172 +4964,178 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (phase == RoundPhase.idle ||
         phase == RoundPhase.question ||
         phase == RoundPhase.guessing) {
-      return Consumer(
-        builder: (context, ref, _) {
-          final gameState = ref.watch(gameStateProvider);
-          return _buildGuessingScreen(gameState);
-        },
+      return _buildPhaseSurfaceTransition(
+        surfaceKey: 'guessing-surface',
+        child: Consumer(
+          builder: (context, ref, _) {
+            final gameState = ref.watch(gameStateProvider);
+            return _buildGuessingScreen(gameState);
+          },
+        ),
       );
     }
 
-    return PopScope(
-      canPop: false,
-      child: Scaffold(
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: CachedAssetImage(
-                AppAssetPaths.background,
-                fit: BoxFit.cover,
+    return _buildPhaseSurfaceTransition(
+      surfaceKey: 'betting-surface',
+      child: PopScope(
+        canPop: false,
+        child: Scaffold(
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: CachedAssetImage(
+                  AppAssetPaths.background,
+                  fit: BoxFit.cover,
+                ),
               ),
-            ),
-            Positioned.fill(
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        flex: 50,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final isCompact = constraints.maxHeight < 700;
-                              final gapTight = isCompact ? 4.0 : 6.0;
-                              final gap = isCompact ? 8.0 : 10.0;
-                              final chipHeight = isCompact ? 96.0 : 102.0;
+              Positioned.fill(
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          flex: 50,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final isCompact = constraints.maxHeight < 700;
+                                final gapTight = isCompact ? 4.0 : 6.0;
+                                final gap = isCompact ? 8.0 : 10.0;
+                                final chipHeight = isCompact ? 96.0 : 102.0;
 
-                              return Column(
-                                children: [
-                                  Expanded(
-                                    flex: isCompact ? 18 : 20,
-                                    child: _buildPortraitLogo(),
-                                  ),
-                                  SizedBox(height: gapTight),
-                                  SizedBox(
-                                    height: isCompact ? 39 : 42,
-                                    child: Consumer(
-                                      builder: (context, ref, _) {
-                                        ref.watch(
-                                          gameStateProvider.select(
-                                            (state) => (
-                                              state.currentRound,
-                                              state.maxRounds,
-                                              state.phase,
-                                            ),
-                                          ),
-                                        );
-                                        return _buildRoundTimer(
-                                          ref.read(gameStateProvider),
-                                        );
-                                      },
+                                return Column(
+                                  children: [
+                                    Expanded(
+                                      flex: isCompact ? 18 : 20,
+                                      child: _buildPortraitLogo(),
                                     ),
-                                  ),
-                                  SizedBox(height: gap),
-                                  Expanded(
-                                    flex: isCompact ? 30 : 29,
-                                    child: Consumer(
-                                      builder: (context, ref, _) {
-                                        ref.watch(
-                                          gameStateProvider.select(
-                                            (state) => (
-                                              state.phase,
-                                              state.currentQuestion,
-                                              state.correctAnswer,
-                                              state.winningGuessId,
+                                    SizedBox(height: gapTight),
+                                    SizedBox(
+                                      height: isCompact ? 39 : 42,
+                                      child: Consumer(
+                                        builder: (context, ref, _) {
+                                          ref.watch(
+                                            gameStateProvider.select(
+                                              (state) => (
+                                                state.currentRound,
+                                                state.maxRounds,
+                                                state.phase,
+                                              ),
                                             ),
-                                          ),
-                                        );
-                                        return _buildQuestionCard(
-                                          context,
-                                          ref.read(gameStateProvider),
-                                        );
-                                      },
+                                          );
+                                          return _buildRoundTimer(
+                                            ref.read(gameStateProvider),
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
-                                  SizedBox(height: gap),
-                                  SizedBox(
-                                    height: chipHeight,
-                                    child: Consumer(
-                                      builder: (context, ref, _) {
-                                        ref.watch(
-                                          gameStateProvider.select(
-                                            (state) => (
-                                              state.phase,
-                                              state.bets,
-                                              state.scores,
+                                    SizedBox(height: gap),
+                                    Expanded(
+                                      flex: isCompact ? 30 : 29,
+                                      child: Consumer(
+                                        builder: (context, ref, _) {
+                                          ref.watch(
+                                            gameStateProvider.select(
+                                              (state) => (
+                                                state.phase,
+                                                state.currentQuestion,
+                                                state.correctAnswer,
+                                                state.winningGuessId,
+                                              ),
                                             ),
-                                          ),
-                                        );
-                                        final currentPlayer = ref.watch(
-                                          currentPlayerProvider,
-                                        );
-                                        return _buildChipPicker(
-                                          currentPlayer,
-                                          ref.read(gameStateProvider),
-                                        );
-                                      },
+                                          );
+                                          return _buildQuestionCard(
+                                            context,
+                                            ref.read(gameStateProvider),
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
-                                  SizedBox(height: gap),
+                                    SizedBox(height: gap),
+                                    SizedBox(
+                                      height: chipHeight,
+                                      child: Consumer(
+                                        builder: (context, ref, _) {
+                                          ref.watch(
+                                            gameStateProvider.select(
+                                              (state) => (
+                                                state.phase,
+                                                state.bets,
+                                                state.scores,
+                                              ),
+                                            ),
+                                          );
+                                          final currentPlayer = ref.watch(
+                                            currentPlayerProvider,
+                                          );
+                                          return _buildChipPicker(
+                                            currentPlayer,
+                                            ref.read(gameStateProvider),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    SizedBox(height: gap),
 
-                                  Expanded(
-                                    flex: isCompact ? 24 : 26,
-                                    child: Consumer(
-                                      builder: (context, ref, _) {
-                                        ref.watch(
-                                          gameStateProvider.select(
-                                            (state) => state.scores,
-                                          ),
-                                        );
-                                        return _buildPlayersStrip(
-                                          ref.read(gameStateProvider),
-                                        );
-                                      },
+                                    Expanded(
+                                      flex: isCompact ? 24 : 26,
+                                      child: Consumer(
+                                        builder: (context, ref, _) {
+                                          ref.watch(
+                                            gameStateProvider.select(
+                                              (state) => state.scores,
+                                            ),
+                                          );
+                                          return _buildPlayersStrip(
+                                            ref.read(gameStateProvider),
+                                          );
+                                        },
+                                      ),
                                     ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          flex: 50,
+                          child: Consumer(
+                            builder: (context, ref, _) {
+                              ref.watch(
+                                gameStateProvider.select(
+                                  (state) => (
+                                    state.phase,
+                                    state.sortedGuesses,
+                                    state.bets,
+                                    state.correctAnswer,
+                                    state.winningGuessId,
                                   ),
-                                ],
+                                ),
+                              );
+                              final currentPlayerId = ref.watch(
+                                currentPlayerProvider.select(
+                                  (player) => player?.id,
+                                ),
+                              );
+                              return _buildBettingBoardAsset(
+                                ref.read(gameStateProvider),
+                                currentPlayerId,
                               );
                             },
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        flex: 50,
-                        child: Consumer(
-                          builder: (context, ref, _) {
-                            ref.watch(
-                              gameStateProvider.select(
-                                (state) => (
-                                  state.phase,
-                                  state.sortedGuesses,
-                                  state.bets,
-                                  state.correctAnswer,
-                                  state.winningGuessId,
-                                ),
-                              ),
-                            );
-                            final currentPlayerId = ref.watch(
-                              currentPlayerProvider.select(
-                                (player) => player?.id,
-                              ),
-                            );
-                            return _buildBettingBoardAsset(
-                              ref.read(gameStateProvider),
-                              currentPlayerId,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

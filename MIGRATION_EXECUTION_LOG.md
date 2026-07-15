@@ -250,10 +250,94 @@ Durum: `CANLIDA AKTIF`
 - Supabase Performance Advisor sonucu `0 error / 0 warning`; mevcut oneriler
   yalnizca bilgi seviyesindedir.
 
+## Faz 10 - Anonymous Auth, RPC Yazma Siniri ve Private Realtime
+
+Durum: `CANLIDA AKTIF, STATIK DOGRULAMA TAMAM`
+
+- Migration: `supabase/migrations/20260715110000_secure_anonymous_game_api.sql`
+- Rollback: `supabase/rollbacks/20260715110000_secure_anonymous_game_api.sql`
+- Her kurulum Supabase Anonymous Auth ile kalici bir `auth.uid()` alir. Room ve
+  player sahipligi tahmin edilebilir device ID yerine bu kimlige baglanir.
+- Dashboard'da `Allow anonymous sign-ins` ayari etkinlestirilip kaydedildi;
+  canli Auth endpoint'i gercek bir anonymous access token ile dogrulandi.
+- Oda kurma/katilma, hazirlik, baglanti, oyun baslatma, soru secme, tahmin,
+  bahis, settlement, oyun bitirme ve lobi reset yazimlari dogrudan tablo
+  mutation'i yerine parametre dogrulayan atomik `*_v2` RPC'lerine tasindi.
+- Soru cevabi oyun fazi aciklanmadan istemciye verilmez. `questions` tablosu
+  authenticated ve anon istemci okumalarina kapatildi.
+- Room Broadcast ve Presence kanali private yapildi. Realtime topic erisimi
+  room uyeligi ile sinirlandi; Postgres Changes ise JWT + tablo RLS ile korunur.
+- `anon` oyun tablolarinda sifir yetkiye sahiptir. `authenticated` yalnizca
+  RLS kapsaminda SELECT yapabilir; tablo INSERT/UPDATE/DELETE izinleri yoktur.
+- Canli katalog sorgusu anon read/write=`false`, authenticated direct
+  insert=`false`, question select=`false`, secure RPC execute=`true`, anon RPC
+  execute=`false` ve iki Realtime policy sonucunu dogruladi.
+- Supabase Security Advisor sonucu `0 error / 19 warning`dir. Uyarilarin tamami
+  signed-in oyunculara bilincli olarak acilan, kendi icinde auth/uyelik/faz
+  kontrolu yapan `SECURITY DEFINER` komut RPC'leridir; genis tablo RLS uyarilari
+  artik yoktur.
+- `dart analyze` temiz gecti. Kullanici istegiyle build ve oyun testi
+  calistirilmadi.
+
+## Faz 11 - Secure Bet Client Action Type Hotfix
+
+Durum: `CANLIDA AKTIF`
+
+- Migration: `supabase/migrations/20260715120000_fix_secure_bet_client_action_type.sql`
+- Rollback: `supabase/rollbacks/20260715120000_fix_secure_bet_client_action_type.sql`
+- Canli `bets.client_action_id` kolonu `text`, secure RPC parametresi `uuid`
+  oldugu icin ilk bahis cagrisi `text = uuid` operator hatasiyla geri donuyordu.
+- Idempotency anahtari karsilastirma ve INSERT sirasinda acikca `text`e cevrildi;
+  slot, bakiye, faz ve oyuncu sahipligi kontrolleri aynen korundu.
+- Canli fonksiyon govdesi `compare_cast=true`, `insert_cast=true` ve
+  `auth_execute=true` katalog sonucuyla dogrulandi.
+
+## Faz 12 - MVP Oyun Hissi ve Bet Dayanikliligi
+
+Durum: `CANLIDA AKTIF, MANUEL OYUN KABULU BEKLIYOR`
+
+- Migration: `supabase/migrations/20260715130000_first_round_transition.sql`
+- Rollback: `supabase/rollbacks/20260715130000_first_round_transition.sql`
+- Ilk oyun baslangici da sonraki turlar gibi sunucu zamanli `question` fazina
+  alindi. Round 1 katmani uc saniye gorunur, ardindan onceden secilmis ayni
+  soru atomik claim ile `guessing` fazina gecirilir.
+- Host deadline'da birincil claim yapar; diger oyuncular `900 ms` failover ile
+  hosttan bagimsiz ilerleme yolunu korur.
+- Basarili DB bahis yazimi artik gecici Broadcast hatasi yuzunden geri alinmaz.
+  Place/move/remove RPC hatalari local state'i geri alir ve snapshot resync ile
+  belirsiz ag sonucunu authoritative veriden duzeltir.
+- Snapshot optimistic chip'i RPC cevabindan once temizlerse server cevabi
+  listeye yeniden eklenir. Gec kalan eski-round cevabi yeni tura sizmaz.
+- Tahmin numpad, silme/temizleme, tahmin gonderme ve sonraki tur butonlarina
+  dusuk seviyeli chip-tap sesi ile selection haptic eklendi. Button ve chip
+  kaynaklari oyun oncesinde preload edilir.
+- Canli katalog dogrulamasi question phase, uc saniyelik deadline, preselected
+  question korumasi ve iki authenticated RPC izni icin `true` dondu.
+- `dart analyze` temiz gecti. Kullanici istegiyle build ve otomatik oyun testi
+  calistirilmadi.
+
+## Faz 13 - Senkron Round Ritmi ve Sabit Lobi
+
+Durum: `CANLIDA AKTIF, MANUEL GORSEL KABUL BEKLIYOR`
+
+- Migration: `supabase/migrations/20260715140000_stabilize_round_transition_timing.sql`
+- Rollback: `supabase/rollbacks/20260715140000_stabilize_round_transition_timing.sql`
+- Round transition penceresi iki saniyeden uc saniyeye cikarildi. Ilk round
+  deadline'i canli `start_game_v2` tarafinda, sonraki round'lar ortak client
+  sabitiyle `claim_game_phase_v1` tarafinda ayni sureyi kullanir.
+- Whoosh round basina tek kez calar ve overlay'in ilk frame'i cizildikten sonra
+  tetiklenir. Tekrarlanan room snapshot/Broadcast event'leri sesi cogaltmaz.
+- Tahmin yuzeyi ile bahis masasi arasina `430 ms` yatay slide/fade gecisi
+  eklendi. Faz ve timer degismez; animasyon yalnizca sunucu event'inin gorsel
+  sunumudur.
+- Lobi oyuncu paneli `322 px` sabit viewport oldu. Oyuncu sayisi arttikca panel
+  veya sayfa olcegi degismez; liste kendi icinde scroll olur ve tum satirlar her
+  Realtime update'inde yeniden giris animasyonu oynamaz.
+- Canli katalog sorgusu uc saniyelik ilk-round deadline, question phase ve
+  authenticated execute izni icin `true` dondu.
+
 ## Sonraki Adim
 
-Bir Web + bir mobil istemciyle yeni round animasyonu, iki saniyelik bekleme ve
-sonuc ekraninin yedi saniye gorunmesi manuel kabul edilmelidir. Kontrollu beta
-oncesinde baska zorunlu performans migration'i yoktur. Genel kullanima acik
-surumden once anonim oyuncular icin guvenilir kimlik ve RPC-odakli yazma modeli
-kurularak kalan alti RLS uyarisi kapatilmalidir.
+Bir Web + bir mobil istemciyle tek bir normal tam oyun kabul turu yapilmalidir:
+Round 1 katmani/whoosh, tahmin-bahis yatay gecisi, sabit lobi paneli ve ikinci
+tur gecisi ayni akista gozlenmelidir.

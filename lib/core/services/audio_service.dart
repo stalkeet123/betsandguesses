@@ -288,6 +288,8 @@ class AudioService {
     await Future.wait([
       _loadQuestionSuspenseSource(),
       _loadQuestionRevealSource(),
+      _loadChipSelectSource(),
+      _loadChipDropSource(),
     ]);
   }
 
@@ -397,6 +399,7 @@ class AudioService {
   }
 
   Future<void> playClick() => _playSfx(_loadChipSelectSource, volume: 0.9);
+  Future<void> playButtonTap() => _playSfx(_loadChipSelectSource, volume: 0.28);
   Future<void> playChip() => _playSfx(_loadChipSelectSource, volume: 0.78);
   Future<void> playDrop() => _playSfx(_loadChipDropSource, volume: 0.85);
   Future<void> playClink() => _playSfx(_loadChipDropSource, volume: 0.85);

@@ -221,25 +221,19 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       final room = ref.read(currentRoomProvider);
       if (room == null) return;
 
-      final roomService = ref.read(roomServiceProvider);
       final gameService = ref.read(gameServiceProvider);
-      final question = await gameService.getRandomQuestion(
-        room.id,
-        const [],
-        category: room.category,
+      final secureStart = await gameService.startGameSecure(
+        roomId: room.id,
+        durationSeconds: GameConstants.guessTimerSeconds,
       );
-      if (question == null) {
-        throw StateError('No question could be loaded.');
-      }
-
+      final question = secureStart.question;
+      final startingScores = secureStart.scores;
+      final startedRoom = secureStart.room;
+      final deadline = startedRoom.phaseEndsAt;
       final playerService = ref.read(playerServiceProvider);
       final lobbyPlayers = playerService.collapseDuplicateConnectedPlayers(
         await playerService.getPlayers(room.id),
       );
-      final startingScores = {
-        for (final player in lobbyPlayers.where((player) => player.isConnected))
-          player.id: GameConstants.startingScore,
-      };
       _players = lobbyPlayers
           .map(
             (player) => player.copyWith(
@@ -247,34 +241,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             ),
           )
           .toList();
-
-      final atomicStartedRoom = await roomService.startGameAtomic(
-        room.id,
-        currentQuestionId: question.id,
-        durationSeconds: GameConstants.guessTimerSeconds,
+      _seedGameState(
+        startedRoom,
+        question,
+        phase: startedRoom.roundPhase,
         scores: startingScores,
       );
-      DateTime? deadline;
-      Room startedRoom;
-      if (atomicStartedRoom == null) {
-        await playerService.updateScores(startingScores);
-        deadline = await roomService.startGame(
-          room.id,
-          currentQuestionId: question.id,
-          durationSeconds: GameConstants.guessTimerSeconds,
-        );
-        startedRoom = room.copyWith(
-          status: RoomStatus.playing,
-          currentRound: 1,
-          roundPhase: RoundPhase.guessing,
-          currentQuestionId: question.id,
-          phaseEndsAt: deadline,
-        );
-      } else {
-        startedRoom = atomicStartedRoom;
-        deadline = atomicStartedRoom.phaseEndsAt;
-      }
-      _seedGameState(room, question, scores: startingScores);
       ref.read(currentRoomProvider.notifier).set(startedRoom);
 
       final realtimeService = ref.read(realtimeServiceProvider);
@@ -283,7 +255,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             .broadcast(widget.roomCode, 'game_started', {
               'room_id': room.id,
               'round': 1,
-              'phase': RoundPhase.guessing.name,
+              'phase': startedRoom.roundPhase.name,
               'question': question.toJson(),
               'scores': startingScores,
               'phase_ends_at': deadline?.toIso8601String(),
@@ -767,6 +739,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   Widget _buildPlayersPanel(List<Player> players) {
     return Container(
+      height: 322,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       decoration: _darkGoldDecoration(radius: 16),
       child: Column(
@@ -804,38 +777,35 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          if (players.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 28),
-              child: Text(
-                'Waiting for players...',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
-              ),
-            )
-          else
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 276, maxHeight: 322),
-              child: ListView.separated(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: players.length,
-                separatorBuilder: (_, __) => Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: AppColors.brassLight.withValues(alpha: 0.12),
-                ),
-                itemBuilder: (context, index) =>
-                    _buildPlayerRow(players[index], index),
-              ),
-            ),
+          Expanded(
+            child: players.isEmpty
+                ? Center(
+                    child: Text(
+                      'Waiting for players...',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    key: const PageStorageKey('lobby-player-list'),
+                    padding: EdgeInsets.zero,
+                    itemCount: players.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: AppColors.brassLight.withValues(alpha: 0.12),
+                    ),
+                    itemBuilder: (context, index) =>
+                        _buildPlayerRow(players[index]),
+                  ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildPlayerRow(Player player, int index) {
+  Widget _buildPlayerRow(Player player) {
     final isReady = player.isReady || player.isHost;
     final isHost = ref.read(isHostProvider);
 
@@ -928,7 +898,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           _buildReadyBadge(isReady),
         ],
       ),
-    ).animate().fadeIn(delay: (55 * index).ms).slideX(begin: 0.03);
+    );
   }
 
   Widget _buildActionsPanel(bool isHost, Player? currentPlayer) {

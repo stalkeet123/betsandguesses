@@ -39,6 +39,18 @@ Future<void> main() async {
     anonKey: SupabaseConstants.anonKey,
   );
 
+  try {
+    final supabase = Supabase.instance.client;
+    if (supabase.auth.currentSession == null) {
+      await supabase.auth.signInAnonymously();
+    }
+  } catch (error, stackTrace) {
+    debugPrint('Secure session initialization failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
+    runApp(const _StartupFailureApp());
+    return;
+  }
+
   // SharedPreferences
   final prefs = await SharedPreferences.getInstance();
 
@@ -48,6 +60,43 @@ Future<void> main() async {
       child: const TahminApp(),
     ),
   );
+}
+
+class _StartupFailureApp extends StatelessWidget {
+  const _StartupFailureApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.wifi_off_rounded, size: 40),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Secure connection unavailable',
+                    style: Theme.of(context).textTheme.titleLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Check your connection and restart the app.',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class TahminApp extends ConsumerStatefulWidget {

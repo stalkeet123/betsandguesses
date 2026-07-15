@@ -20,37 +20,16 @@ class PlayerService {
     required String avatarColor,
     bool isHost = false,
   }) async {
-    final existingPlayers = await getPlayers(roomId);
-    final normalizedName = _normalizeName(name);
-    final sameNameDifferentDevice = existingPlayers.any(
-      (player) =>
-          player.isConnected &&
-          player.deviceId != deviceId &&
-          _normalizeName(player.name) == normalizedName,
+    final response = await _client.rpc(
+      'join_room_v2',
+      params: {
+        'p_room_id': roomId,
+        'p_device_id': deviceId,
+        'p_name': name,
+        'p_avatar_color': avatarColor,
+      },
     );
-    if (sameNameDifferentDevice) {
-      throw StateError('That name is already taken in this lobby.');
-    }
-
-    final existingForDevice = _findPlayerForDevice(existingPlayers, deviceId);
-    final now = DateTime.now().toIso8601String();
-
-    final response = await _client
-        .from('players')
-        .upsert({
-          'room_id': roomId,
-          'device_id': deviceId,
-          'name': name,
-          'avatar_color': existingForDevice?.avatarColor ?? avatarColor,
-          'is_host': existingForDevice?.isHost == true || isHost,
-          'is_ready': existingForDevice?.isHost == true || isHost,
-          'is_connected': true,
-          'last_seen': now,
-        }, onConflict: 'room_id,device_id')
-        .select(_playerSelectColumns)
-        .single();
-
-    return Player.fromJson(response);
+    return Player.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   Future<List<Player>> getPlayers(String roomId) async {
@@ -103,31 +82,10 @@ class PlayerService {
   }
 
   Future<void> toggleReady(String playerId, bool isReady) async {
-    await _client
-        .from('players')
-        .update({'is_ready': isReady})
-        .eq('id', playerId);
-  }
-
-  Future<void> updateScore(String playerId, int score) async {
-    await _client.from('players').update({'score': score}).eq('id', playerId);
-  }
-
-  Future<void> updateScores(Map<String, int> playerScores) async {
-    await Future.wait(
-      playerScores.entries.map(
-        (entry) => _updateScoreWithRetry(entry.key, entry.value),
-      ),
+    await _client.rpc(
+      'set_player_ready_v2',
+      params: {'p_player_id': playerId, 'p_is_ready': isReady},
     );
-  }
-
-  Future<void> _updateScoreWithRetry(String playerId, int score) async {
-    try {
-      await updateScore(playerId, score);
-    } catch (_) {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-      await updateScore(playerId, score);
-    }
   }
 
   Future<void> leaveRoom(String playerId) async {
@@ -135,21 +93,9 @@ class PlayerService {
   }
 
   Future<void> setConnected(String playerId, bool connected) async {
-    await _client
-        .from('players')
-        .update({
-          'is_connected': connected,
-          'last_seen': DateTime.now().toIso8601String(),
-        })
-        .eq('id', playerId);
-  }
-
-  String _normalizeName(String name) => name.trim().toLowerCase();
-
-  Player? _findPlayerForDevice(List<Player> players, String deviceId) {
-    for (final player in players) {
-      if (player.deviceId == deviceId) return player;
-    }
-    return null;
+    await _client.rpc(
+      'set_player_connected_v2',
+      params: {'p_player_id': playerId, 'p_connected': connected},
+    );
   }
 }

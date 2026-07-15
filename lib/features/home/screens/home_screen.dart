@@ -279,7 +279,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         isHost: true,
       );
 
-      await roomService.updateRoom(room.id, {'host_id': player.id});
       ref.read(currentPlayerProvider.notifier).set(player);
       ref
           .read(currentRoomProvider.notifier)
@@ -335,38 +334,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         return;
       }
 
-      final existingPlayers = await playerService.getPlayers(room.id);
-      final activePlayers = existingPlayers
-          .where((player) => player.isConnected)
-          .toList();
-      final isReturningPlayer = activePlayers.any(
-        (player) => player.deviceId == deviceId,
-      );
-
-      if (!isReturningPlayer && activePlayers.length >= room.maxPlayers) {
-        _showSnack('That table is full.');
-        return;
-      }
-
-      final normalizedName = name.toLowerCase();
-      final nameTaken = activePlayers.any(
-        (player) =>
-            player.deviceId != deviceId &&
-            player.name.trim().toLowerCase() == normalizedName,
-      );
-      if (nameTaken) {
-        _showSnack('That name is already taken in this lobby.');
-        return;
-      }
-
-      final usedColors = existingPlayers.map((p) => p.avatarColor).toSet();
-      final availableColor = _pickAvatarColor(usedColors);
-
       final player = await playerService.joinRoom(
         roomId: room.id,
         deviceId: deviceId,
         name: name,
-        avatarColor: availableColor,
+        avatarColor: _pickAvatarColor(),
       );
 
       ref.read(currentPlayerProvider.notifier).set(player);

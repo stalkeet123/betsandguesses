@@ -53,9 +53,28 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     if (room == null) return;
 
     final players = await ref.read(playerServiceProvider).getPlayers(room.id);
-    players.sort((a, b) => b.score.compareTo(a.score));
+    players.sort((a, b) {
+      final scoreOrder = b.score.compareTo(a.score);
+      if (scoreOrder != 0) return scoreOrder;
+      final nameOrder = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      if (nameOrder != 0) return nameOrder;
+      return a.id.compareTo(b.id);
+    });
 
     if (mounted) setState(() => _sortedPlayers = players);
+  }
+
+  List<Player> get _winners {
+    if (_sortedPlayers.isEmpty) return const [];
+    final winningScore = _sortedPlayers.first.score;
+    return _sortedPlayers
+        .where((player) => player.score == winningScore)
+        .toList(growable: false);
+  }
+
+  int _rankForIndex(int index) {
+    final score = _sortedPlayers[index].score;
+    return _sortedPlayers.indexWhere((player) => player.score == score) + 1;
   }
 
   void _goHome() {
@@ -83,11 +102,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     try {
       if (room != null) {
         final roomService = ref.read(roomServiceProvider);
-        var resetRoom = await roomService.resetToLobbyAtomic(room.id);
+        final resetRoom = await roomService.resetToLobbyAtomic(room.id);
         if (resetRoom == null) {
-          await ref.read(gameServiceProvider).clearRoomGameData(room.id);
-          await roomService.resetToLobby(room.id);
-          resetRoom = await roomService.getRoom(room.id);
+          throw StateError('Secure lobby reset is unavailable.');
         }
         _openLobby(resetRoom);
       }
@@ -126,7 +143,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       });
     }
 
-    final winner = _sortedPlayers.isNotEmpty ? _sortedPlayers.first : null;
+    final winners = _winners;
 
     return PopScope(
       canPop: false,
@@ -199,7 +216,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                             children: [
                               _buildHeader(compact: isCompact),
                               SizedBox(height: isCompact ? 8 : 12),
-                              _buildWinnerCard(winner, compact: isCompact),
+                              _buildWinnerCard(winners, compact: isCompact),
                               SizedBox(height: isCompact ? 8 : 12),
                               Expanded(child: _buildScoreboard()),
                               SizedBox(height: isCompact ? 8 : 12),
@@ -288,7 +305,21 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
   }
 
-  Widget _buildWinnerCard(Player? winner, {required bool compact}) {
+  Widget _buildWinnerCard(List<Player> winners, {required bool compact}) {
+    final hasWinner = winners.isNotEmpty;
+    final isFullTie =
+        winners.length > 1 && winners.length == _sortedPlayers.length;
+    final ribbonLabel = isFullTie
+        ? 'TIE GAME'
+        : winners.length > 1
+        ? 'CO-WINNERS'
+        : 'WINNER';
+    final winnerNames = isFullTie
+        ? 'EVERYONE'
+        : winners
+              .map((player) => player.name)
+              .join(winners.length == 2 ? ' & ' : ', ');
+
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -297,7 +328,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
         compact ? 12 : 16,
       ),
       decoration: _darkPanelDecoration(radius: 18),
-      child: winner == null
+      child: !hasWinner
           ? Center(
               child: Text(
                 'No results yet',
@@ -310,11 +341,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildRibbon('WINNER'),
+                _buildRibbon(ribbonLabel),
                 SizedBox(height: compact ? 8 : 12),
                 Text(
-                  winner.name,
-                  maxLines: 2,
+                  winnerNames,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displaySmall?.copyWith(
@@ -345,7 +376,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    _formatScore(winner.score),
+                    _formatScore(winners.first.score),
                     maxLines: 1,
                     style: TextStyle(
                       fontFamily: 'RehnCondensed',
@@ -417,11 +448,12 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   }
 
   Widget _buildScoreRow(Player player, int index) {
-    final isWinner = index == 0;
-    final rankColor = switch (index) {
-      0 => AppColors.brassLight,
-      1 => AppColors.chipSilver,
-      2 => AppColors.neonOrange,
+    final rank = _rankForIndex(index);
+    final isWinner = rank == 1;
+    final rankColor = switch (rank) {
+      1 => AppColors.brassLight,
+      2 => AppColors.chipSilver,
+      3 => AppColors.neonOrange,
       _ => AppColors.ivory.withValues(alpha: 0.72),
     };
 
@@ -455,15 +487,15 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             child: Row(
               children: [
                 Icon(
-                  index < 3
+                  rank <= 3
                       ? Icons.military_tech_rounded
                       : Icons.circle_rounded,
                   color: rankColor,
-                  size: index < 3 ? 24 : 10,
+                  size: rank <= 3 ? 24 : 10,
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '${index + 1}',
+                  '$rank',
                   style: TextStyle(
                     color: isWinner ? AppColors.ink : AppColors.ivory,
                     fontSize: 21,

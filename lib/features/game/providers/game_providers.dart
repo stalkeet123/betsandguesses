@@ -105,6 +105,10 @@ class GameStateNotifier extends Notifier<GameState> {
   }
 
   void replaceBet(String oldId, Bet bet) {
+    if (bet.roundNumber != state.currentRound) {
+      removeBetById(oldId);
+      return;
+    }
     final alreadyExists = state.bets.any(
       (b) => b.id == bet.id && b.id != oldId,
     );
@@ -112,6 +116,11 @@ class GameStateNotifier extends Notifier<GameState> {
       state = state.copyWith(
         bets: state.bets.where((b) => b.id != oldId).toList(),
       );
+      return;
+    }
+    final oldIndex = state.bets.indexWhere((b) => b.id == oldId);
+    if (oldIndex == -1) {
+      state = state.copyWith(bets: [...state.bets, bet]);
       return;
     }
     final updatedBets = state.bets.map((b) => b.id == oldId ? bet : b).toList();

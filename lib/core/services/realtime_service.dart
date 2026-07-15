@@ -41,7 +41,15 @@ class RealtimeService {
         await _client.removeChannel(existingChannel);
       }
 
-      final channel = _client.channel(channelName);
+      final accessToken = _client.auth.currentSession?.accessToken;
+      if (accessToken == null) {
+        throw StateError('Realtime requires an authenticated session.');
+      }
+      await _client.realtime.setAuth(accessToken);
+      final channel = _client.channel(
+        channelName,
+        opts: const RealtimeChannelConfig(private: true),
+      );
 
       Set<String> currentPresenceDeviceIds() {
         final ids = <String>{};
