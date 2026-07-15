@@ -8,11 +8,12 @@ import '../theme/app_colors.dart';
 class WebPromoBanner extends StatelessWidget {
   const WebPromoBanner({super.key});
 
+  static final Uri _appStoreUrl = Uri.parse(
+    'https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr',
+  );
+
   Future<void> _launchStore() async {
-    final url = Uri.parse('https://stalkeet.com'); // Placeholder for store URL
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
-    }
+    await launchUrl(_appStoreUrl, webOnlyWindowName: '_blank');
   }
 
   @override
@@ -54,7 +55,7 @@ class WebPromoBanner extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'DOWNLOAD ON APP STORE',
+                'DOWNLOAD ON THE APP STORE',
                 style: GoogleFonts.outfit(
                   color: AppColors.ivory,
                   fontSize: 14,
