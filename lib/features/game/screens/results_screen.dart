@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/constants/game_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
 
+import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 
 class ResultsScreen extends ConsumerStatefulWidget {
@@ -24,6 +25,8 @@ class ResultsScreen extends ConsumerStatefulWidget {
 class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   late final ConfettiController _confettiController;
   List<Player> _sortedPlayers = [];
+  bool _isReturningToLobby = false;
+  bool _hasLeftResults = false;
 
   @override
   void initState() {
@@ -56,6 +59,8 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   }
 
   void _goHome() {
+    if (_hasLeftResults) return;
+    _hasLeftResults = true;
     ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     ref.read(currentRoomProvider.notifier).set(null);
     ref.read(currentPlayerProvider.notifier).set(null);
@@ -63,23 +68,37 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     context.goNamed('home');
   }
 
-  Future<void> _backToLobby() async {
-    final room = ref.read(currentRoomProvider);
-    if (room != null) {
-      await ref.read(roomServiceProvider).resetToLobby(room.id);
-      ref
-          .read(currentRoomProvider.notifier)
-          .set(
-            room.copyWith(
-              status: RoomStatus.waiting,
-              currentRound: 0,
-              roundPhase: RoundPhase.idle,
-            ),
-          );
-    }
+  void _openLobby(Room room) {
+    if (!mounted || _hasLeftResults) return;
+    _hasLeftResults = true;
+    ref.read(currentRoomProvider.notifier).set(room);
     ref.read(gameStateProvider.notifier).reset();
-    if (mounted) {
-      context.goNamed('lobby', pathParameters: {'roomCode': widget.roomCode});
+    context.goNamed('lobby', pathParameters: {'roomCode': widget.roomCode});
+  }
+
+  Future<void> _backToLobby() async {
+    if (_isReturningToLobby) return;
+    setState(() => _isReturningToLobby = true);
+    final room = ref.read(currentRoomProvider);
+    try {
+      if (room != null) {
+        await ref.read(gameServiceProvider).clearRoomGameData(room.id);
+        final roomService = ref.read(roomServiceProvider);
+        await roomService.resetToLobby(room.id);
+        final resetRoom = await roomService.getRoom(room.id);
+        _openLobby(resetRoom);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Failed to return room to lobby: $error\n$stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not return to the lobby. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isReturningToLobby = false);
     }
   }
 
@@ -92,6 +111,18 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final room = ref.watch(currentRoomProvider);
+    if (room != null) {
+      ref.listen(roomStreamProvider(room.id), (_, next) {
+        final rows = next.asData?.value;
+        if (rows == null || rows.isEmpty) return;
+        final updatedRoom = Room.fromJson(rows.first);
+        if (updatedRoom.status == RoomStatus.waiting) {
+          _openLobby(updatedRoom);
+        }
+      });
+    }
+
     final winner = _sortedPlayers.isNotEmpty ? _sortedPlayers.first : null;
 
     return PopScope(
@@ -256,7 +287,12 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
   Widget _buildWinnerCard(Player? winner, {required bool compact}) {
     return Container(
-      padding: EdgeInsets.fromLTRB(16, compact ? 12 : 16, 16, compact ? 12 : 16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        compact ? 12 : 16,
+        16,
+        compact ? 12 : 16,
+      ),
       decoration: _darkPanelDecoration(radius: 18),
       child: winner == null
           ? Center(

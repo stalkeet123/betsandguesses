@@ -111,8 +111,19 @@ class PlayerService {
 
   Future<void> updateScores(Map<String, int> playerScores) async {
     await Future.wait(
-      playerScores.entries.map((entry) => updateScore(entry.key, entry.value)),
+      playerScores.entries.map(
+        (entry) => _updateScoreWithRetry(entry.key, entry.value),
+      ),
     );
+  }
+
+  Future<void> _updateScoreWithRetry(String playerId, int score) async {
+    try {
+      await updateScore(playerId, score);
+    } catch (_) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await updateScore(playerId, score);
+    }
   }
 
   Future<void> leaveRoom(String playerId) async {

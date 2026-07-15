@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
@@ -15,6 +16,7 @@ import '../../../features/game/models/bet_model.dart';
 import '../../../features/game/models/guess_model.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/providers/game_providers.dart';
+import '../../../features/game/services/game_sync_policy.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
@@ -45,13 +47,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Set<String> _roundWinners = {};
   Map<String, int> _roundPayouts = {};
   Timer? _slotScanTimer;
+  Timer? _roundAdvanceTimer;
   final List<Timer> _revealEffectTimers = [];
   final ValueNotifier<int?> _scanSlotIndexNotifier = ValueNotifier(null);
   bool _showWinnerBadge = false;
   final Set<String> _incomingOtherBetIds = {};
   final Set<String> _playedOtherBetEntryIds = {};
   int _revealSequenceId = 0;
+  int? _revealedResultRound;
+  String? _revealedQuestionAudioId;
   bool _isResyncing = false;
+  bool _resyncRequested = false;
+  DateTime? _phaseDeadline;
+  final List<_PendingBetEvent> _pendingBetEvents = [];
 
   @override
   void initState() {
@@ -68,7 +76,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void dispose() {
     _scanSlotIndexNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
-    _timer?.cancel();
+    _stopTimer();
+    _roundAdvanceTimer?.cancel();
     _cancelRevealEffects();
     ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     super.dispose();
@@ -78,6 +87,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _resyncFromServer(refreshRealtime: true);
+    } else {
+      _stopTimer(clearDeadline: false);
     }
   }
 
@@ -110,6 +121,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     final playerService = ref.read(playerServiceProvider);
     _players = await playerService.getPlayers(room.id);
+    _restoreCurrentPlayer(room.id);
 
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final scores = <String, int>{};
@@ -140,13 +152,36 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     _setupRealtime();
 
-    final isHost = ref.read(isHostProvider);
-    if (isHost && room.roundPhase == RoundPhase.question) {
+    if (room.roundPhase == RoundPhase.question) {
       await _startRound(max(1, room.currentRound));
       return;
     }
 
     await _resyncFromServer(roomOverride: room);
+    _playQuestionRevealOnce(ref.read(gameStateProvider).currentQuestion);
+  }
+
+  void _playQuestionRevealOnce(Question? question) {
+    if (question == null || _revealedQuestionAudioId == question.id) return;
+    _revealedQuestionAudioId = question.id;
+    unawaited(ref.read(audioServiceProvider).playQuestionReveal());
+  }
+
+  Player? _restoreCurrentPlayer(String roomId) {
+    final existing = ref.read(currentPlayerProvider);
+    final deviceId = ref.read(deviceIdProvider);
+    Player? resolved;
+    for (final player in _players) {
+      if (player.roomId == roomId && player.deviceId == deviceId) {
+        resolved = player;
+        break;
+      }
+    }
+    resolved ??= existing?.roomId == roomId ? existing : null;
+    if (resolved != null && resolved.id != existing?.id) {
+      ref.read(currentPlayerProvider.notifier).set(resolved);
+    }
+    return resolved;
   }
 
   void _setupRealtime() {
@@ -159,36 +194,57 @@ class _GameScreenState extends ConsumerState<GameScreen>
             payload['phase'] as String? ?? 'idle',
           );
           final round = (payload['round'] as num?)?.toInt();
+          if (round == null) return;
+          final currentState = ref.read(gameStateProvider);
+          if (!GameSyncPolicy.shouldApplyPhase(
+            currentRound: currentState.currentRound,
+            currentPhase: currentState.phase,
+            eventRound: round,
+            eventPhase: phase,
+          )) {
+            return;
+          }
+          if (_isResyncing) _resyncRequested = true;
+
+          final isNewRound = round > currentState.currentRound;
+          final deadline = _deadlineFromPayload(payload);
           final gameNotifier = ref.read(gameStateProvider.notifier);
 
+          gameNotifier.setRound(round);
           gameNotifier.updatePhase(phase);
-          if (round != null) gameNotifier.setRound(round);
           _syncAudioForPhase(phase);
 
-        if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
-          final questionData = payload['question'] as Map<String, dynamic>?;
-          if (questionData != null) {
-            gameNotifier.setQuestion(Question.fromJson(questionData));
-          }
-          _roundWinners.clear();
-          _incomingOtherBetIds.clear();
-          _playedOtherBetEntryIds.clear();
-          _selectedBetId = null;
-          gameNotifier.resetForNewRound();
+          if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
+            final questionData = payload['question'] as Map<String, dynamic>?;
+            if (questionData != null) {
+              final question = Question.fromJson(questionData);
+              gameNotifier.setQuestion(question);
+              if (!_usedQuestionIds.contains(question.id)) {
+                _usedQuestionIds.add(question.id);
+              }
+              _playQuestionRevealOnce(question);
+            }
+            if (isNewRound) {
+              _roundWinners.clear();
+              _incomingOtherBetIds.clear();
+              _playedOtherBetEntryIds.clear();
+              _selectedBetId = null;
+              gameNotifier.resetForNewRound();
+            }
 
-          if (phase == RoundPhase.guessing) {
-            _guessInput = '';
-            _isSubmittingGuess = false;
-            _startTimer(GameConstants.guessTimerSeconds);
+            if (phase == RoundPhase.guessing) {
+              _guessInput = '';
+              _isSubmittingGuess = false;
+              _startTimer(GameConstants.guessTimerSeconds, deadline: deadline);
+            }
           }
-        }
 
-        if (phase == RoundPhase.betting) {
-          _startTimer(GameConstants.betTimerSeconds);
-        }
+          if (phase == RoundPhase.betting) {
+            _startTimer(GameConstants.betTimerSeconds, deadline: deadline);
+          }
 
           if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
-            _timer?.cancel();
+            _stopTimer();
           }
         } catch (e, st) {
           debugPrint('Error in onPhaseChange: $e\n$st');
@@ -198,6 +254,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _maybeAutoRevealGuesses();
       },
       onGuessesRevealed: (payload) {
+        if (!_payloadMatchesCurrentRound(payload)) return;
         final guessesData = payload['guesses'] as List<dynamic>?;
         if (guessesData != null) {
           final guesses = guessesData
@@ -207,42 +264,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
       },
       onBetPlaced: (payload) {
-        try {
-          final betData = payload['bet'] as Map<String, dynamic>?;
-          if (betData != null) {
-            final currentPlayer = ref.read(currentPlayerProvider);
-            final bet = Bet.fromJson(betData);
-            if (bet.playerId != currentPlayer?.id) {
-              _incomingOtherBetIds.add(bet.id);
-              _playedOtherBetEntryIds.remove(bet.id);
-              ref.read(gameStateProvider.notifier).addBet(bet);
-            }
-          }
-        } catch (e, st) {
-          debugPrint('Error in onBetPlaced: $e\n$st');
-        }
+        _applyBetPlacedPayload(payload);
       },
       onBetRemoved: (payload) {
-        try {
-          final betId = payload['bet_id'] as String?;
-          final playerId = payload['player_id'] as String?;
-          final slotIndex = (payload['slot_index'] as num?)?.toInt();
-          if (betId != null) {
-            _incomingOtherBetIds.remove(betId);
-            _playedOtherBetEntryIds.remove(betId);
-            ref.read(gameStateProvider.notifier).removeBetById(betId);
-            return;
-          }
-          if (playerId != null && slotIndex != null) {
-            ref
-                .read(gameStateProvider.notifier)
-                .removeBetForSlot(playerId, slotIndex);
-          }
-        } catch (e, st) {
-          debugPrint('Error in onBetRemoved: $e\n$st');
-        }
+        _applyBetRemovedPayload(payload);
       },
       onScoreUpdate: (payload) {
+        if (!_payloadMatchesCurrentRound(payload)) return;
         final scoresData = payload['scores'] as Map<String, dynamic>?;
         if (scoresData != null) {
           final scores = scoresData.map((k, v) => MapEntry(k, v as int));
@@ -251,15 +279,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
       },
       onAnswerRevealed: (payload) {
         try {
+          if (!_payloadMatchesCurrentRound(payload)) return;
           final answer = (payload['answer'] as num?)?.toInt();
           final winningGuessId = payload['winning_guess_id'] as String?;
           if (answer != null) {
-            ref.read(gameStateProvider.notifier).revealAnswer(
-                  answer: answer,
-                  winningGuessId: winningGuessId,
-                );
+            ref
+                .read(gameStateProvider.notifier)
+                .revealAnswer(answer: answer, winningGuessId: winningGuessId);
             _syncAudioForPhase(RoundPhase.revealAnswer);
-            _startRevealSequence(ref.read(gameStateProvider));
+            unawaited(_startRevealSequence(ref.read(gameStateProvider)));
+            _scheduleRoundAdvance();
           }
         } catch (e, st) {
           debugPrint('Error in onAnswerRevealed: $e\n$st');
@@ -275,6 +304,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         );
         final question = Question.fromJson(questionData);
         final scores = _scoresFromPayload(payload['scores']);
+        final deadline = _deadlineFromPayload(payload);
         final gameNotifier = ref.read(gameStateProvider.notifier);
         gameNotifier.startGame(
           round: round,
@@ -285,10 +315,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
         if (!_usedQuestionIds.contains(question.id)) {
           _usedQuestionIds.add(question.id);
         }
+        _playQuestionRevealOnce(question);
         if (phase == RoundPhase.guessing) {
           _guessInput = '';
           _isSubmittingGuess = false;
-          _startTimer(GameConstants.guessTimerSeconds);
+          _startTimer(GameConstants.guessTimerSeconds, deadline: deadline);
         }
         _syncAudioForPhase(phase);
       },
@@ -311,15 +342,100 @@ class _GameScreenState extends ConsumerState<GameScreen>
     });
   }
 
+  DateTime? _deadlineFromPayload(Map<String, dynamic> payload) {
+    final raw = payload['phase_ends_at'];
+    if (raw is DateTime) return raw.toUtc();
+    if (raw is String) return DateTime.tryParse(raw)?.toUtc();
+    return null;
+  }
+
+  int? _eventRound(Map<String, dynamic> payload) {
+    final direct = (payload['round'] as num?)?.toInt();
+    if (direct != null) return direct;
+    final bet = payload['bet'];
+    if (bet is Map) return (bet['round_number'] as num?)?.toInt();
+    return null;
+  }
+
+  bool _payloadMatchesCurrentRound(Map<String, dynamic> payload) {
+    final eventRound = _eventRound(payload);
+    if (eventRound == null) return true;
+    return GameSyncPolicy.isCurrentRound(
+      currentRound: ref.read(gameStateProvider).currentRound,
+      eventRound: eventRound,
+    );
+  }
+
+  void _applyBetPlacedPayload(
+    Map<String, dynamic> payload, {
+    bool recordDuringResync = true,
+  }) {
+    try {
+      if (!_payloadMatchesCurrentRound(payload)) return;
+      final betData = payload['bet'] as Map<String, dynamic>?;
+      if (betData == null) return;
+      final currentPlayer = ref.read(currentPlayerProvider);
+      final bet = Bet.fromJson(betData);
+      if (bet.playerId == currentPlayer?.id) return;
+
+      if (_isResyncing && recordDuringResync) {
+        _pendingBetEvents.add(
+          _PendingBetEvent(isRemoval: false, payload: Map.of(payload)),
+        );
+      }
+      _incomingOtherBetIds.add(bet.id);
+      _playedOtherBetEntryIds.remove(bet.id);
+      ref.read(gameStateProvider.notifier).addBet(bet);
+    } catch (e, st) {
+      debugPrint('Error in onBetPlaced: $e\n$st');
+    }
+  }
+
+  void _applyBetRemovedPayload(
+    Map<String, dynamic> payload, {
+    bool recordDuringResync = true,
+  }) {
+    try {
+      if (!_payloadMatchesCurrentRound(payload)) return;
+      if (_isResyncing && recordDuringResync) {
+        _pendingBetEvents.add(
+          _PendingBetEvent(isRemoval: true, payload: Map.of(payload)),
+        );
+      }
+
+      final betId = payload['bet_id'] as String?;
+      final playerId = payload['player_id'] as String?;
+      final slotIndex = (payload['slot_index'] as num?)?.toInt();
+      if (betId != null) {
+        _incomingOtherBetIds.remove(betId);
+        _playedOtherBetEntryIds.remove(betId);
+        ref.read(gameStateProvider.notifier).removeBetById(betId);
+        return;
+      }
+      if (playerId != null && slotIndex != null) {
+        ref
+            .read(gameStateProvider.notifier)
+            .removeBetForSlot(playerId, slotIndex);
+      }
+    } catch (e, st) {
+      debugPrint('Error in onBetRemoved: $e\n$st');
+    }
+  }
+
   Future<void> _resyncFromServer({
     bool refreshRealtime = false,
     Room? roomOverride,
   }) async {
-    if (_isResyncing) return;
+    if (_isResyncing) {
+      _resyncRequested = true;
+      return;
+    }
     final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
     if (currentRoom == null) return;
 
     _isResyncing = true;
+    _resyncRequested = false;
+    _pendingBetEvents.clear();
     try {
       if (refreshRealtime) _setupRealtime();
 
@@ -327,7 +443,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final playerService = ref.read(playerServiceProvider);
       final gameService = ref.read(gameServiceProvider);
       final gameNotifier = ref.read(gameStateProvider.notifier);
-      final currentPlayer = ref.read(currentPlayerProvider);
+
+      try {
+        await roomService.synchronizeServerClock(force: refreshRealtime);
+      } catch (_) {
+        // The local fallback remains available for older schemas or outages.
+      }
 
       final room = roomOverride ?? await roomService.getRoom(currentRoom.id);
       ref.read(currentRoomProvider.notifier).set(room);
@@ -343,102 +464,153 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
 
       _players = await playerService.getPlayers(room.id);
+      final currentPlayer = _restoreCurrentPlayer(room.id);
       final scores = <String, int>{
         for (final player in _players) player.id: player.score,
       };
       final phase = room.roundPhase;
       final round = room.currentRound;
       final oldState = ref.read(gameStateProvider);
-      _incomingOtherBetIds.clear();
-      _playedOtherBetEntryIds.clear();
-
-      gameNotifier.initialize(room.id, room.code, room.maxRounds);
-      gameNotifier.setRound(round);
-      gameNotifier.updatePhase(phase);
-      gameNotifier.setScores(scores);
-      _syncAudioForPhase(phase);
+      var enrichedGuesses = <Guess>[];
+      var bets = <Bet>[];
+      Question? question;
+      String? winningGuessId;
 
       if (round > 0) {
         final guesses = await gameService.getGuesses(room.id, round);
-        final enrichedGuesses = guesses.map((guess) {
+        enrichedGuesses = guesses.map((guess) {
           final player = _playerById(guess.playerId);
           return guess.copyWith(
             playerName: player?.name,
             playerColor: player?.avatarColor,
           );
         }).toList();
-        final bets = await gameService.getBets(room.id, round);
+        bets = await gameService.getBets(room.id, round);
         final questionId =
             room.currentQuestionId ??
             enrichedGuesses
                 .map((guess) => guess.questionId)
                 .whereType<String>()
                 .firstOrNull;
-        final question = questionId == null
+        question = questionId == null
             ? (oldState.currentRound == round ? oldState.currentQuestion : null)
             : await gameService.getQuestionById(questionId);
 
         if (question != null) {
-          gameNotifier.setQuestion(question);
           if (!_usedQuestionIds.contains(question.id)) {
             _usedQuestionIds.add(question.id);
           }
         }
-        gameNotifier.setGuesses(enrichedGuesses);
-        gameNotifier.setBets(bets);
-        gameNotifier.setGuessSubmitted(
-          currentPlayer != null &&
-              enrichedGuesses.any(
-                (guess) => guess.playerId == currentPlayer.id,
-              ),
-        );
 
         if ((phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) &&
             question != null) {
-          final winningGuessId = enrichedGuesses
+          winningGuessId = enrichedGuesses
               .where((guess) => guess.isWinner)
               .map((guess) => guess.id)
               .firstOrNull;
-          gameNotifier.setCorrectAnswer(question.answer, winningGuessId);
-          _startRevealSequence(ref.read(gameStateProvider));
-        } else {
-          _cancelRevealEffects();
         }
       }
 
+      gameNotifier.applySnapshot(
+        roomId: room.id,
+        roomCode: room.code,
+        currentRound: round,
+        maxRounds: room.maxRounds,
+        phase: phase,
+        currentQuestion: question,
+        guesses: enrichedGuesses,
+        bets: bets,
+        scores: scores,
+        correctAnswer:
+            phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring
+            ? question?.answer
+            : null,
+        winningGuessId: winningGuessId,
+        hasSubmittedGuess:
+            currentPlayer != null &&
+            enrichedGuesses.any((guess) => guess.playerId == currentPlayer.id),
+      );
+
+      _incomingOtherBetIds.clear();
+      _playedOtherBetEntryIds.clear();
+      final pendingBetEvents = List<_PendingBetEvent>.of(_pendingBetEvents);
+      _pendingBetEvents.clear();
+      for (final event in pendingBetEvents) {
+        if (event.isRemoval) {
+          _applyBetRemovedPayload(event.payload, recordDuringResync: false);
+        } else {
+          _applyBetPlacedPayload(event.payload, recordDuringResync: false);
+        }
+      }
+
+      _syncAudioForPhase(phase);
       if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
-        _timer?.cancel();
+        unawaited(_startRevealSequence(ref.read(gameStateProvider)));
+        _scheduleRoundAdvance();
+      } else {
+        _cancelRevealEffects();
+      }
+
+      if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
+        _stopTimer();
       } else if (phase == RoundPhase.guessing) {
-        _startTimer(GameConstants.guessTimerSeconds);
+        _startTimer(
+          GameConstants.guessTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
       } else if (phase == RoundPhase.betting) {
-        _startTimer(GameConstants.betTimerSeconds);
+        _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
+      } else if (phase == RoundPhase.question && round > 0) {
+        _stopTimer();
+        unawaited(_startRound(round));
       }
       if (mounted) setState(() {});
     } finally {
       _isResyncing = false;
+      final shouldResyncAgain = _resyncRequested;
+      _resyncRequested = false;
+      if (shouldResyncAgain && mounted) {
+        unawaited(_resyncFromServer());
+      }
     }
   }
 
-  void _startTimer(int seconds) {
-    _timer?.cancel();
-    _timerSeconds = seconds;
-    
+  void _startTimer(int fallbackSeconds, {DateTime? deadline}) {
+    _stopTimer();
+    _phaseDeadline = deadline;
+    _timerSeconds = deadline == null
+        ? fallbackSeconds
+        : GameSyncPolicy.remainingSeconds(
+            deadline: deadline,
+            now: ref.read(roomServiceProvider).serverNow,
+          );
+
     // Defer the provider update until after the build cycle
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(gameTimerProvider.notifier).setTimer(seconds);
+        ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
       }
     });
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_timerSeconds > 0) {
-        _timerSeconds--;
+      final deadline = _phaseDeadline;
+      final remaining = deadline == null
+          ? max(0, _timerSeconds - 1)
+          : GameSyncPolicy.remainingSeconds(
+              deadline: deadline,
+              now: ref.read(roomServiceProvider).serverNow,
+            );
+      if (remaining > 0) {
+        _timerSeconds = remaining;
         ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
         if (_timerSeconds == 10) {
           ref.read(audioServiceProvider).startTicking();
         }
       } else {
         timer.cancel();
+        _timer = null;
+        _timerSeconds = 0;
+        ref.read(gameTimerProvider.notifier).setTimer(0);
         ref.read(audioServiceProvider).stopTicking();
         ref.read(audioServiceProvider).playTimeUp();
         _handleTimerFinished();
@@ -446,12 +618,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
     });
   }
 
+  void _stopTimer({bool clearDeadline = true}) {
+    _timer?.cancel();
+    _timer = null;
+    if (clearDeadline) _phaseDeadline = null;
+    ref.read(audioServiceProvider).stopTicking();
+  }
+
   void _handleTimerFinished() {
     final gameState = ref.read(gameStateProvider);
-    final isHost = ref.read(isHostProvider);
-    if (isHost && gameState.phase == RoundPhase.guessing) {
+    if (gameState.phase == RoundPhase.guessing) {
       _revealGuesses();
-    } else if (isHost && gameState.phase == RoundPhase.betting) {
+    } else if (gameState.phase == RoundPhase.betting) {
       _revealAnswer();
     }
   }
@@ -464,30 +642,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final roomService = ref.read(roomServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
-    final isHost = ref.read(isHostProvider);
-
-    if (isHost) {
-      final gameState = ref.read(gameStateProvider);
-      final currentScores = Map<String, int>.from(gameState.scores);
-      bool scoresChanged = false;
-
-      for (final player in _players) {
-        final score = currentScores[player.id] ?? player.score;
-        if (score <= 0) {
-          currentScores[player.id] = GameConstants.startingScore;
-          scoresChanged = true;
-        }
-      }
-
-      if (scoresChanged) {
-        final playerService = ref.read(playerServiceProvider);
-        await playerService.updateScores(currentScores);
-        gameNotifier.setScores(currentScores);
-        await realtimeService.broadcast(widget.roomCode, 'score_update', {
-          'scores': currentScores,
-        });
-      }
-    }
 
     final question = await gameService.getRandomQuestion(
       room.id,
@@ -497,6 +651,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (question == null) return;
     _usedQuestionIds.add(question.id);
 
+    final claimedRoom = await roomService.claimPhaseTransition(
+      roomId: room.id,
+      round: round,
+      expectedPhase: RoundPhase.question.name,
+      nextPhase: RoundPhase.guessing.name,
+      currentQuestionId: question.id,
+      durationSeconds: GameConstants.guessTimerSeconds,
+    );
+    if (claimedRoom == null) {
+      await _resyncFromServer();
+      return;
+    }
+    ref.read(currentRoomProvider.notifier).set(claimedRoom);
+
     gameNotifier.setRound(round);
     gameNotifier.setQuestion(question);
     gameNotifier.updatePhase(RoundPhase.guessing);
@@ -504,27 +672,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _cancelRevealEffects();
     _roundWinners.clear();
     _roundPayouts.clear();
+    _revealedResultRound = null;
     gameNotifier.resetForNewRound();
     _guessInput = '';
     _selectedChipValue = null;
     _isSubmittingGuess = false;
 
-    await roomService.updatePhase(
-      room.id,
-      RoundPhase.guessing.name,
-      round: round,
-      currentQuestionId: question.id,
-    );
-
     await realtimeService.broadcast(widget.roomCode, 'phase_change', {
       'phase': RoundPhase.guessing.name,
       'round': round,
       'question': question.toJson(),
+      'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
     });
 
-    _startTimer(GameConstants.guessTimerSeconds);
+    _startTimer(
+      GameConstants.guessTimerSeconds,
+      deadline: claimedRoom.phaseEndsAt,
+    );
     if (mounted) setState(() {});
-    ref.read(audioServiceProvider).playQuestionReveal();
+    _playQuestionRevealOnce(question);
   }
 
   Future<void> _revealGuesses() async {
@@ -538,6 +704,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final gameService = ref.read(gameServiceProvider);
       final realtimeService = ref.read(realtimeServiceProvider);
       final gameNotifier = ref.read(gameStateProvider.notifier);
+      final claimedRoom = await ref
+          .read(roomServiceProvider)
+          .claimPhaseTransition(
+            roomId: room.id,
+            round: gameState.currentRound,
+            expectedPhase: RoundPhase.guessing.name,
+            nextPhase: RoundPhase.betting.name,
+            durationSeconds: GameConstants.betTimerSeconds,
+          );
+      if (claimedRoom == null) {
+        await _resyncFromServer();
+        return;
+      }
 
       final guesses = await gameService.getGuesses(
         room.id,
@@ -554,17 +733,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
       gameNotifier.setGuesses(enrichedGuesses);
       gameNotifier.updatePhase(RoundPhase.betting);
       _syncAudioForPhase(RoundPhase.betting);
-      _timer?.cancel();
-
-      await ref
-          .read(roomServiceProvider)
-          .updatePhase(
-            room.id,
-            RoundPhase.betting.name,
-            round: gameState.currentRound,
-          );
+      _stopTimer();
 
       await realtimeService.broadcast(widget.roomCode, 'guesses_revealed', {
+        'round': gameState.currentRound,
         'guesses': enrichedGuesses
             .map(
               (g) => {
@@ -580,9 +752,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
       await realtimeService.broadcast(widget.roomCode, 'phase_change', {
         'phase': RoundPhase.betting.name,
         'round': gameState.currentRound,
+        'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
       });
 
-      _startTimer(GameConstants.betTimerSeconds);
+      _startTimer(
+        GameConstants.betTimerSeconds,
+        deadline: claimedRoom.phaseEndsAt,
+      );
     } finally {
       _isRevealingGuesses = false;
     }
@@ -597,18 +773,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final gameState = ref.read(gameStateProvider);
-    _timer?.cancel();
+    _stopTimer();
 
     final correctAnswer = gameState.currentQuestion!.answer;
     final winningGuess = gameService.determineWinner(
       gameState.sortedGuesses,
       correctAnswer,
     );
+    final bets = await gameService.getBets(room.id, gameState.currentRound);
+    final claimedRoom = await roomService.claimPhaseTransition(
+      roomId: room.id,
+      round: gameState.currentRound,
+      expectedPhase: RoundPhase.betting.name,
+      nextPhase: RoundPhase.revealAnswer.name,
+    );
+    if (claimedRoom == null) {
+      await _resyncFromServer();
+      return;
+    }
     if (winningGuess != null) {
       await gameService.markWinner(winningGuess.id);
     }
 
-    final bets = await gameService.getBets(room.id, gameState.currentRound);
     final payouts = gameService.calculatePayouts(
       guesses: gameState.sortedGuesses,
       bets: bets,
@@ -625,7 +811,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     // Subtract bets from starting scores
     for (final playerId in totalBets.keys) {
-      final startingScore = newScores[playerId] ?? _playerById(playerId)?.score ?? 0;
+      final startingScore =
+          newScores[playerId] ?? _playerById(playerId)?.score ?? 0;
       newScores[playerId] = startingScore - totalBets[playerId]!;
     }
 
@@ -647,22 +834,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
       scores: newScores,
     );
     _syncAudioForPhase(RoundPhase.revealAnswer);
-    _startRevealSequence(ref.read(gameStateProvider), payouts: payouts);
-
-    await roomService.updatePhase(
-      room.id,
-      RoundPhase.revealAnswer.name,
-      round: gameState.currentRound,
+    unawaited(
+      _startRevealSequence(ref.read(gameStateProvider), payouts: payouts),
     );
 
     final playerService = ref.read(playerServiceProvider);
     await playerService.updateScores(newScores);
 
     await realtimeService.broadcast(widget.roomCode, 'answer_revealed', {
+      'round': gameState.currentRound,
       'answer': correctAnswer,
       'winning_guess_id': winningGuess?.id,
     });
     await realtimeService.broadcast(widget.roomCode, 'score_update', {
+      'round': gameState.currentRound,
       'scores': newScores,
     });
     await realtimeService.broadcast(widget.roomCode, 'phase_change', {
@@ -670,10 +855,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       'round': gameState.currentRound,
     });
 
-    // Auto-advance after 6 seconds for host
-    Future.delayed(const Duration(seconds: 6), () {
-      if (mounted) _nextRound();
-    });
+    _scheduleRoundAdvance();
   }
 
   void _playRevealAudioForCurrentPlayer(GameState gameState) {
@@ -686,11 +868,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
-  void _startRevealSequence(GameState gameState, {Map<String, int>? payouts}) {
+  Future<void> _startRevealSequence(
+    GameState gameState, {
+    Map<String, int>? payouts,
+  }) async {
     final correctAnswer = gameState.correctAnswer;
-    if (correctAnswer == null) return;
-    
-    ref.read(audioServiceProvider).playResultReveal();
+    if (correctAnswer == null ||
+        _revealedResultRound == gameState.currentRound) {
+      return;
+    }
+    _revealedResultRound = gameState.currentRound;
+
+    _cancelRevealEffects();
+    final sequenceId = _revealSequenceId;
+    await ref.read(audioServiceProvider).playResultReveal();
+    if (!mounted || sequenceId != _revealSequenceId) return;
 
     final resolvedPayouts =
         payouts ??
@@ -720,11 +912,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (winningSlotIndex != null) winningSlotIndex,
     ];
 
-    _cancelRevealEffects();
-
     var step = 0;
     setState(() {
-      _revealSequenceId++;
       _roundPayouts = resolvedPayouts;
       _roundWinners = winners;
       _showWinnerBadge = false;
@@ -732,7 +921,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     });
 
     _slotScanTimer = Timer.periodic(const Duration(milliseconds: 240), (timer) {
-      if (!mounted) {
+      if (!mounted || sequenceId != _revealSequenceId) {
         timer.cancel();
         return;
       }
@@ -757,6 +946,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _cancelRevealEffects() {
+    _revealSequenceId++;
     _slotScanTimer?.cancel();
     _slotScanTimer = null;
     for (final timer in _revealEffectTimers) {
@@ -806,16 +996,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Future<void> _nextRound() async {
     final gameState = ref.read(gameStateProvider);
+    final room = ref.read(currentRoomProvider);
+    if (room == null) return;
+    final roomService = ref.read(roomServiceProvider);
+    final realtimeService = ref.read(realtimeServiceProvider);
 
     if (gameState.currentRound >= gameState.maxRounds) {
-      final room = ref.read(currentRoomProvider);
-      if (room != null) {
-        final roomService = ref.read(roomServiceProvider);
-        await roomService.endGame(room.id);
-
-        final realtimeService = ref.read(realtimeServiceProvider);
-        await realtimeService.broadcast(widget.roomCode, 'game_ended', {});
+      final didFinish = await roomService.finishGameIfCurrent(
+        roomId: room.id,
+        round: gameState.currentRound,
+      );
+      if (!didFinish) {
+        await _resyncFromServer();
+        return;
       }
+      await realtimeService.broadcast(widget.roomCode, 'game_ended', {});
 
       if (mounted) {
         context.goNamed(
@@ -824,15 +1019,54 @@ class _GameScreenState extends ConsumerState<GameScreen>
         );
       }
     } else {
-      await _startRound(gameState.currentRound + 1);
+      final nextRound = gameState.currentRound + 1;
+      final claimedRoom = await roomService.claimPhaseTransition(
+        roomId: room.id,
+        round: gameState.currentRound,
+        expectedPhase: RoundPhase.revealAnswer.name,
+        nextPhase: RoundPhase.question.name,
+        nextRound: nextRound,
+      );
+      if (claimedRoom == null) {
+        await _resyncFromServer();
+        return;
+      }
+      ref.read(currentRoomProvider.notifier).set(claimedRoom);
+      await _startRound(nextRound);
     }
+  }
+
+  void _scheduleRoundAdvance() {
+    _roundAdvanceTimer?.cancel();
+    _roundAdvanceTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted) unawaited(_nextRound());
+    });
   }
 
   Future<void> _submitGuess(int value) async {
     final room = ref.read(currentRoomProvider);
-    final player = ref.read(currentPlayerProvider);
-    final gameState = ref.read(gameStateProvider);
-    if (room == null || player == null || gameState.hasSubmittedGuess) return;
+    if (room == null) return;
+
+    var gameState = ref.read(gameStateProvider);
+    if (gameState.hasSubmittedGuess) return;
+    var player =
+        ref.read(currentPlayerProvider) ?? _restoreCurrentPlayer(room.id);
+    if (player == null) {
+      await _resyncFromServer();
+      player =
+          ref.read(currentPlayerProvider) ?? _restoreCurrentPlayer(room.id);
+      gameState = ref.read(gameStateProvider);
+    }
+    if (player == null || gameState.hasSubmittedGuess) {
+      if (mounted && player == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Player connection could not be restored.'),
+          ),
+        );
+      }
+      return;
+    }
 
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
@@ -850,9 +1084,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
       ref.read(gameStateProvider.notifier).setGuessSubmitted(true);
       await realtimeService.broadcast(widget.roomCode, 'guess_submitted', {
+        'round': gameState.currentRound,
         'player_id': player.id,
       });
       await _maybeAutoRevealGuesses();
+    } catch (error, stackTrace) {
+      debugPrint('Guess submit failed: $error\n$stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Guess could not be sent. Try again.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSubmittingGuess = false);
     }
@@ -914,9 +1156,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final room = ref.read(currentRoomProvider);
     final player = ref.read(currentPlayerProvider);
     final gameState = ref.read(gameStateProvider);
-    if (room == null ||
-        player == null ||
-        _isBetOperationInFlight) {
+    if (room == null || player == null || _isBetOperationInFlight) {
       return;
     }
 
@@ -936,10 +1176,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     final targetGuessId = _targetGuessIdForSlot(slotIndex, gameState);
 
-    final safeDx = (position != null && position.dx.isFinite) ? position.dx : null;
-    final safeDy = (position != null && position.dy.isFinite) ? position.dy : null;
+    final safeDx = (position != null && position.dx.isFinite)
+        ? position.dx
+        : null;
+    final safeDy = (position != null && position.dy.isFinite)
+        ? position.dy
+        : null;
 
-    final optimisticId = 'local-${DateTime.now().microsecondsSinceEpoch}';
+    final clientActionId = const Uuid().v4();
+    final optimisticId = 'local-$clientActionId';
     final optimisticBet = Bet(
       id: optimisticId,
       roomId: room.id,
@@ -967,8 +1212,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         targetGuessId: targetGuessId,
         slotIndex: slotIndex,
         chips: chips,
-        positionX: safeDx,
-        positionY: safeDy,
+        clientActionId: clientActionId,
       );
 
       final placedBet = bet.copyWith(
@@ -1016,8 +1260,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final oldBet = sourceBet;
     final targetGuessId = _targetGuessIdForSlot(targetSlotIndex, gameState);
-    final safeDx = (position != null && position.dx.isFinite) ? position.dx : null;
-    final safeDy = (position != null && position.dy.isFinite) ? position.dy : null;
+    final safeDx = (position != null && position.dx.isFinite)
+        ? position.dx
+        : null;
+    final safeDy = (position != null && position.dy.isFinite)
+        ? position.dy
+        : null;
 
     final optimisticBet = sourceBet.copyWith(
       targetGuessId: targetGuessId,
@@ -1037,8 +1285,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         betId: sourceBet.id,
         targetGuessId: targetGuessId,
         slotIndex: targetSlotIndex,
-        positionX: safeDx,
-        positionY: safeDy,
       );
 
       final placedBet = movedBet.copyWith(
@@ -1089,6 +1335,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (!bet.id.startsWith('local-')) {
         await gameService.removeBet(bet.id);
         await realtimeService.broadcast(widget.roomCode, 'bet_removed', {
+          'round': bet.roundNumber,
           'bet_id': bet.id,
           'player_id': bet.playerId,
           'slot_index': bet.slotIndex,
@@ -1132,7 +1379,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
     await _removeBetById(bet);
   }
-
 
   Player? _playerById(String playerId) {
     for (final player in _players) {
@@ -1239,7 +1485,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
             builder: (context, ref, child) {
               final timerSeconds = ref.watch(gameTimerProvider);
               return _InfoPill(
-                icon: isReveal ? Icons.emoji_events_rounded : Icons.timer_rounded,
+                icon: isReveal
+                    ? Icons.emoji_events_rounded
+                    : Icons.timer_rounded,
                 label: isReveal
                     ? 'RESULT'
                     : timerSeconds > 0
@@ -1355,8 +1603,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
         : AppColors.brassLight;
     final banner = resultSettled
         ? (netProfit > 0
-            ? 'YOU WON +$netProfit'
-            : (netProfit < 0 ? 'YOU LOST -${netProfit.abs()}' : 'BREAK EVEN'))
+              ? 'YOU WON +$netProfit'
+              : (netProfit < 0 ? 'YOU LOST -${netProfit.abs()}' : 'BREAK EVEN'))
         : 'LOCKING WINNING RANGE';
     final headlineColor = didWin && resultSettled
         ? AppColors.mahoganyDark
@@ -1567,11 +1815,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final chipSize = 42.0;
         final dynamicChips = _getDynamicChips(totalChips);
         final chipValues = dynamicChips
-            .map((val) => (
-                  label: val.toString(),
-                  value: val,
-                  color: _getChipColor(val),
-                ))
+            .map(
+              (val) => (
+                label: val.toString(),
+                value: val,
+                color: _getChipColor(val),
+              ),
+            )
             .toList();
 
         final canEdit = gameState.phase == RoundPhase.betting;
@@ -1655,7 +1905,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           child: _buildSelectableChip(
                             label: chip.label,
                             color: chip.color,
-                            isAvailable: canEdit && availableChips >= chip.value,
+                            isAvailable:
+                                canEdit && availableChips >= chip.value,
                             value: chip.value,
                             isSelected: selectedBet != null
                                 ? chip.value == selectedBet.chips
@@ -1734,8 +1985,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ),
     );
   }
-
-
 
   Widget _buildGuessingScreen(GameState gameState) {
     final hasSubmitted = gameState.hasSubmittedGuess;
@@ -3215,60 +3464,60 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 activeRevealSlotIndex = winningSlotIndex;
               }
               return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              for (final spec in orderedSlots)
-                Positioned(
-                  left: spec.rect.left * size.width,
-                  top: spec.rect.top * size.height,
-                  width: spec.rect.width * size.width,
-                  height: spec.rect.height * size.height,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTapDown: canEdit
-                        ? (details) => _handleBetSlotTap(
-                            spec,
-                            details.localPosition,
-                            Size(
-                              spec.rect.width * size.width,
-                              spec.rect.height * size.height,
-                            ),
-                          )
-                        : null,
-                    child: _buildCodedBetSlot(
-                      spec: spec,
-                      isWinningReveal: activeRevealSlotIndex == spec.index,
-                      boundaries: boundaryValues,
+                clipBehavior: Clip.none,
+                children: [
+                  for (final spec in orderedSlots)
+                    Positioned(
+                      left: spec.rect.left * size.width,
+                      top: spec.rect.top * size.height,
+                      width: spec.rect.width * size.width,
+                      height: spec.rect.height * size.height,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTapDown: canEdit
+                            ? (details) => _handleBetSlotTap(
+                                spec,
+                                details.localPosition,
+                                Size(
+                                  spec.rect.width * size.width,
+                                  spec.rect.height * size.height,
+                                ),
+                              )
+                            : null,
+                        child: _buildCodedBetSlot(
+                          spec: spec,
+                          isWinningReveal: activeRevealSlotIndex == spec.index,
+                          boundaries: boundaryValues,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              if (_showWinnerBadge && winningSlotIndex != null)
-                ..._buildWinParticles(size, winningSlotIndex),
-              ..._buildBoundaryLabels(boundaryValues, size),
-              if (!(_showWinnerBadge && winningSlotIndex != null))
-                _buildAllPlacedChips(
-                  gameState.bets,
-                  size,
-                  currentPlayer?.id,
-                  canEdit: canEdit,
-                  isReveal: isReveal,
-                  winningSlotIndex: winningSlotIndex,
-                  emphasizeWinners: _showWinnerBadge,
-                ),
-              if (_showWinnerBadge && winningSlotIndex != null)
-                ..._buildPayoutFlightChips(
-                  size,
-                  winningSlotIndex,
-                  gameState.bets,
-                ),
-              if (_showWinnerBadge && winningSlotIndex != null)
-                _buildWinnerOverlayCard(size, winningSlotIndex),
-            ],
-          );
-         },
-        ),
-      );
-    },
+                  if (_showWinnerBadge && winningSlotIndex != null)
+                    ..._buildWinParticles(size, winningSlotIndex),
+                  ..._buildBoundaryLabels(boundaryValues, size),
+                  if (!(_showWinnerBadge && winningSlotIndex != null))
+                    _buildAllPlacedChips(
+                      gameState.bets,
+                      size,
+                      currentPlayer?.id,
+                      canEdit: canEdit,
+                      isReveal: isReveal,
+                      winningSlotIndex: winningSlotIndex,
+                      emphasizeWinners: _showWinnerBadge,
+                    ),
+                  if (_showWinnerBadge && winningSlotIndex != null)
+                    ..._buildPayoutFlightChips(
+                      size,
+                      winningSlotIndex,
+                      gameState.bets,
+                    ),
+                  if (_showWinnerBadge && winningSlotIndex != null)
+                    _buildWinnerOverlayCard(size, winningSlotIndex),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -4118,7 +4367,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 color: AppColors.brassLight.withValues(alpha: 0.95),
                 blurRadius: 22,
                 spreadRadius: 4,
-              )
+              ),
           ],
         ),
         child: chip,
@@ -4426,14 +4675,18 @@ const List<_BetSlotSpec> _betSlots = [
 
 enum _BetSlotTone { green, black, gold, red }
 
+class _PendingBetEvent {
+  final bool isRemoval;
+  final Map<String, dynamic> payload;
+
+  const _PendingBetEvent({required this.isRemoval, required this.payload});
+}
+
 class _LeaderboardEntry {
   final String name;
   final int score;
 
-  const _LeaderboardEntry({
-    required this.name,
-    required this.score,
-  });
+  const _LeaderboardEntry({required this.name, required this.score});
 }
 
 class _QuestionLoadingText extends StatelessWidget {

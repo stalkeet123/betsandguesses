@@ -122,18 +122,31 @@ class GameService {
     required String questionId,
     required int value,
   }) async {
-    final response = await _client
-        .from('guesses')
-        .insert({
-          'room_id': roomId,
-          'round_number': roundNumber,
-          'player_id': playerId,
-          'question_id': questionId,
-          'value': value,
-        })
-        .select()
-        .single();
-    return Guess.fromJson(response);
+    try {
+      final response = await _client
+          .from('guesses')
+          .insert({
+            'room_id': roomId,
+            'round_number': roundNumber,
+            'player_id': playerId,
+            'question_id': questionId,
+            'value': value,
+          })
+          .select()
+          .single();
+      return Guess.fromJson(response);
+    } on PostgrestException catch (error) {
+      if (error.code != '23505') rethrow;
+      final existing = await _client
+          .from('guesses')
+          .select()
+          .eq('room_id', roomId)
+          .eq('round_number', roundNumber)
+          .eq('player_id', playerId)
+          .maybeSingle();
+      if (existing == null) rethrow;
+      return Guess.fromJson(existing);
+    }
   }
 
   /// Get all guesses for a round
@@ -306,8 +319,7 @@ class GameService {
     required String? targetGuessId,
     required int slotIndex,
     required int chips,
-    double? positionX,
-    double? positionY,
+    required String clientActionId,
   }) async {
     final multiplier = GameConstants.boardOdds[slotIndex];
     final payload = {
@@ -318,11 +330,14 @@ class GameService {
       'slot_index': slotIndex,
       'chips': chips,
       'payout_multiplier': multiplier,
-      if (positionX != null) 'position_x': positionX,
-      if (positionY != null) 'position_y': positionY,
+      'client_action_id': clientActionId,
     };
 
-    final response = await _insertBetWithPositionFallback(payload);
+    final response = await _client
+        .from('bets')
+        .insert(payload)
+        .select()
+        .single();
     return Bet.fromJson(response);
   }
 
@@ -331,68 +346,21 @@ class GameService {
     required String betId,
     required String? targetGuessId,
     required int slotIndex,
-    required double? positionX,
-    required double? positionY,
   }) async {
     final multiplier = GameConstants.boardOdds[slotIndex];
     final payload = {
       'target_guess_id': targetGuessId,
       'slot_index': slotIndex,
       'payout_multiplier': multiplier,
-      'position_x': positionX,
-      'position_y': positionY,
     };
 
-    final response = await _updateBetWithPositionFallback(betId, payload);
+    final response = await _client
+        .from('bets')
+        .update(payload)
+        .eq('id', betId)
+        .select()
+        .single();
     return Bet.fromJson(response);
-  }
-
-  Future<Map<String, dynamic>> _insertBetWithPositionFallback(
-    Map<String, dynamic> payload,
-  ) async {
-    try {
-      return await _client.from('bets').insert(payload).select().single();
-    } on PostgrestException catch (error) {
-      if (!_isMissingPositionColumn(error)) rethrow;
-      final fallbackPayload = Map<String, dynamic>.from(payload)
-        ..remove('position_x')
-        ..remove('position_y');
-      return await _client
-          .from('bets')
-          .insert(fallbackPayload)
-          .select()
-          .single();
-    }
-  }
-
-  Future<Map<String, dynamic>> _updateBetWithPositionFallback(
-    String betId,
-    Map<String, dynamic> payload,
-  ) async {
-    try {
-      return await _client
-          .from('bets')
-          .update(payload)
-          .eq('id', betId)
-          .select()
-          .single();
-    } on PostgrestException catch (error) {
-      if (!_isMissingPositionColumn(error)) rethrow;
-      final fallbackPayload = Map<String, dynamic>.from(payload)
-        ..remove('position_x')
-        ..remove('position_y');
-      return await _client
-          .from('bets')
-          .update(fallbackPayload)
-          .eq('id', betId)
-          .select()
-          .single();
-    }
-  }
-
-  bool _isMissingPositionColumn(PostgrestException error) {
-    final message = error.message.toLowerCase();
-    return message.contains('position_x') || message.contains('position_y');
   }
 
   /// Get all bets for a round
@@ -438,6 +406,11 @@ class GameService {
         .eq('round_number', roundNumber)
         .eq('player_id', playerId)
         .eq('slot_index', slotIndex);
+  }
+
+  Future<void> clearRoomGameData(String roomId) async {
+    await _client.from('bets').delete().eq('room_id', roomId);
+    await _client.from('guesses').delete().eq('room_id', roomId);
   }
 
   // ── Scoring ──

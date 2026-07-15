@@ -105,7 +105,9 @@ class GameStateNotifier extends Notifier<GameState> {
   }
 
   void replaceBet(String oldId, Bet bet) {
-    final alreadyExists = state.bets.any((b) => b.id == bet.id && b.id != oldId);
+    final alreadyExists = state.bets.any(
+      (b) => b.id == bet.id && b.id != oldId,
+    );
     if (alreadyExists) {
       state = state.copyWith(
         bets: state.bets.where((b) => b.id != oldId).toList(),
@@ -166,6 +168,39 @@ class GameStateNotifier extends Notifier<GameState> {
 
   void setGuessSubmitted(bool submitted) {
     state = state.copyWith(hasSubmittedGuess: submitted);
+  }
+
+  void applySnapshot({
+    required String roomId,
+    required String roomCode,
+    required int currentRound,
+    required int maxRounds,
+    required RoundPhase phase,
+    required Question? currentQuestion,
+    required List<Guess> guesses,
+    required List<Bet> bets,
+    required Map<String, int> scores,
+    required bool hasSubmittedGuess,
+    int? correctAnswer,
+    String? winningGuessId,
+  }) {
+    final sortedGuesses = List<Guess>.of(guesses)
+      ..sort((a, b) => a.value.compareTo(b.value));
+    state = GameState(
+      roomId: roomId,
+      roomCode: roomCode,
+      currentRound: currentRound,
+      maxRounds: maxRounds,
+      phase: phase,
+      currentQuestion: currentQuestion,
+      guesses: guesses,
+      sortedGuesses: sortedGuesses,
+      bets: bets,
+      scores: scores,
+      correctAnswer: correctAnswer,
+      winningGuessId: winningGuessId,
+      hasSubmittedGuess: hasSubmittedGuess,
+    );
   }
 
   void nextRound() {

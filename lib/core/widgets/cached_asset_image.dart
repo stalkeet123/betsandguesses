@@ -42,16 +42,15 @@ class AppAssetPaths {
   static Future<void> _warmGroup(
     BuildContext context,
     Map<String, int> assets,
-  ) {
-    if (!context.mounted) return Future<void>.value();
-    return Future.wait(
-      assets.entries.map(
-        (entry) => precacheImage(
-          ResizeImage(AssetImage(entry.key), width: entry.value),
-          context,
-        ),
-      ),
-    );
+  ) async {
+    for (final entry in assets.entries) {
+      if (!context.mounted) return;
+      await precacheImage(
+        ResizeImage(AssetImage(entry.key), width: entry.value),
+        context,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
   }
 
   static Future<void> warmUpImages(BuildContext context) async {

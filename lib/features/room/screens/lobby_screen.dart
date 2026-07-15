@@ -275,7 +275,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           )
           .toList();
 
-      await roomService.startGame(room.id, currentQuestionId: question.id);
+      final deadline = await roomService.startGame(
+        room.id,
+        currentQuestionId: question.id,
+        durationSeconds: GameConstants.guessTimerSeconds,
+      );
       _seedGameState(room, question, scores: startingScores);
       ref
           .read(currentRoomProvider.notifier)
@@ -285,6 +289,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               currentRound: 1,
               roundPhase: RoundPhase.guessing,
               currentQuestionId: question.id,
+              phaseEndsAt: deadline,
             ),
           );
 
@@ -295,6 +300,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         'phase': RoundPhase.guessing.name,
         'question': question.toJson(),
         'scores': startingScores,
+        'phase_ends_at': deadline?.toIso8601String(),
       });
 
       if (mounted) {
@@ -325,6 +331,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final phase = RoundPhase.fromString(
       payload['phase'] as String? ?? RoundPhase.guessing.name,
     );
+    final deadlineValue = payload['phase_ends_at'];
+    final deadline = deadlineValue is String
+        ? DateTime.tryParse(deadlineValue)?.toUtc()
+        : null;
 
     ref
         .read(currentRoomProvider.notifier)
@@ -334,6 +344,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             currentRound: round,
             roundPhase: phase,
             currentQuestionId: question.id,
+            phaseEndsAt: deadline,
           ),
         );
     _seedGameState(room, question, round: round, phase: phase, scores: scores);

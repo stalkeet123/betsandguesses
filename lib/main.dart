@@ -57,9 +57,29 @@ class TahminApp extends ConsumerStatefulWidget {
   ConsumerState<TahminApp> createState() => _TahminAppState();
 }
 
-class _TahminAppState extends ConsumerState<TahminApp> {
+class _TahminAppState extends ConsumerState<TahminApp>
+    with WidgetsBindingObserver {
   bool _didWarmUpImages = false;
   bool _hasInteracted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref
+        .read(audioServiceProvider)
+        .setAppActive(state == AppLifecycleState.resumed);
+  }
 
   @override
   void didChangeDependencies() {
@@ -94,17 +114,17 @@ class _TahminAppState extends ConsumerState<TahminApp> {
               constraints: const BoxConstraints(maxWidth: 460),
               child: child != null
                   ? kIsWeb
-                      ? Listener(
-                          behavior: HitTestBehavior.translucent,
-                          onPointerDown: (_) {
-                            if (!_hasInteracted) {
-                              _hasInteracted = true;
-                              ref.read(audioServiceProvider).startMainBgm();
-                            }
-                          },
-                          child: ClipRect(child: child),
-                        )
-                      : ClipRect(child: child)
+                        ? Listener(
+                            behavior: HitTestBehavior.translucent,
+                            onPointerDown: (_) {
+                              if (!_hasInteracted) {
+                                _hasInteracted = true;
+                                ref.read(audioServiceProvider).startMainBgm();
+                              }
+                            },
+                            child: ClipRect(child: child),
+                          )
+                        : ClipRect(child: child)
                   : const SizedBox.shrink(),
             ),
           ),

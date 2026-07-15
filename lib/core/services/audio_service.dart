@@ -28,14 +28,20 @@ class AudioService {
   SoundHandle? _tickingHandle;
   SoundHandle? _payoutHandle;
   Timer? _payoutStopTimer;
+  final Set<Timer> _fadeStopTimers = {};
   Future<void>? _initFuture;
   final Map<String, Future<AudioSource?>> _sourceLoadFutures = {};
   String? _pendingBgmKey;
+  String? _desiredBgmKey;
+  int _bgmRequestId = 0;
+  bool _isAppActive = true;
   bool _disposed = false;
 
   static const _backgroundMusic = 'assets/sound/arka plan.mp3';
-  static const _elevatorMusic = 'assets/sound/686020__yellowtree__elevator-music.wav';
-  static const _questionSuspenseMusic = 'assets/sound/mixkit-game-show-suspense-waiting-667.wav';
+  static const _elevatorMusic =
+      'assets/sound/686020__yellowtree__elevator-music.wav';
+  static const _questionSuspenseMusic =
+      'assets/sound/mixkit-game-show-suspense-waiting-667.wav';
   static const _questionReveal = 'assets/sound/soru-acılma.wav';
   static const _tickingClock = 'assets/sound/saat.wav';
   static const _timeUp = 'assets/sound/sürebitti.wav';
@@ -44,7 +50,8 @@ class AudioService {
   static const _chipLoss = 'assets/sound/çipkaybolma.wav';
   static const _resultReveal = 'assets/sound/sonuç açıklanma.flac';
   static const _payoutWin = 'assets/sound/532861__joma86__allinpushchips.wav';
-  static const _epicFanfare = 'assets/sound/514492__metrostock99__grand-entrance-intro.wav';
+  static const _epicFanfare =
+      'assets/sound/514492__metrostock99__grand-entrance-intro.wav';
 
   AudioService(this._prefs) {
     _isMuted = _prefs.getBool('audio_muted') ?? false;
@@ -55,11 +62,13 @@ class AudioService {
 
   Future<void> _initPlayers() async {
     try {
-      if (!SoLoud.instance.isInitialized) {
-        await SoLoud.instance.init();
-      }
+      // Hot restart can preserve the native engine while losing Dart-side
+      // temporary-directory state. Recreate both sides together.
+      if (SoLoud.instance.isInitialized) SoLoud.instance.deinit();
+      await SoLoud.instance.init();
       await _applyVolumes();
     } catch (e) {
+      _initFuture = null;
       debugPrint('SoLoud init failed: $e');
     }
   }
@@ -98,76 +107,73 @@ class AudioService {
   }
 
   Future<AudioSource?> _loadBackgroundSource() => _loadSource(
-        _backgroundMusic,
-        _backgroundSource,
-        (source) => _backgroundSource = source,
-      );
+    _backgroundMusic,
+    _backgroundSource,
+    (source) => _backgroundSource = source,
+  );
 
   Future<AudioSource?> _loadElevatorSource() => _loadSource(
-        _elevatorMusic,
-        _elevatorSource,
-        (source) => _elevatorSource = source,
-      );
+    _elevatorMusic,
+    _elevatorSource,
+    (source) => _elevatorSource = source,
+  );
 
   Future<AudioSource?> _loadQuestionSuspenseSource() => _loadSource(
-        _questionSuspenseMusic,
-        _questionSuspenseSource,
-        (source) => _questionSuspenseSource = source,
-      );
+    _questionSuspenseMusic,
+    _questionSuspenseSource,
+    (source) => _questionSuspenseSource = source,
+  );
 
   Future<AudioSource?> _loadQuestionRevealSource() => _loadSource(
-        _questionReveal,
-        _questionRevealSource,
-        (source) => _questionRevealSource = source,
-      );
+    _questionReveal,
+    _questionRevealSource,
+    (source) => _questionRevealSource = source,
+  );
 
   Future<AudioSource?> _loadTickingClockSource() => _loadSource(
-        _tickingClock,
-        _tickingClockSource,
-        (source) => _tickingClockSource = source,
-      );
+    _tickingClock,
+    _tickingClockSource,
+    (source) => _tickingClockSource = source,
+  );
 
-  Future<AudioSource?> _loadTimeUpSource() => _loadSource(
-        _timeUp,
-        _timeUpSource,
-        (source) => _timeUpSource = source,
-      );
+  Future<AudioSource?> _loadTimeUpSource() =>
+      _loadSource(_timeUp, _timeUpSource, (source) => _timeUpSource = source);
 
   Future<AudioSource?> _loadChipSelectSource() => _loadSource(
-        _chipSelect,
-        _chipSelectSource,
-        (source) => _chipSelectSource = source,
-      );
+    _chipSelect,
+    _chipSelectSource,
+    (source) => _chipSelectSource = source,
+  );
 
   Future<AudioSource?> _loadChipDropSource() => _loadSource(
-        _chipDrop,
-        _chipDropSource,
-        (source) => _chipDropSource = source,
-      );
+    _chipDrop,
+    _chipDropSource,
+    (source) => _chipDropSource = source,
+  );
 
   Future<AudioSource?> _loadChipLossSource() => _loadSource(
-        _chipLoss,
-        _chipLossSource,
-        (source) => _chipLossSource = source,
-      );
+    _chipLoss,
+    _chipLossSource,
+    (source) => _chipLossSource = source,
+  );
 
   Future<AudioSource?> _loadResultRevealSource() => _loadSource(
-        _resultReveal,
-        _resultRevealSource,
-        (source) => _resultRevealSource = source,
-      );
+    _resultReveal,
+    _resultRevealSource,
+    (source) => _resultRevealSource = source,
+  );
 
   Future<AudioSource?> _loadPayoutWinSource() => _loadSource(
-        _payoutWin,
-        _payoutWinSource,
-        (source) => _payoutWinSource = source,
-      );
+    _payoutWin,
+    _payoutWinSource,
+    (source) => _payoutWinSource = source,
+  );
 
   Future<AudioSource?> _loadEpicFanfareSource() => _loadSource(
-        _epicFanfare,
-        _epicFanfareSource,
-        (source) => _epicFanfareSource = source,
-      );
+    _epicFanfare,
+    _epicFanfareSource,
+    (source) => _epicFanfareSource = source,
+  );
 
   Future<void> _applyVolumes() async {
     if (!SoLoud.instance.isInitialized) return;
@@ -179,12 +185,17 @@ class AudioService {
     double volume = 0.15,
     String? bgmKey,
   }) async {
-    if (_isMuted) return;
-    if (bgmKey != null) _pendingBgmKey = bgmKey;
+    if (bgmKey != null) {
+      _desiredBgmKey = bgmKey;
+      _pendingBgmKey = bgmKey;
+    }
+    final requestId = ++_bgmRequestId;
+    if (_isMuted || !_isAppActive || _disposed) return;
 
     final source = await loadSource();
-    if (_isMuted || _disposed) return;
+    if (_isMuted || !_isAppActive || _disposed) return;
     if (!SoLoud.instance.isInitialized || source == null) return;
+    if (requestId != _bgmRequestId) return;
     if (bgmKey != null && _pendingBgmKey != bgmKey) return;
     if (bgmKey != null) _pendingBgmKey = null;
 
@@ -193,65 +204,82 @@ class AudioService {
     final oldHandle = _bgmHandle;
     if (oldHandle != null) {
       SoLoud.instance.fadeVolume(oldHandle, 0.0, const Duration(seconds: 1));
-      Timer(const Duration(seconds: 1), () {
-        if (SoLoud.instance.isInitialized) {
-          SoLoud.instance.stop(oldHandle);
-        }
-      });
+      _scheduleHandleStop(oldHandle);
     }
 
     _currentBgmSource = source;
     try {
-      _bgmHandle = await SoLoud.instance.play(
+      final newHandle = await SoLoud.instance.play(
         source,
         volume: 0.0,
         looping: true,
       );
-      SoLoud.instance.fadeVolume(_bgmHandle!, volume, const Duration(seconds: 1));
+      if (_disposed ||
+          _isMuted ||
+          !_isAppActive ||
+          requestId != _bgmRequestId) {
+        await SoLoud.instance.stop(newHandle);
+        return;
+      }
+      _bgmHandle = newHandle;
+      SoLoud.instance.fadeVolume(newHandle, volume, const Duration(seconds: 1));
     } catch (e) {
       debugPrint('Fade to BGM failed: $e');
     }
   }
 
-  Future<void> startLobbyMusic() => _fadeToBgm(
-        _loadElevatorSource,
-        volume: 0.12,
-        bgmKey: 'lobby',
-      );
+  Future<void> startLobbyMusic() =>
+      _fadeToBgm(_loadElevatorSource, volume: 0.12, bgmKey: 'lobby');
 
-  Future<void> startQuestionMusic() => _fadeToBgm(
-        _loadQuestionSuspenseSource,
-        volume: 0.12,
-        bgmKey: 'question',
-      );
+  Future<void> startQuestionMusic() =>
+      _fadeToBgm(_loadQuestionSuspenseSource, volume: 0.12, bgmKey: 'question');
 
-  Future<void> startMainBgm() => _fadeToBgm(
-        _loadBackgroundSource,
-        volume: 0.12,
-        bgmKey: 'main',
-      );
+  Future<void> startMainBgm() =>
+      _fadeToBgm(_loadBackgroundSource, volume: 0.12, bgmKey: 'main');
 
   Future<void> stopBackgroundMusic() async {
+    _desiredBgmKey = null;
+    await _stopBackgroundMusic(preserveDesired: false);
+  }
+
+  Future<void> _stopBackgroundMusic({
+    required bool preserveDesired,
+    bool immediate = false,
+  }) async {
+    if (!preserveDesired) _desiredBgmKey = null;
     _pendingBgmKey = null;
+    _bgmRequestId++;
     if (!SoLoud.instance.isInitialized) return;
     final handle = _bgmHandle;
+    _bgmHandle = null;
+    _currentBgmSource = null;
     if (handle != null) {
-      SoLoud.instance.fadeVolume(handle, 0.0, const Duration(seconds: 1));
-      Timer(const Duration(seconds: 1), () {
-        if (SoLoud.instance.isInitialized) {
-          SoLoud.instance.stop(handle);
-        }
-      });
-      _bgmHandle = null;
-      _currentBgmSource = null;
+      if (immediate) {
+        await SoLoud.instance.stop(handle);
+      } else {
+        SoLoud.instance.fadeVolume(handle, 0.0, const Duration(seconds: 1));
+        _scheduleHandleStop(handle);
+      }
     }
   }
 
+  void _scheduleHandleStop(SoundHandle handle) {
+    late final Timer timer;
+    timer = Timer(const Duration(seconds: 1), () {
+      _fadeStopTimers.remove(timer);
+      if (SoLoud.instance.isInitialized) {
+        unawaited(SoLoud.instance.stop(handle));
+      }
+    });
+    _fadeStopTimers.add(timer);
+  }
+
   Future<void> startTicking() async {
-    if (_isMuted || _isTickingPlaying) return;
+    if (_isMuted || !_isAppActive || _isTickingPlaying) return;
     final source = await _loadTickingClockSource();
     if (_isMuted ||
         _isTickingPlaying ||
+        !_isAppActive ||
         _disposed ||
         source == null ||
         !SoLoud.instance.isInitialized) {
@@ -270,8 +298,11 @@ class AudioService {
   }
 
   Future<void> stopTicking() async {
-    if (!SoLoud.instance.isInitialized) return;
     _isTickingPlaying = false;
+    if (!SoLoud.instance.isInitialized) {
+      _tickingHandle = null;
+      return;
+    }
     if (_tickingHandle != null) {
       await SoLoud.instance.stop(_tickingHandle!);
       _tickingHandle = null;
@@ -294,9 +325,37 @@ class AudioService {
     await _applyVolumes();
 
     if (_isMuted) {
-      await stopAllLoops();
-    } else {
-      await startLobbyMusic();
+      await _stopBackgroundMusic(preserveDesired: true, immediate: true);
+      await stopTicking();
+      await stopPayout();
+    } else if (_isAppActive) {
+      await _resumeDesiredBgm();
+    }
+  }
+
+  Future<void> setAppActive(bool active) async {
+    if (_disposed || _isAppActive == active) return;
+    _isAppActive = active;
+    if (!active) {
+      await _stopBackgroundMusic(preserveDesired: true, immediate: true);
+      await stopTicking();
+      await stopPayout();
+      return;
+    }
+    if (!_isMuted) await _resumeDesiredBgm();
+  }
+
+  Future<void> _resumeDesiredBgm() async {
+    switch (_desiredBgmKey) {
+      case 'lobby':
+        await startLobbyMusic();
+        return;
+      case 'question':
+        await startQuestionMusic();
+        return;
+      case 'main':
+        await startMainBgm();
+        return;
     }
   }
 
@@ -304,10 +363,11 @@ class AudioService {
     Future<AudioSource?> Function() loadSource, {
     double volume = 0.48,
   }) async {
-    if (_isMuted) return;
+    if (_isMuted || !_isAppActive) return;
     final source = await loadSource();
     if (_isMuted ||
         _disposed ||
+        !_isAppActive ||
         source == null ||
         !SoLoud.instance.isInitialized) {
       return;
@@ -335,10 +395,11 @@ class AudioService {
       _playSfx(_loadEpicFanfareSource, volume: 0.9);
 
   Future<void> playPayout() async {
-    if (_isMuted) return;
+    if (_isMuted || !_isAppActive) return;
     final source = await _loadPayoutWinSource();
     if (_isMuted ||
         _disposed ||
+        !_isAppActive ||
         source == null ||
         !SoLoud.instance.isInitialized) {
       return;
@@ -356,9 +417,12 @@ class AudioService {
   }
 
   Future<void> stopPayout() async {
-    if (!SoLoud.instance.isInitialized) return;
     _payoutStopTimer?.cancel();
     _payoutStopTimer = null;
+    if (!SoLoud.instance.isInitialized) {
+      _payoutHandle = null;
+      return;
+    }
     if (_payoutHandle != null) {
       await SoLoud.instance.stop(_payoutHandle!);
       _payoutHandle = null;
@@ -372,9 +436,24 @@ class AudioService {
 
   void dispose() {
     _disposed = true;
+    _bgmRequestId++;
     _payoutStopTimer?.cancel();
-    if (SoLoud.instance.isInitialized) {
-      SoLoud.instance.deinit();
+    for (final timer in _fadeStopTimers) {
+      timer.cancel();
     }
+    _fadeStopTimers.clear();
+    unawaited(_disposeAudio());
+  }
+
+  Future<void> _disposeAudio() async {
+    if (!SoLoud.instance.isInitialized) return;
+    final handles = [_bgmHandle, _tickingHandle, _payoutHandle];
+    _bgmHandle = null;
+    _tickingHandle = null;
+    _payoutHandle = null;
+    for (final handle in handles.whereType<SoundHandle>()) {
+      await SoLoud.instance.stop(handle);
+    }
+    SoLoud.instance.deinit();
   }
 }
