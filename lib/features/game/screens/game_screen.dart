@@ -125,6 +125,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
         audio.startLobbyMusic();
         break;
       case RoundPhase.question:
+        audio.stopBackgroundMusic(immediate: true);
+        break;
       case RoundPhase.guessing:
         audio.startQuestionMusic();
         break;
@@ -203,7 +205,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final state = ref.read(gameStateProvider);
-      if (state.currentRound != round) return;
+      if (state.currentRound != round || state.phase != RoundPhase.question) {
+        return;
+      }
       unawaited(ref.read(audioServiceProvider).playQuestionReveal());
     });
   }
@@ -1233,7 +1237,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
     final failoverGrace = primary
         ? Duration.zero
-        : const Duration(milliseconds: 900);
+        : const Duration(milliseconds: 250);
     _questionStartTimer = Timer(delay + failoverGrace, () {
       if (!mounted) return;
       final latestRoom = ref.read(currentRoomProvider);

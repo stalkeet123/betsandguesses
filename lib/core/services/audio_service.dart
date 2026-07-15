@@ -242,9 +242,9 @@ class AudioService {
   Future<void> startMainBgm() =>
       _fadeToBgm(_loadBackgroundSource, volume: 0.12, bgmKey: 'main');
 
-  Future<void> stopBackgroundMusic() async {
+  Future<void> stopBackgroundMusic({bool immediate = false}) async {
     _desiredBgmKey = null;
-    await _stopBackgroundMusic(preserveDesired: false);
+    await _stopBackgroundMusic(preserveDesired: false, immediate: immediate);
   }
 
   Future<void> _stopBackgroundMusic({
