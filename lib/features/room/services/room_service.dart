@@ -165,6 +165,25 @@ class RoomService {
     int? nextRound,
     String? currentQuestionId,
   }) async {
+    try {
+      final response = await _client.rpc(
+        'claim_game_phase_v1',
+        params: {
+          'p_room_id': roomId,
+          'p_round_number': round,
+          'p_expected_phase': expectedPhase,
+          'p_next_phase': nextPhase,
+          'p_duration_seconds': durationSeconds,
+          'p_next_round': nextRound,
+          'p_current_question_id': currentQuestionId,
+        },
+      );
+      if (response == null) return null;
+      return Room.fromJson(Map<String, dynamic>.from(response as Map));
+    } on PostgrestException catch (error) {
+      if (!_isMissingRpc(error)) rethrow;
+    }
+
     final data = <String, dynamic>{
       'round_phase': nextPhase,
       if (nextRound != null) 'current_round': nextRound,
@@ -196,6 +215,29 @@ class RoomService {
           .select()
           .maybeSingle();
       return response == null ? null : Room.fromJson(response);
+    }
+  }
+
+  Future<Room?> startGameAtomic(
+    String roomId, {
+    required String currentQuestionId,
+    required int durationSeconds,
+    required Map<String, int> scores,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'start_game_v1',
+        params: {
+          'p_room_id': roomId,
+          'p_current_question_id': currentQuestionId,
+          'p_duration_seconds': durationSeconds,
+          'p_scores': scores,
+        },
+      );
+      return Room.fromJson(Map<String, dynamic>.from(response as Map));
+    } on PostgrestException catch (error) {
+      if (_isMissingRpc(error)) return null;
+      rethrow;
     }
   }
 
@@ -263,6 +305,19 @@ class RoomService {
         .eq('id', roomId);
   }
 
+  Future<Room?> resetToLobbyAtomic(String roomId) async {
+    try {
+      final response = await _client.rpc(
+        'reset_room_to_lobby_v1',
+        params: {'p_room_id': roomId},
+      );
+      return Room.fromJson(Map<String, dynamic>.from(response as Map));
+    } on PostgrestException catch (error) {
+      if (_isMissingRpc(error)) return null;
+      rethrow;
+    }
+  }
+
   /// Delete room
   Future<void> deleteRoom(String roomId) async {
     await _client.from('rooms').delete().eq('id', roomId);
@@ -306,6 +361,10 @@ class RoomService {
     final message = error.message.toLowerCase();
     return message.contains('phase_started_at') ||
         message.contains('phase_ends_at');
+  }
+
+  bool _isMissingRpc(PostgrestException error) {
+    return error.code == 'PGRST202' || error.code == '42883';
   }
 
   DateTime _parseServerTime(Object? value) {

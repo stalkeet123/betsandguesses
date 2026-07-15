@@ -68,8 +68,9 @@ Durum: `TAMAMLANDI`
 
 ## Faz 2 - Realtime ve Rebuild Maliyeti
 
-Durum: `KOD TAMAM, COMMIT BEKLIYOR`
+Durum: `TAMAMLANDI`
 
+- Geri donus commit'i: `7f1cf99 Optimize realtime lifecycle and game rebuilds`
 - Ayni oda kanalinin acma/kapatma islemleri siraya alindi.
 - Broadcast, devam eden kanal degisiminin bitmesini bekliyor.
 - Oda ve oyuncu stream provider'lari `autoDispose` oldu.
@@ -106,7 +107,30 @@ Durum: `CANLIDA AKTIF`
 - Publishable anon key ile bos oda RPC smoke testi fonksiyona ulasti ve beklenen
   `Room not found` guard sonucunu verdi; canli oyun verisi degismedi.
 
+## Faz 4 - Atomik Oyun Akisi Komutlari
+
+Durum: `CANLIDA AKTIF`
+
+- Migration: `supabase/migrations/20260715043000_game_flow_commands.sql`
+- Rollback: `supabase/rollbacks/20260715043000_game_flow_commands.sql`
+- `start_game_v1` oyuncu baslangic skorlarini, oda durumunu, ilk soruyu ve
+  sunucu deadline'ini tek transaction icinde yazar.
+- `claim_game_phase_v1` round ve beklenen faz eslesmesine gore tek kazananli,
+  sunucu zamani tabanli faz gecisi yapar.
+- `reset_room_to_lobby_v1` guess/bet temizligi ile oda resetini tek transaction
+  icinde tamamlar.
+- Yeni client RPC'ler kuruluysa atomik yolu, kurulu degilse legacy yolu
+  kullanir; gercek SQL/ag hatalari sessizce legacy yazima dusmez.
+- Migration Supabase SQL Editor ile 2026-07-15 tarihinde uygulandi.
+- Uc RPC imzasi ile anon/authenticated rollerinin tum execute izinleri
+  read-only katalog sorgusuyla dogrulandi.
+- Publishable anon key smoke testinde sahte oda icin faz claim'i `200/null`,
+  start ve reset komutlari beklenen `P0002 Room not found` sonucunu verdi;
+  canli oyun verisi degismedi.
+
 ## Sonraki Adim
 
-Yeni client ile iki oyunculu bir round settlement smoke testi yap. Sonraki
-server adimindan once bu migration ve rollback dosyalarini kaynak kabul et.
+Yeni client ile bir Web ve bir mobil oyuncu kullanarak tam oyun smoke testi yap:
+oyun baslatma, en az iki round, settlement, sonuclar ve Play Again. Bu iki
+migration ile rollback dosyalarini canli sunucu sozlesmesinin kaynak kaydi kabul
+et.

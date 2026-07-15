@@ -82,10 +82,13 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final room = ref.read(currentRoomProvider);
     try {
       if (room != null) {
-        await ref.read(gameServiceProvider).clearRoomGameData(room.id);
         final roomService = ref.read(roomServiceProvider);
-        await roomService.resetToLobby(room.id);
-        final resetRoom = await roomService.getRoom(room.id);
+        var resetRoom = await roomService.resetToLobbyAtomic(room.id);
+        if (resetRoom == null) {
+          await ref.read(gameServiceProvider).clearRoomGameData(room.id);
+          await roomService.resetToLobby(room.id);
+          resetRoom = await roomService.getRoom(room.id);
+        }
         _openLobby(resetRoom);
       }
     } catch (error, stackTrace) {

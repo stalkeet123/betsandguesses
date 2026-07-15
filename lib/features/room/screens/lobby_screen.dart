@@ -266,7 +266,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               ? GameConstants.startingScore
               : player.score,
       };
-      await playerService.updateScores(startingScores);
       _players = lobbyPlayers
           .map(
             (player) => player.copyWith(
@@ -275,23 +274,34 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           )
           .toList();
 
-      final deadline = await roomService.startGame(
+      final atomicStartedRoom = await roomService.startGameAtomic(
         room.id,
         currentQuestionId: question.id,
         durationSeconds: GameConstants.guessTimerSeconds,
+        scores: startingScores,
       );
+      DateTime? deadline;
+      Room startedRoom;
+      if (atomicStartedRoom == null) {
+        await playerService.updateScores(startingScores);
+        deadline = await roomService.startGame(
+          room.id,
+          currentQuestionId: question.id,
+          durationSeconds: GameConstants.guessTimerSeconds,
+        );
+        startedRoom = room.copyWith(
+          status: RoomStatus.playing,
+          currentRound: 1,
+          roundPhase: RoundPhase.guessing,
+          currentQuestionId: question.id,
+          phaseEndsAt: deadline,
+        );
+      } else {
+        startedRoom = atomicStartedRoom;
+        deadline = atomicStartedRoom.phaseEndsAt;
+      }
       _seedGameState(room, question, scores: startingScores);
-      ref
-          .read(currentRoomProvider.notifier)
-          .set(
-            room.copyWith(
-              status: RoomStatus.playing,
-              currentRound: 1,
-              roundPhase: RoundPhase.guessing,
-              currentQuestionId: question.id,
-              phaseEndsAt: deadline,
-            ),
-          );
+      ref.read(currentRoomProvider.notifier).set(startedRoom);
 
       final realtimeService = ref.read(realtimeServiceProvider);
       await realtimeService.broadcast(widget.roomCode, 'game_started', {
