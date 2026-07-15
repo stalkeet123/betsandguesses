@@ -36,6 +36,7 @@ class AudioService {
   int _bgmRequestId = 0;
   bool _isAppActive = true;
   bool _disposed = false;
+  bool _webEngineReady = false;
 
   static const _backgroundMusic = 'assets/sound/arka plan.mp3';
   static const _elevatorMusic =
@@ -60,17 +61,37 @@ class AudioService {
 
   bool get isMuted => _isMuted;
 
+  bool get _engineReady =>
+      kIsWeb ? _webEngineReady : SoLoud.instance.isInitialized;
+
   Future<void> _initPlayers() async {
-    try {
-      // Hot restart can preserve the native engine while losing Dart-side
-      // temporary-directory state. Recreate both sides together.
-      if (SoLoud.instance.isInitialized) SoLoud.instance.deinit();
-      await SoLoud.instance.init();
-      await _applyVolumes();
-    } catch (e) {
-      _initFuture = null;
-      debugPrint('SoLoud init failed: $e');
+    Object? lastError;
+    final attempts = kIsWeb ? 20 : 1;
+
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        // Hot restart can preserve the native engine while losing Dart-side
+        // temporary-directory state. Recreate both sides together.
+        if (_engineReady) {
+          SoLoud.instance.deinit();
+          if (kIsWeb) _webEngineReady = false;
+        }
+        await SoLoud.instance.init();
+        if (kIsWeb) _webEngineReady = true;
+        await _applyVolumes();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (kIsWeb) _webEngineReady = false;
+        if (kIsWeb && attempt + 1 < attempts) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          continue;
+        }
+      }
     }
+
+    _initFuture = null;
+    debugPrint('SoLoud init failed: $lastError');
   }
 
   Future<void> _ensureInitialized() async {
@@ -88,7 +109,7 @@ class AudioService {
     if (_disposed) return null;
 
     await _ensureInitialized();
-    if (_disposed || !SoLoud.instance.isInitialized) return null;
+    if (_disposed || !_engineReady) return null;
 
     final loading = _sourceLoadFutures.putIfAbsent(asset, () async {
       try {
@@ -176,7 +197,7 @@ class AudioService {
   );
 
   Future<void> _applyVolumes() async {
-    if (!SoLoud.instance.isInitialized) return;
+    if (!_engineReady) return;
     SoLoud.instance.setGlobalVolume(_isMuted ? 0.0 : 1.0);
   }
 
@@ -195,7 +216,7 @@ class AudioService {
 
     final source = await loadSource();
     if (_isMuted || !_isAppActive || _disposed) return;
-    if (!SoLoud.instance.isInitialized || source == null) return;
+    if (!_engineReady || source == null) return;
     if (requestId != _bgmRequestId) return;
     if (bgmKey != null && _pendingBgmKey != bgmKey) return;
     if (bgmKey != null) _pendingBgmKey = null;
@@ -254,7 +275,7 @@ class AudioService {
     if (!preserveDesired) _desiredBgmKey = null;
     _pendingBgmKey = null;
     _bgmRequestId++;
-    if (!SoLoud.instance.isInitialized) return;
+    if (!_engineReady) return;
     final handle = _bgmHandle;
     _bgmHandle = null;
     _currentBgmSource = null;
@@ -275,7 +296,7 @@ class AudioService {
     late final Timer timer;
     timer = Timer(delay, () {
       _fadeStopTimers.remove(timer);
-      if (SoLoud.instance.isInitialized) {
+      if (_engineReady) {
         unawaited(SoLoud.instance.stop(handle));
       }
     });
@@ -285,11 +306,14 @@ class AudioService {
   /// Prepare only the assets needed at the first question transition.
   Future<void> prepareGameAudio() async {
     await _ensureInitialized();
-    await Future.wait([
+    await Future.wait(<Future<AudioSource?>>[
       _loadQuestionSuspenseSource(),
       _loadQuestionRevealSource(),
       _loadChipSelectSource(),
       _loadChipDropSource(),
+      if (kIsWeb) _loadResultRevealSource(),
+      if (kIsWeb) _loadChipLossSource(),
+      if (kIsWeb) _loadPayoutWinSource(),
     ]);
   }
 
@@ -301,7 +325,7 @@ class AudioService {
         !_isAppActive ||
         _disposed ||
         source == null ||
-        !SoLoud.instance.isInitialized) {
+        !_engineReady) {
       return;
     }
     try {
@@ -318,7 +342,7 @@ class AudioService {
 
   Future<void> stopTicking() async {
     _isTickingPlaying = false;
-    if (!SoLoud.instance.isInitialized) {
+    if (!_engineReady) {
       _tickingHandle = null;
       return;
     }
@@ -388,7 +412,7 @@ class AudioService {
         _disposed ||
         !_isAppActive ||
         source == null ||
-        !SoLoud.instance.isInitialized) {
+        !_engineReady) {
       return;
     }
     try {
@@ -421,7 +445,7 @@ class AudioService {
         _disposed ||
         !_isAppActive ||
         source == null ||
-        !SoLoud.instance.isInitialized) {
+        !_engineReady) {
       return;
     }
     try {
@@ -439,7 +463,7 @@ class AudioService {
   Future<void> stopPayout() async {
     _payoutStopTimer?.cancel();
     _payoutStopTimer = null;
-    if (!SoLoud.instance.isInitialized) {
+    if (!_engineReady) {
       _payoutHandle = null;
       return;
     }
@@ -466,7 +490,7 @@ class AudioService {
   }
 
   Future<void> _disposeAudio() async {
-    if (!SoLoud.instance.isInitialized) return;
+    if (!_engineReady) return;
     final handles = [_bgmHandle, _tickingHandle, _payoutHandle];
     _bgmHandle = null;
     _tickingHandle = null;
@@ -475,5 +499,6 @@ class AudioService {
       await SoLoud.instance.stop(handle);
     }
     SoLoud.instance.deinit();
+    if (kIsWeb) _webEngineReady = false;
   }
 }
