@@ -51,6 +51,42 @@ Asagidaki akis mevcut surumun davranisini kaydetmek icindir; bu asamada kod degi
 
 Manuel sonuc: `BEKLIYOR`
 
+## Faz 1 - Istemci Stabilizasyonu
+
+Durum: `TAMAMLANDI`
+
+- Geri donus commit'i: `9d2f762 Stabilize game sync audio and replay flow`
+- Sunucu deadline tabanli timer ve lifecycle resync devreye alindi.
+- Faz gecislerine kosullu DB claim eklendi; birden fazla client ayni fazi
+  ilerletemiyor.
+- Reconnect snapshot, eski round event filtresi ve bet reconciliation eklendi.
+- SoLoud hot-restart baslatma hatasi ve faz bazli muzik gecisleri duzeltildi.
+- Play Again eski guess/bet verisini temizliyor ve tum client'lari lobiye
+  donduruyor.
+- 14 saf oyun/senkronizasyon testi eklendi.
+- Android debug ve Web build basarili.
+
+## Faz 2 - Realtime ve Rebuild Maliyeti
+
+Durum: `KOD TAMAM, COMMIT BEKLIYOR`
+
+- Ayni oda kanalinin acma/kapatma islemleri siraya alindi.
+- Broadcast, devam eden kanal degisiminin bitmesini bekliyor.
+- Oda ve oyuncu stream provider'lari `autoDispose` oldu.
+- Bet ekraninda soru, timer, chip bankasi, skor seridi ve board ayri Riverpod
+  rebuild sinirlarina ayrildi.
+- Player, guess ve bet sorgulari modelin kullandigi kolonlarla sinirlandi.
+- `flutter analyze`, 14 test, Android debug ve Web build basarili.
+
+## Bilinen Server Tarafi Siniri
+
+Round settlement halen birden fazla client yazimindan olusuyor. Tam cozum tek
+Postgres transaction/RPC'dir. Repoda Supabase migration baseline'i, RLS
+politikalari ve canli schema dump'i bulunmadigi icin bu fonksiyon tahminle
+eklenmedi. Sonraki server adimi once canli semayi migration baseline olarak
+Git'e almak, sonra idempotent settlement RPC ve rollback eklemektir.
+
 ## Sonraki Adim
 
-Faz 0'in sonraki ve tek kapsamli isi, mevcut davranisi degistirmeden kritik saf oyun kurallari ve model donusumleri icin characterization testleri eklemektir. Runtime controller, Realtime, timer, audio veya Supabase semasi bu adimda degismeyecektir.
+Faz 2 paketini platform build'leriyle son kez dogrula ve commit et. Ardindan
+Supabase schema/RLS baseline'i alinmadan canli DB davranisi degistirme.

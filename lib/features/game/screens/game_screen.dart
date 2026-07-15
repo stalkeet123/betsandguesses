@@ -150,7 +150,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       scores: scores,
     );
 
-    _setupRealtime();
+    await _setupRealtime();
 
     if (room.roundPhase == RoundPhase.question) {
       await _startRound(max(1, room.currentRound));
@@ -184,9 +184,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return resolved;
   }
 
-  void _setupRealtime() {
+  Future<void> _setupRealtime() async {
     final realtimeService = ref.read(realtimeServiceProvider);
-    realtimeService.joinRoom(
+    await realtimeService.joinRoom(
       widget.roomCode,
       onPhaseChange: (payload) {
         try {
@@ -437,7 +437,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _resyncRequested = false;
     _pendingBetEvents.clear();
     try {
-      if (refreshRealtime) _setupRealtime();
+      if (refreshRealtime) await _setupRealtime();
 
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
@@ -3436,9 +3436,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
-  Widget _buildBettingBoardAsset() {
-    final gameState = ref.watch(gameStateProvider);
-    final currentPlayer = ref.watch(currentPlayerProvider);
+  Widget _buildBettingBoardAsset(GameState gameState, String? currentPlayerId) {
     final canEdit = gameState.phase == RoundPhase.betting;
 
     return LayoutBuilder(
@@ -3498,7 +3496,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     _buildAllPlacedChips(
                       gameState.bets,
                       size,
-                      currentPlayer?.id,
+                      currentPlayerId,
                       canEdit: canEdit,
                       isReveal: isReveal,
                       winningSlotIndex: winningSlotIndex,
@@ -4540,17 +4538,33 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   @override
   Widget build(BuildContext context) {
-    final gameState = ref.watch(gameStateProvider);
-    final currentPlayer = ref.watch(currentPlayerProvider);
+    final routeState = ref.watch(
+      gameStateProvider.select(
+        (state) => (state.phase, state.currentRound, state.maxRounds),
+      ),
+    );
+    final phase = routeState.$1;
+    final isGameOver =
+        routeState.$2 >= routeState.$3 && phase == RoundPhase.idle;
 
-    if (gameState.isGameOver) {
-      return _buildRoundLeaderboardScreen(gameState);
+    if (isGameOver) {
+      return Consumer(
+        builder: (context, ref, _) {
+          final gameState = ref.watch(gameStateProvider);
+          return _buildRoundLeaderboardScreen(gameState);
+        },
+      );
     }
 
-    if (gameState.phase == RoundPhase.idle ||
-        gameState.phase == RoundPhase.question ||
-        gameState.phase == RoundPhase.guessing) {
-      return _buildGuessingScreen(gameState);
+    if (phase == RoundPhase.idle ||
+        phase == RoundPhase.question ||
+        phase == RoundPhase.guessing) {
+      return Consumer(
+        builder: (context, ref, _) {
+          final gameState = ref.watch(gameStateProvider);
+          return _buildGuessingScreen(gameState);
+        },
+      );
     }
 
     return PopScope(
@@ -4591,29 +4605,85 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   SizedBox(height: gapTight),
                                   SizedBox(
                                     height: isCompact ? 39 : 42,
-                                    child: _buildRoundTimer(gameState),
+                                    child: Consumer(
+                                      builder: (context, ref, _) {
+                                        ref.watch(
+                                          gameStateProvider.select(
+                                            (state) => (
+                                              state.currentRound,
+                                              state.maxRounds,
+                                              state.phase,
+                                            ),
+                                          ),
+                                        );
+                                        return _buildRoundTimer(
+                                          ref.read(gameStateProvider),
+                                        );
+                                      },
+                                    ),
                                   ),
                                   SizedBox(height: gap),
                                   Expanded(
                                     flex: isCompact ? 30 : 29,
-                                    child: _buildQuestionCard(
-                                      context,
-                                      gameState,
+                                    child: Consumer(
+                                      builder: (context, ref, _) {
+                                        ref.watch(
+                                          gameStateProvider.select(
+                                            (state) => (
+                                              state.phase,
+                                              state.currentQuestion,
+                                              state.correctAnswer,
+                                              state.winningGuessId,
+                                            ),
+                                          ),
+                                        );
+                                        return _buildQuestionCard(
+                                          context,
+                                          ref.read(gameStateProvider),
+                                        );
+                                      },
                                     ),
                                   ),
                                   SizedBox(height: gap),
                                   SizedBox(
                                     height: chipHeight,
-                                    child: _buildChipPicker(
-                                      currentPlayer,
-                                      gameState,
+                                    child: Consumer(
+                                      builder: (context, ref, _) {
+                                        ref.watch(
+                                          gameStateProvider.select(
+                                            (state) => (
+                                              state.phase,
+                                              state.bets,
+                                              state.scores,
+                                            ),
+                                          ),
+                                        );
+                                        final currentPlayer = ref.watch(
+                                          currentPlayerProvider,
+                                        );
+                                        return _buildChipPicker(
+                                          currentPlayer,
+                                          ref.read(gameStateProvider),
+                                        );
+                                      },
                                     ),
                                   ),
                                   SizedBox(height: gap),
 
                                   Expanded(
                                     flex: isCompact ? 24 : 26,
-                                    child: _buildPlayersStrip(gameState),
+                                    child: Consumer(
+                                      builder: (context, ref, _) {
+                                        ref.watch(
+                                          gameStateProvider.select(
+                                            (state) => state.scores,
+                                          ),
+                                        );
+                                        return _buildPlayersStrip(
+                                          ref.read(gameStateProvider),
+                                        );
+                                      },
+                                    ),
                                   ),
                                 ],
                               );
@@ -4622,7 +4692,33 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         ),
                       ),
                       const SizedBox(width: 4),
-                      Expanded(flex: 50, child: _buildBettingBoardAsset()),
+                      Expanded(
+                        flex: 50,
+                        child: Consumer(
+                          builder: (context, ref, _) {
+                            ref.watch(
+                              gameStateProvider.select(
+                                (state) => (
+                                  state.phase,
+                                  state.sortedGuesses,
+                                  state.bets,
+                                  state.correctAnswer,
+                                  state.winningGuessId,
+                                ),
+                              ),
+                            );
+                            final currentPlayerId = ref.watch(
+                              currentPlayerProvider.select(
+                                (player) => player?.id,
+                              ),
+                            );
+                            return _buildBettingBoardAsset(
+                              ref.read(gameStateProvider),
+                              currentPlayerId,
+                            );
+                          },
+                        ),
+                      ),
                     ],
                   ),
                 ),

@@ -5,6 +5,10 @@ import '../models/player_model.dart';
 class PlayerService {
   final SupabaseClient _client;
 
+  static const _playerSelectColumns =
+      'id, room_id, device_id, name, avatar_color, score, is_host, '
+      'is_ready, is_connected, last_seen, joined_at';
+
   PlayerService(this._client);
 
   /// Join is an atomic upsert on (room_id, device_id). This prevents duplicate
@@ -43,7 +47,7 @@ class PlayerService {
           'is_connected': true,
           'last_seen': now,
         }, onConflict: 'room_id,device_id')
-        .select()
+        .select(_playerSelectColumns)
         .single();
 
     return Player.fromJson(response);
@@ -52,7 +56,7 @@ class PlayerService {
   Future<List<Player>> getPlayers(String roomId) async {
     final response = await _client
         .from('players')
-        .select()
+        .select(_playerSelectColumns)
         .eq('room_id', roomId)
         .order('joined_at');
     return (response as List).map((e) => Player.fromJson(e)).toList();

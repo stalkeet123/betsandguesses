@@ -31,14 +31,14 @@ class RoomCodeNotifier extends Notifier<String> {
 }
 
 // ── Players Stream ──
-final playersStreamProvider =
-    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, roomId) {
+final playersStreamProvider = StreamProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, roomId) {
       final playerService = ref.watch(playerServiceProvider);
       return playerService.streamPlayers(roomId);
     });
 
-final roomStreamProvider =
-    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, roomId) {
+final roomStreamProvider = StreamProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, roomId) {
       final roomService = ref.watch(roomServiceProvider);
       return roomService.streamRoom(roomId);
     });

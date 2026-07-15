@@ -16,6 +16,11 @@ class GameService {
   static const _questionSelectColumns =
       'id, text_tr, text_en, answer, answer_unit, category, difficulty, source';
   static const _questionCandidateSelectColumns = 'id, category';
+  static const _guessSelectColumns =
+      'id, room_id, round_number, player_id, question_id, value, is_winner';
+  static const _betSelectColumns =
+      'id, room_id, round_number, player_id, target_guess_id, slot_index, '
+      'chips, payout_multiplier';
 
   List<_QuestionCandidate>? _cachedQuestionCandidates;
 
@@ -132,14 +137,14 @@ class GameService {
             'question_id': questionId,
             'value': value,
           })
-          .select()
+          .select(_guessSelectColumns)
           .single();
       return Guess.fromJson(response);
     } on PostgrestException catch (error) {
       if (error.code != '23505') rethrow;
       final existing = await _client
           .from('guesses')
-          .select()
+          .select(_guessSelectColumns)
           .eq('room_id', roomId)
           .eq('round_number', roundNumber)
           .eq('player_id', playerId)
@@ -153,7 +158,7 @@ class GameService {
   Future<List<Guess>> getGuesses(String roomId, int roundNumber) async {
     final response = await _client
         .from('guesses')
-        .select()
+        .select(_guessSelectColumns)
         .eq('room_id', roomId)
         .eq('round_number', roundNumber)
         .order('value');
@@ -336,7 +341,7 @@ class GameService {
     final response = await _client
         .from('bets')
         .insert(payload)
-        .select()
+        .select(_betSelectColumns)
         .single();
     return Bet.fromJson(response);
   }
@@ -358,7 +363,7 @@ class GameService {
         .from('bets')
         .update(payload)
         .eq('id', betId)
-        .select()
+        .select(_betSelectColumns)
         .single();
     return Bet.fromJson(response);
   }
@@ -367,7 +372,7 @@ class GameService {
   Future<List<Bet>> getBets(String roomId, int roundNumber) async {
     final response = await _client
         .from('bets')
-        .select()
+        .select(_betSelectColumns)
         .eq('room_id', roomId)
         .eq('round_number', roundNumber);
     return (response as List).map((e) => Bet.fromJson(e)).toList();
