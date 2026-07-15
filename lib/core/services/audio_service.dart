@@ -184,6 +184,7 @@ class AudioService {
     Future<AudioSource?> Function() loadSource, {
     double volume = 0.15,
     String? bgmKey,
+    Duration fadeDuration = const Duration(seconds: 1),
   }) async {
     if (bgmKey != null) {
       _desiredBgmKey = bgmKey;
@@ -203,8 +204,8 @@ class AudioService {
 
     final oldHandle = _bgmHandle;
     if (oldHandle != null) {
-      SoLoud.instance.fadeVolume(oldHandle, 0.0, const Duration(seconds: 1));
-      _scheduleHandleStop(oldHandle);
+      SoLoud.instance.fadeVolume(oldHandle, 0.0, fadeDuration);
+      _scheduleHandleStop(oldHandle, fadeDuration);
     }
 
     _currentBgmSource = source;
@@ -222,7 +223,7 @@ class AudioService {
         return;
       }
       _bgmHandle = newHandle;
-      SoLoud.instance.fadeVolume(newHandle, volume, const Duration(seconds: 1));
+      SoLoud.instance.fadeVolume(newHandle, volume, fadeDuration);
     } catch (e) {
       debugPrint('Fade to BGM failed: $e');
     }
@@ -231,8 +232,12 @@ class AudioService {
   Future<void> startLobbyMusic() =>
       _fadeToBgm(_loadElevatorSource, volume: 0.12, bgmKey: 'lobby');
 
-  Future<void> startQuestionMusic() =>
-      _fadeToBgm(_loadQuestionSuspenseSource, volume: 0.12, bgmKey: 'question');
+  Future<void> startQuestionMusic() => _fadeToBgm(
+    _loadQuestionSuspenseSource,
+    volume: 0.12,
+    bgmKey: 'question',
+    fadeDuration: const Duration(milliseconds: 350),
+  );
 
   Future<void> startMainBgm() =>
       _fadeToBgm(_loadBackgroundSource, volume: 0.12, bgmKey: 'main');
@@ -263,15 +268,27 @@ class AudioService {
     }
   }
 
-  void _scheduleHandleStop(SoundHandle handle) {
+  void _scheduleHandleStop(
+    SoundHandle handle, [
+    Duration delay = const Duration(seconds: 1),
+  ]) {
     late final Timer timer;
-    timer = Timer(const Duration(seconds: 1), () {
+    timer = Timer(delay, () {
       _fadeStopTimers.remove(timer);
       if (SoLoud.instance.isInitialized) {
         unawaited(SoLoud.instance.stop(handle));
       }
     });
     _fadeStopTimers.add(timer);
+  }
+
+  /// Prepare only the assets needed at the first question transition.
+  Future<void> prepareGameAudio() async {
+    await _ensureInitialized();
+    await Future.wait([
+      _loadQuestionSuspenseSource(),
+      _loadQuestionRevealSource(),
+    ]);
   }
 
   Future<void> startTicking() async {

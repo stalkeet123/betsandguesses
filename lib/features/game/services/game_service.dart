@@ -20,7 +20,7 @@ class GameService {
       'id, room_id, round_number, player_id, question_id, value, is_winner';
   static const _betSelectColumns =
       'id, room_id, round_number, player_id, target_guess_id, slot_index, '
-      'chips, payout_multiplier';
+      'chips, payout_multiplier, position_x, position_y';
 
   List<_QuestionCandidate>? _cachedQuestionCandidates;
 
@@ -355,6 +355,8 @@ class GameService {
     required int slotIndex,
     required int chips,
     required String clientActionId,
+    double? positionX,
+    double? positionY,
   }) async {
     final multiplier = GameConstants.boardOdds[slotIndex];
     final payload = {
@@ -366,6 +368,8 @@ class GameService {
       'chips': chips,
       'payout_multiplier': multiplier,
       'client_action_id': clientActionId,
+      if (positionX != null) 'position_x': positionX,
+      if (positionY != null) 'position_y': positionY,
     };
 
     final response = await _client
@@ -381,12 +385,16 @@ class GameService {
     required String betId,
     required String? targetGuessId,
     required int slotIndex,
+    double? positionX,
+    double? positionY,
   }) async {
     final multiplier = GameConstants.boardOdds[slotIndex];
     final payload = {
       'target_guess_id': targetGuessId,
       'slot_index': slotIndex,
       'payout_multiplier': multiplier,
+      if (positionX != null) 'position_x': positionX,
+      if (positionY != null) 'position_y': positionY,
     };
 
     final response = await _client

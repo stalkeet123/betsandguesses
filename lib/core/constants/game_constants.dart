@@ -22,6 +22,8 @@ class GameConstants {
 
   static const int guessTimerSeconds = 30;
   static const int betTimerSeconds = 45;
+  static const int roundResultsSeconds = 7;
+  static const int roundTransitionSeconds = 2;
 
   static const int maxGuessSlots = 4;
 

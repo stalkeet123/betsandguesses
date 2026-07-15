@@ -293,6 +293,10 @@ class RoomService {
   /// Reset a room so players can return to the lobby after a game.
   Future<void> resetToLobby(String roomId) async {
     await _client
+        .from('players')
+        .update({'score': GameConstants.startingScore})
+        .eq('room_id', roomId);
+    await _client
         .from('rooms')
         .update({
           'status': 'waiting',

@@ -998,11 +998,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           Positioned.fill(
             child: SafeArea(
               child: LayoutBuilder(
-                builder: (context, _) {
-                  final designHeight = kIsWeb ? 720.0 : 840.0;
+                builder: (context, constraints) {
+                  final designHeight = kIsWeb ? 780.0 : 840.0;
                   return Center(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.center,
@@ -1015,10 +1015,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               _buildLogoMarquee(),
                               const SizedBox(height: 6),
                               _buildSubtitleWithLines(),
-                              SizedBox(height: kIsWeb ? 16 : 18),
+                              SizedBox(height: kIsWeb ? 12 : 18),
                               if (kIsWeb) ...[
                                 _dimIfGuide(child: _buildWebPlayerBadge()),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 10),
                               ],
                               _buildNamePanel(),
                               const SizedBox(height: 10),
@@ -1040,10 +1040,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 const SizedBox(height: 10),
                                 _dimIfGuide(child: _buildPremiumButton()),
                               ],
-                              SizedBox(height: kIsWeb ? 14 : 16),
+                              SizedBox(height: kIsWeb ? 10 : 16),
                               _dimIfGuide(child: _buildBottomActions()),
                               if (kIsWeb) ...[
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 12),
                                 _dimIfGuide(child: const WebPromoBanner()),
                               ],
                             ],

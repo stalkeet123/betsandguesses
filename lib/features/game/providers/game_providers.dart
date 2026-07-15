@@ -219,6 +219,17 @@ class GameStateNotifier extends Notifier<GameState> {
     );
   }
 
+  void beginAuthoritativeRound(int round, RoundPhase phase) {
+    state = GameState(
+      roomId: state.roomId,
+      roomCode: state.roomCode,
+      currentRound: round,
+      maxRounds: state.maxRounds,
+      phase: phase,
+      scores: state.scores,
+    );
+  }
+
   void reset() {
     state = const GameState(roomId: '', roomCode: '');
   }

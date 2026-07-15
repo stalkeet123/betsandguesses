@@ -121,4 +121,69 @@ void main() {
     expect(bets.single.id, 'bet-1');
     expect(bets.single.chips, 3);
   });
+
+  test('bet coordinates survive database json conversion', () {
+    const bet = Bet(
+      id: 'bet-positioned',
+      roomId: 'room-1',
+      roundNumber: 3,
+      playerId: 'player-2',
+      slotIndex: 4,
+      chips: 5,
+      payoutMultiplier: 4,
+      positionX: 0.27,
+      positionY: 0.73,
+    );
+
+    final restored = Bet.fromJson({...bet.toJson(), 'id': bet.id});
+
+    expect(restored.positionX, closeTo(0.27, 0.0001));
+    expect(restored.positionY, closeTo(0.73, 0.0001));
+  });
+
+  test('authoritative bet event reconciles an optimistic insert race', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(gameStateProvider.notifier);
+    notifier.initialize(
+      'room-1',
+      'ABC123',
+      6,
+      currentRound: 2,
+      phase: RoundPhase.betting,
+    );
+
+    const optimistic = Bet(
+      id: 'local-action-1',
+      roomId: 'room-1',
+      roundNumber: 2,
+      playerId: 'player-1',
+      slotIndex: 2,
+      chips: 3,
+      payoutMultiplier: 2,
+      positionX: 0.2,
+      positionY: 0.8,
+    );
+    const authoritative = Bet(
+      id: 'bet-server-1',
+      roomId: 'room-1',
+      roundNumber: 2,
+      playerId: 'player-1',
+      slotIndex: 2,
+      chips: 3,
+      payoutMultiplier: 2,
+      positionX: 0.2,
+      positionY: 0.8,
+    );
+
+    notifier.addBet(optimistic);
+    notifier.addBet(authoritative);
+    notifier.replaceBet(optimistic.id, authoritative);
+
+    final bets = container.read(gameStateProvider).bets;
+    expect(bets, hasLength(1));
+    expect(bets.single.id, authoritative.id);
+    expect(bets.single.positionX, authoritative.positionX);
+    expect(bets.single.positionY, authoritative.positionY);
+  });
 }

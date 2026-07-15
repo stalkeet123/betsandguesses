@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+typedef BetRowChangeCallback =
+    void Function(Map<String, dynamic> record, bool isDelete);
+typedef RoomRowChangeCallback = void Function(Map<String, dynamic> record);
+
 /// Wrapper around Supabase Realtime channels for game communication
 class RealtimeService {
   final SupabaseClient _client;
@@ -12,6 +16,7 @@ class RealtimeService {
   /// Join a broadcast channel for a room
   Future<void> joinRoom(
     String roomCode, {
+    String? roomId,
     required void Function(Map<String, dynamic> payload) onPhaseChange,
     required void Function(Map<String, dynamic> payload) onGuessSubmitted,
     required void Function(Map<String, dynamic> payload) onGuessesRevealed,
@@ -25,6 +30,8 @@ class RealtimeService {
     void Function(Map<String, dynamic> payload)? onPlayerLeft,
     Map<String, dynamic>? presencePayload,
     void Function(Set<String> deviceIds)? onPresenceChanged,
+    BetRowChangeCallback? onBetRowChanged,
+    RoomRowChangeCallback? onRoomRowChanged,
   }) {
     final channelName = 'room:$roomCode';
 
@@ -67,14 +74,75 @@ class RealtimeService {
           .onBroadcast(
             event: 'player_left',
             callback: (payload) => onPlayerLeft?.call(payload),
-          )
-          .subscribe((status, error) async {
-            if (status == RealtimeSubscribeStatus.subscribed &&
-                presencePayload != null) {
+          );
+
+      if (roomId != null && onBetRowChanged != null) {
+        channel.onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'bets',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'room_id',
+            value: roomId,
+          ),
+          callback: (payload) {
+            final isDelete = payload.eventType == PostgresChangeEvent.delete;
+            final record = isDelete ? payload.oldRecord : payload.newRecord;
+            if (record.isNotEmpty) onBetRowChanged(record, isDelete);
+          },
+        );
+      }
+
+      if (roomId != null && onRoomRowChanged != null) {
+        channel.onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'rooms',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: roomId,
+          ),
+          callback: (payload) {
+            if (payload.newRecord.isNotEmpty) {
+              onRoomRowChanged(payload.newRecord);
+            }
+          },
+        );
+      }
+
+      final subscriptionReady = Completer<void>();
+      channel.subscribe((status, error) async {
+        if (status == RealtimeSubscribeStatus.subscribed) {
+          if (!subscriptionReady.isCompleted) subscriptionReady.complete();
+          if (presencePayload != null) {
+            try {
               await channel.track(presencePayload);
               onPresenceChanged?.call(currentPresenceDeviceIds());
+            } catch (_) {
+              // Presence is optional; broadcast and database sync stay active.
             }
-          });
+          }
+          return;
+        }
+
+        if (!subscriptionReady.isCompleted &&
+            (status == RealtimeSubscribeStatus.channelError ||
+                status == RealtimeSubscribeStatus.closed ||
+                status == RealtimeSubscribeStatus.timedOut)) {
+          subscriptionReady.completeError(
+            StateError('Realtime subscription failed: $status ($error)'),
+          );
+        }
+      });
+
+      try {
+        await subscriptionReady.future.timeout(const Duration(seconds: 10));
+      } catch (_) {
+        await _client.removeChannel(channel);
+        rethrow;
+      }
 
       _channels[channelName] = channel;
     });
@@ -87,7 +155,15 @@ class RealtimeService {
     Map<String, dynamic> payload,
   ) async {
     final channelName = 'room:$roomCode';
-    await _channelOperations[channelName];
+    final pendingOperation = _channelOperations[channelName];
+    if (pendingOperation != null) {
+      try {
+        await pendingOperation.timeout(const Duration(milliseconds: 750));
+      } on TimeoutException {
+        // Database mutations and local game flow must not wait for transport.
+        return;
+      }
+    }
     final channel = _channels[channelName];
     if (channel != null) {
       await channel.sendBroadcastMessage(event: event, payload: payload);

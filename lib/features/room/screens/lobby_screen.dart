@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -81,7 +83,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     _loadPlayers();
     _setupRealtimeListener();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(audioServiceProvider).startLobbyMusic();
+      final audio = ref.read(audioServiceProvider);
+      audio.startLobbyMusic();
+      unawaited(audio.prepareGameAudio());
       ref.read(gameServiceProvider).prefetchQuestions();
     });
   }
@@ -92,70 +96,71 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     if (room == null) return;
 
     final realtimeService = ref.read(realtimeServiceProvider);
-    realtimeService.joinRoom(
-      widget.roomCode,
-      onPhaseChange: (_) {},
-      onGuessSubmitted: (_) {},
-      onGuessesRevealed: (_) {},
-      onBetPlaced: (_) {},
-      onBetRemoved: (_) {},
-      onScoreUpdate: (_) {},
-      onAnswerRevealed: (_) {},
-      onGameStarted: (payload) {
-        if (_isNavigatingToGame) return;
-        _seedStartedGame(payload);
-        if (mounted) {
-          _isNavigatingToGame = true;
-          context.goNamed(
-            'game',
-            pathParameters: {'roomCode': widget.roomCode},
-          );
-        }
-      },
-      onGameEnded: (_) {},
-      onPlayerJoined: (_) {
-        // Player list updates come via playersStreamProvider.
-      },
-      onPlayerLeft: (payload) {
-        final kickedPlayerId = payload['player_id'] as String?;
-        final currentPlayer = ref.read(currentPlayerProvider);
-        // Only react if WE were the one kicked
-        if (kickedPlayerId != null &&
-            currentPlayer != null &&
-            kickedPlayerId == currentPlayer.id) {
-          ref.read(skipAutoJoinProvider.notifier).set(true);
-          ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
-          ref.read(currentRoomProvider.notifier).set(null);
-          ref.read(currentPlayerProvider.notifier).set(null);
-          if (mounted) {
-            context.goNamed('home');
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('You have been removed from the lobby.'),
-              ),
-            );
-          }
-        }
-        // The leaving player handles their own DB cleanup.
-        // The host's player list refreshes via playersStreamProvider.
-      },
-      presencePayload: currentPlayer == null
-          ? null
-          : {
-              'device_id': currentPlayer.deviceId,
-              'player_id': currentPlayer.id,
-              'name': currentPlayer.name,
+    unawaited(
+      realtimeService
+          .joinRoom(
+            widget.roomCode,
+            onPhaseChange: (_) {},
+            onGuessSubmitted: (_) {},
+            onGuessesRevealed: (_) {},
+            onBetPlaced: (_) {},
+            onBetRemoved: (_) {},
+            onScoreUpdate: (_) {},
+            onAnswerRevealed: (_) {},
+            onGameStarted: (payload) {
+              _enterStartedGamePayload(payload);
             },
-      onPresenceChanged: (deviceIds) {
-        if (!mounted) return;
-        if (_hasPresenceSync && _sameStringSet(_presentDeviceIds, deviceIds)) {
-          return;
-        }
-        setState(() {
-          _hasPresenceSync = true;
-          _presentDeviceIds = Set<String>.of(deviceIds);
-        });
-      },
+            onGameEnded: (_) {},
+            onPlayerJoined: (_) {
+              // Player list updates come via playersStreamProvider.
+            },
+            onPlayerLeft: (payload) {
+              final kickedPlayerId = payload['player_id'] as String?;
+              final currentPlayer = ref.read(currentPlayerProvider);
+              // Only react if WE were the one kicked
+              if (kickedPlayerId != null &&
+                  currentPlayer != null &&
+                  kickedPlayerId == currentPlayer.id) {
+                ref.read(skipAutoJoinProvider.notifier).set(true);
+                ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
+                ref.read(currentRoomProvider.notifier).set(null);
+                ref.read(currentPlayerProvider.notifier).set(null);
+                if (mounted) {
+                  context.goNamed('home');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('You have been removed from the lobby.'),
+                    ),
+                  );
+                }
+              }
+              // The leaving player handles their own DB cleanup.
+              // The host's player list refreshes via playersStreamProvider.
+            },
+            presencePayload: currentPlayer == null
+                ? null
+                : {
+                    'device_id': currentPlayer.deviceId,
+                    'player_id': currentPlayer.id,
+                    'name': currentPlayer.name,
+                  },
+            onPresenceChanged: (deviceIds) {
+              if (!mounted) return;
+              if (_hasPresenceSync &&
+                  _sameStringSet(_presentDeviceIds, deviceIds)) {
+                return;
+              }
+              setState(() {
+                _hasPresenceSync = true;
+                _presentDeviceIds = Set<String>.of(deviceIds);
+              });
+            },
+          )
+          .catchError((Object error, StackTrace stackTrace) {
+            debugPrint(
+              'Lobby realtime subscription failed: $error\n$stackTrace',
+            );
+          }),
     );
   }
 
@@ -172,7 +177,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
   }
 
-  Future<void> _enterStartedRoom(Room startedRoom) async {
+  void _enterStartedRoom(Room startedRoom) {
     if (_isNavigatingToGame || !mounted) return;
     if (startedRoom.status != RoomStatus.playing) {
       ref.read(currentRoomProvider.notifier).set(startedRoom);
@@ -180,43 +185,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
 
     ref.read(currentRoomProvider.notifier).set(startedRoom);
-
-    Question? question;
-    final questionId = startedRoom.currentQuestionId;
-    if (questionId != null && questionId.isNotEmpty) {
-      question = await ref
-          .read(gameServiceProvider)
-          .getQuestionById(questionId);
-    }
-
-    final players = _players.isNotEmpty
-        ? _players
-        : ref
-              .read(playerServiceProvider)
-              .collapseDuplicateConnectedPlayers(
-                await ref
-                    .read(playerServiceProvider)
-                    .getPlayers(startedRoom.id),
-              );
-    final scores = {
-      for (final player in players)
-        player.id: player.score <= 0
-            ? GameConstants.startingScore
-            : player.score,
-    };
-
-    if (question != null) {
-      _seedGameState(
-        startedRoom,
-        question,
-        round: startedRoom.currentRound <= 0 ? 1 : startedRoom.currentRound,
-        phase: startedRoom.roundPhase,
-        scores: scores,
-      );
-    }
-
-    if (!mounted || _isNavigatingToGame) return;
     _isNavigatingToGame = true;
+    context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
+  }
+
+  void _enterStartedGamePayload(Map<String, dynamic> payload) {
+    if (_isNavigatingToGame || !mounted) return;
+    _isNavigatingToGame = true;
+    _seedStartedGame(payload);
     context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
   }
 
@@ -262,9 +238,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       );
       final startingScores = {
         for (final player in lobbyPlayers.where((player) => player.isConnected))
-          player.id: player.score <= 0
-              ? GameConstants.startingScore
-              : player.score,
+          player.id: GameConstants.startingScore,
       };
       _players = lobbyPlayers
           .map(
@@ -304,14 +278,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       ref.read(currentRoomProvider.notifier).set(startedRoom);
 
       final realtimeService = ref.read(realtimeServiceProvider);
-      await realtimeService.broadcast(widget.roomCode, 'game_started', {
-        'room_id': room.id,
-        'round': 1,
-        'phase': RoundPhase.guessing.name,
-        'question': question.toJson(),
-        'scores': startingScores,
-        'phase_ends_at': deadline?.toIso8601String(),
-      });
+      unawaited(
+        realtimeService
+            .broadcast(widget.roomCode, 'game_started', {
+              'room_id': room.id,
+              'round': 1,
+              'phase': RoundPhase.guessing.name,
+              'question': question.toJson(),
+              'scores': startingScores,
+              'phase_ends_at': deadline?.toIso8601String(),
+            })
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint('Game-start broadcast failed: $error\n$stackTrace');
+            }),
+      );
 
       if (mounted) {
         _isNavigatingToGame = true;
