@@ -106,12 +106,14 @@ summary:focus-visible {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.site-nav .nav-store {
+.site-nav .nav-store,
+.site-nav .nav-primary {
   background: var(--ivory);
   color: var(--ink);
 }
 
-.site-nav .nav-store:hover {
+.site-nav .nav-store:hover,
+.site-nav .nav-primary:hover {
   background: #ffffff;
 }
 
@@ -134,6 +136,20 @@ summary:focus-visible {
   inset: 0;
   z-index: -1;
   background: rgba(4, 17, 10, 0.58);
+}
+
+.support-hero-compact {
+  min-height: 420px;
+}
+
+.support-hero-compact .hero-layout {
+  grid-template-columns: minmax(0, 760px);
+  padding-top: 62px;
+  padding-bottom: 68px;
+}
+
+.support-hero-compact .hero-copy h1 {
+  font-size: 3.5rem;
 }
 
 .hero-layout {
@@ -447,6 +463,173 @@ summary:focus-visible {
   color: #ffffff;
 }
 
+/* Product landing page */
+.about-hero {
+  min-height: 570px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--felt);
+  background-image: url('/assets/assets/background.webp');
+  background-position: center;
+  background-size: cover;
+}
+
+.about-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(3, 18, 10, 0.46);
+}
+
+.about-hero-inner {
+  min-height: 570px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 54px;
+  padding-bottom: 62px;
+  text-align: center;
+}
+
+.about-hero-logo {
+  width: min(310px, 72vw);
+  height: auto;
+  margin-bottom: 22px;
+  filter: drop-shadow(0 20px 24px rgba(0, 0, 0, 0.4));
+}
+
+.about-hero-copy {
+  max-width: 760px;
+}
+
+.about-hero h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 3.8rem;
+  line-height: 1.02;
+}
+
+.about-hero-copy > p:last-of-type {
+  max-width: 680px;
+  margin: 18px auto 0;
+  color: #e9e4d7;
+  font-size: 1.08rem;
+}
+
+.about-actions {
+  justify-content: center;
+}
+
+.showcase-band {
+  padding: 88px 0 96px;
+  background: var(--paper);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line-light);
+}
+
+.showcase-heading {
+  max-width: 760px;
+}
+
+.showcase-heading .eyebrow {
+  color: var(--gold-dark);
+}
+
+.showcase-heading > p:last-child {
+  color: #5f625c;
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.screenshot-grid figure {
+  min-width: 0;
+}
+
+.screenshot-grid img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid #c8b66f;
+  border-radius: 8px;
+  box-shadow: 0 16px 34px rgba(21, 25, 20, 0.16);
+}
+
+.how-band {
+  padding: 84px 0 90px;
+  background: var(--ink);
+  color: var(--ivory);
+}
+
+.how-band .game-flow {
+  border-color: var(--line-dark);
+}
+
+.how-band .game-flow li {
+  border-color: var(--line-dark);
+}
+
+.how-band .game-flow li > span {
+  color: var(--gold);
+}
+
+.how-band .game-flow p {
+  color: var(--muted);
+}
+
+.play-band {
+  padding: 82px 0;
+  background: var(--red);
+}
+
+.play-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 64px;
+}
+
+.play-layout h2 {
+  max-width: 680px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.45rem;
+  line-height: 1.12;
+}
+
+.play-layout .eyebrow {
+  color: #ffe39a;
+}
+
+.play-layout p:last-child {
+  max-width: 700px;
+  margin-top: 14px;
+  color: #f7e4df;
+}
+
+.play-actions {
+  min-width: 214px;
+  display: grid;
+  gap: 10px;
+}
+
+.button-light {
+  background: var(--ivory);
+  color: var(--ink);
+  border-color: #ffffff;
+}
+
+.button-light:hover {
+  background: #ffffff;
+}
+
 /* Privacy page */
 .legal-page {
   background: var(--paper);
@@ -551,6 +734,27 @@ summary:focus-visible {
   .contact-layout .button {
     justify-self: start;
   }
+
+  .screenshot-grid {
+    grid-template-columns: repeat(4, minmax(240px, 280px));
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    padding-bottom: 18px;
+  }
+
+  .screenshot-grid figure {
+    scroll-snap-align: start;
+  }
+
+  .play-layout {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  .play-actions {
+    width: min(100%, 340px);
+  }
 }
 
 @media (max-width: 620px) {
@@ -598,6 +802,10 @@ summary:focus-visible {
     min-height: auto;
   }
 
+  .support-hero-compact .hero-copy h1 {
+    font-size: 2.38rem;
+  }
+
   .hero-layout {
     padding-top: 42px;
     padding-bottom: 48px;
@@ -625,9 +833,42 @@ summary:focus-visible {
   }
 
   .content-band,
-  .game-flow-band {
+  .game-flow-band,
+  .showcase-band,
+  .how-band {
     padding-top: 64px;
     padding-bottom: 68px;
+  }
+
+  .about-hero,
+  .about-hero-inner {
+    min-height: 550px;
+  }
+
+  .about-hero-inner {
+    padding-top: 42px;
+    padding-bottom: 48px;
+  }
+
+  .about-hero-logo {
+    width: min(240px, 68vw);
+    margin-bottom: 18px;
+  }
+
+  .about-hero h1 {
+    font-size: 2.55rem;
+  }
+
+  .about-hero-copy > p:last-of-type {
+    font-size: 1rem;
+  }
+
+  .play-band {
+    padding: 62px 0;
+  }
+
+  .play-layout h2 {
+    font-size: 2rem;
   }
 
   .section-heading h2,
