@@ -5684,8 +5684,8 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
   }
 
   Future<void> _launchStore() async {
-    // Placeholder URL for now
-    final uri = Uri.parse('https://example.com/download-app');
+    final uri = Uri.parse(
+        'https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -5716,7 +5716,13 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
     return Container(
       key: key,
       alignment: Alignment.center,
-      child: const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: _launchStore,
+          child: const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
+        ),
+      ),
     );
   }
 
