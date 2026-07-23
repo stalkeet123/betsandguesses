@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +10,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
 import '../../../core/router/app_router.dart';
+import '../../../features/game/screens/debug_scene_editor_screen.dart';
+import '../../../features/spotlight/screens/debug_spotlight_prototype_screen.dart';
 import '../../../features/room/providers/room_providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -1028,6 +1030,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ),
           ),
+          if (kDebugMode)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 8,
+              right: 8,
+              child: Row(
+                children: [
+                  IconButton.filledTonal(
+                    tooltip: 'Who Knows Me prototype',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const DebugSpotlightPrototypeScreen(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.person_search_rounded),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(
+                    tooltip: 'Screenshot scene editor',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const DebugSceneEditorScreen(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.design_services_rounded),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

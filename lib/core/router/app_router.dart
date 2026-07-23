@@ -1,9 +1,10 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:go_router/go_router.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/room/screens/lobby_screen.dart';
 import '../../features/game/screens/game_screen.dart';
 import '../../features/game/screens/results_screen.dart';
+import '../../features/game/screens/debug_scene_editor_screen.dart';
 import '../../features/onboarding/screens/onboarding_screen.dart';
 import '../../features/paywall/screens/paywall_screen.dart';
 
@@ -67,5 +68,11 @@ final appRouter = GoRouter(
         return ResultsScreen(roomCode: roomCode);
       },
     ),
+    if (kDebugMode)
+      GoRoute(
+        path: '/debug/scene-editor',
+        name: 'debug-scene-editor',
+        builder: (context, state) => const DebugSceneEditorScreen(),
+      ),
   ],
 );

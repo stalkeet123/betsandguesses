@@ -97,13 +97,16 @@ void main() {
     final result = RoundSettlementResult.fromJson({
       'status': 'settled',
       'state_version': 12,
+      'answer': 123,
       'winning_guess_id': 'guess-b',
       'winning_slot_index': 3,
       'scores': {'player-a': 45, 'player-b': '30'},
+      'payouts': <String, int>{},
     });
 
     expect(result.didSettle, isTrue);
     expect(result.stateVersion, 12);
+    expect(result.answer, 123);
     expect(result.winningGuessId, 'guess-b');
     expect(result.winningSlotIndex, 3);
     expect(result.scores, {'player-a': 45, 'player-b': 30});
