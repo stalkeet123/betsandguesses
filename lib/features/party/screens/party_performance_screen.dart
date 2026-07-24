@@ -46,6 +46,8 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   bool _isBootstrapping = true;
   bool _isOpeningCamera = false;
   bool _isCapturing = false;
+  bool _showCamera = false;
+  bool _captureFlash = false;
   bool _routeScheduled = false;
   bool _snapshotSyncScheduled = false;
   bool _isRefreshingSnapshot = false;
@@ -53,6 +55,8 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   bool _isActive = true;
   bool _isDisposed = false;
   String? _cameraError;
+  List<CameraDescription> _availableCameras = const [];
+  int _cameraIndex = 0;
   List<Player> _players = const [];
   PartySnapshot? _pendingSnapshot;
   late final PartySessionNotifier _partySession;
@@ -107,6 +111,9 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       final room = ref.read(currentRoomProvider);
       if (room != null) {
         unawaited(_refreshSnapshot(room.id, loadMoments: true));
+      }
+      if (_showCamera && _cameraController == null) {
+        unawaited(_openCamera());
       }
     }
   }
@@ -327,39 +334,80 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     );
   }
 
-  Future<void> _openCamera() async {
+  Future<void> _enterCamera() async {
+    if (!_canUseRef) return;
+    setState(() {
+      _showCamera = true;
+      _cameraError = null;
+    });
+    await _openCamera();
+  }
+
+  Future<void> _closeCamera() async {
+    if (!_canUseRef) return;
+    setState(() => _showCamera = false);
+    await _disposeCamera();
+  }
+
+  Future<void> _openCamera({int? cameraIndex}) async {
     if (!_canUseRef || _isOpeningCamera || _cameraController != null) return;
+    CameraController? openingController;
     setState(() {
       _isOpeningCamera = true;
       _cameraError = null;
     });
     try {
-      final cameras = await availableCameras();
+      final cameras = _availableCameras.isEmpty
+          ? await availableCameras()
+          : _availableCameras;
       if (cameras.isEmpty) throw StateError('No camera is available.');
-      final selected = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-      final controller = CameraController(
+      _availableCameras = cameras;
+      if (cameraIndex != null) {
+        _cameraIndex = cameraIndex.clamp(0, cameras.length - 1);
+      } else {
+        final backIndex = cameras.indexWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+        );
+        _cameraIndex = backIndex < 0 ? 0 : backIndex;
+      }
+      final selected = cameras[_cameraIndex];
+      openingController = CameraController(
         selected,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
       );
-      await controller.initialize();
-      if (!_canUseRef) {
-        await controller.dispose();
+      await openingController.initialize().timeout(const Duration(seconds: 12));
+      if (!_canUseRef || !_showCamera) {
+        await openingController.dispose();
+        openingController = null;
         return;
       }
-      _cameraController = controller;
+      _cameraController = openingController;
+      openingController = null;
     } on CameraException catch (error) {
-      _cameraError = error.code == 'CameraAccessDenied'
-          ? 'Camera permission was denied. You can keep playing without it.'
-          : 'Camera is unavailable on this device.';
-    } catch (_) {
-      _cameraError = 'Camera is unavailable on this device.';
+      _cameraError =
+          error.code == 'CameraAccessDenied' ||
+              error.code == 'CameraAccessDeniedWithoutPrompt'
+          ? 'Camera access is off. Allow it in your browser or phone settings, then try again.'
+          : 'Camera could not start (${error.code}).';
+    } on TimeoutException {
+      _cameraError = 'Camera took too long to start. Close it and try again.';
+    } catch (error) {
+      _cameraError = 'Camera could not start. $error';
     } finally {
+      if (openingController != null) {
+        await openingController.dispose();
+      }
       if (_canUseRef) setState(() => _isOpeningCamera = false);
     }
+  }
+
+  Future<void> _switchCamera() async {
+    if (_availableCameras.length < 2 || _isOpeningCamera) return;
+    final nextIndex = (_cameraIndex + 1) % _availableCameras.length;
+    await _disposeCamera();
+    if (!_canUseRef || !_showCamera) return;
+    await _openCamera(cameraIndex: nextIndex);
   }
 
   Future<void> _disposeCamera() async {
@@ -385,6 +433,12 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     try {
       HapticFeedback.mediumImpact();
       final photo = await controller.takePicture();
+      if (_canUseRef) {
+        setState(() => _captureFlash = true);
+        Timer(const Duration(milliseconds: 110), () {
+          if (_canUseRef) setState(() => _captureFlash = false);
+        });
+      }
       final Uint8List bytes = await photo.readAsBytes();
       final moment = await _partySession.uploadMoment(
         roomId: snapshot.room.id,
@@ -461,76 +515,172 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         .where((moment) => moment.roundNumber == round.number)
         .toList(growable: false);
 
+    if (_showCamera) {
+      return _buildFullScreenCamera(snapshot: snapshot, moments: moments);
+    }
+
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: AppColors.ink,
-        body: Stack(
+        backgroundColor: _partyNight,
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [_partyNightBlue, _partyNight, Color(0xFF03070D)],
+            ),
+          ),
+          child: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(26, 22, 26, 26),
+                  child: _buildMinimalRoleStage(
+                    snapshot: snapshot,
+                    currentPlayer: currentPlayer,
+                    isHost: isHost,
+                    isPerformer: isPerformer,
+                    moments: moments,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMinimalRoleStage({
+    required PartySnapshot snapshot,
+    required Player? currentPlayer,
+    required bool isHost,
+    required bool isPerformer,
+    required List<PartyMoment> moments,
+  }) {
+    final round = snapshot.round;
+    final roleLabel = isPerformer
+        ? 'YOU ARE UP'
+        : isHost
+        ? 'HOST CONTROL'
+        : 'WATCH & CAPTURE';
+    final phaseLabel = switch (round.phase) {
+      PartyRoundPhase.ready => 'GET READY',
+      PartyRoundPhase.action => 'LIVE',
+      PartyRoundPhase.resultEntry => 'TIME IS UP',
+      PartyRoundPhase.resultConfirm => 'FINAL CHECK',
+      _ => 'PARTY MODE',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [_partyNight, _partyNightBlue, Color(0xFF07111D)],
-                  ),
-                ),
+            Text(
+              roleLabel,
+              style: GoogleFonts.outfit(
+                color: _partyOrangeSoft,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.7,
               ),
             ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0.85, -0.85),
-                    radius: 1.15,
-                    colors: [
-                      _partyOrange.withValues(alpha: 0.13),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
+            const Spacer(),
+            Text(
+              '${round.number} / ${snapshot.turnCount}',
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory.withValues(alpha: 0.46),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            Positioned.fill(
-              child: SafeArea(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final content = _buildContent(
-                      snapshot: snapshot,
-                      currentPlayer: currentPlayer,
-                      isHost: isHost,
-                      isPerformer: isPerformer,
-                      moments: moments,
-                    );
-                    final cameraFirst =
-                        !isPerformer &&
-                        (round.phase == PartyRoundPhase.ready ||
-                            round.phase == PartyRoundPhase.action ||
-                            round.phase == PartyRoundPhase.resultEntry ||
-                            round.phase == PartyRoundPhase.resultConfirm);
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 760),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-                          child: Column(
-                            children: [
-                              Expanded(
-                                flex: cameraFirst ? 64 : 54,
-                                child: cameraFirst ? content.$2 : content.$1,
-                              ),
-                              const SizedBox(height: 12),
-                              Expanded(
-                                flex: cameraFirst ? 36 : 46,
-                                child: cameraFirst ? content.$1 : content.$2,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+          ],
+        ),
+        const Spacer(flex: 2),
+        Text(
+          phaseLabel,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.outfit(
+            color: round.phase == PartyRoundPhase.action
+                ? _partyOrangeSoft
+                : AppColors.ivory.withValues(alpha: 0.48),
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2.4,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          round.challenge.text,
+          textAlign: TextAlign.center,
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontFamily: 'RehnCondensed',
+            color: AppColors.ivory,
+            fontSize: 46,
+            fontWeight: FontWeight.w900,
+            height: 0.94,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          round.challenge.rules,
+          textAlign: TextAlign.center,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.outfit(
+            color: AppColors.ivory.withValues(alpha: 0.58),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            height: 1.35,
+          ),
+        ),
+        const Spacer(),
+        if (round.phase == PartyRoundPhase.action) ...[
+          _buildMinimalTimer(),
+          const SizedBox(height: 22),
+        ],
+        _buildMinimalRoleControls(
+          snapshot: snapshot,
+          currentPlayer: currentPlayer,
+          isHost: isHost,
+          isPerformer: isPerformer,
+          moments: moments,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMinimalTimer({bool compact = false}) {
+    final urgent = _secondsRemaining <= 10;
+    final progress = (_secondsRemaining / 60).clamp(0.0, 1.0);
+    final size = compact ? 84.0 : 142.0;
+    return Center(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CircularProgressIndicator(
+              value: progress,
+              strokeWidth: compact ? 4 : 5,
+              backgroundColor: Colors.white.withValues(alpha: 0.12),
+              color: urgent ? const Color(0xFFE94B35) : _partyOrange,
+              strokeCap: StrokeCap.round,
+            ),
+            Center(
+              child: Text(
+                '00:${_secondsRemaining.toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  fontFamily: 'RehnCondensed',
+                  color: AppColors.ivory,
+                  fontSize: compact ? 28 : 46,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ),
@@ -540,6 +690,476 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     );
   }
 
+  Widget _buildMinimalRoleControls({
+    required PartySnapshot snapshot,
+    required Player? currentPlayer,
+    required bool isHost,
+    required bool isPerformer,
+    required List<PartyMoment> moments,
+  }) {
+    final round = snapshot.round;
+    final canConfirm = _isRequiredConfirmer(round, currentPlayer);
+    final canOpenCamera = !isPerformer && moments.length < 3;
+    final cameraButton = canOpenCamera
+        ? _secondaryButton(
+            label: moments.isEmpty
+                ? 'SAVE A MOMENT'
+                : 'SAVE ANOTHER  ${moments.length}/3',
+            icon: Icons.photo_camera_outlined,
+            onPressed: _enterCamera,
+          )
+        : null;
+
+    switch (round.phase) {
+      case PartyRoundPhase.ready:
+        if (isPerformer && !round.performerReady) {
+          return _primaryButton(
+            label: 'I AM READY',
+            icon: Icons.check_rounded,
+            onPressed: () => _runCommand(
+              (service) => service.markPerformerReady(snapshot.room.id),
+            ),
+          );
+        }
+        if (isHost && round.performerReady) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _primaryButton(
+                label: 'START 60 SECONDS',
+                icon: Icons.play_arrow_rounded,
+                onPressed: () => _runCommand(
+                  (service) => service.startAction(snapshot.room.id),
+                ),
+              ),
+              if (cameraButton != null) ...[
+                const SizedBox(height: 10),
+                cameraButton,
+              ],
+            ],
+          );
+        }
+        return Column(
+          children: [
+            _minimalStatus(
+              round.performerReady
+                  ? 'Waiting for the host'
+                  : 'Waiting for ${round.performer.name}',
+            ),
+            if (cameraButton != null) ...[
+              const SizedBox(height: 18),
+              cameraButton,
+            ],
+          ],
+        );
+      case PartyRoundPhase.action:
+        return Column(
+          children: [
+            _minimalStatus(
+              isPerformer
+                  ? 'Go. The room is counting.'
+                  : isHost
+                  ? 'Keep the count clean.'
+                  : 'Catch the moment, not the pose.',
+            ),
+            if (cameraButton != null) ...[
+              const SizedBox(height: 18),
+              cameraButton,
+            ],
+          ],
+        );
+      case PartyRoundPhase.resultEntry:
+        if (isHost) return _buildMinimalResultEntry(snapshot);
+        return Column(
+          children: [
+            _minimalStatus('The host is entering the result'),
+            if (cameraButton != null) ...[
+              const SizedBox(height: 18),
+              cameraButton,
+            ],
+          ],
+        );
+      case PartyRoundPhase.resultConfirm:
+        if (canConfirm) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${round.proposedResult ?? '—'} ${round.challenge.answerUnit}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'RehnCondensed',
+                  color: _partyOrangeSoft,
+                  fontSize: 52,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _primaryButton(
+                      label: 'CONFIRM',
+                      icon: Icons.check_rounded,
+                      onPressed: () => _runCommand(
+                        (service) => service.confirmResult(snapshot.room.id),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _secondaryButton(
+                      label: 'CORRECT',
+                      icon: Icons.edit_outlined,
+                      onPressed: () => _runCommand(
+                        (service) => service.disputeResult(snapshot.room.id),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            _minimalStatus('Waiting for score confirmation'),
+            if (cameraButton != null) ...[
+              const SizedBox(height: 18),
+              cameraButton,
+            ],
+          ],
+        );
+      case PartyRoundPhase.guessing:
+      case PartyRoundPhase.betting:
+      case PartyRoundPhase.reveal:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildMinimalResultEntry(PartySnapshot snapshot) {
+    final round = snapshot.round;
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _resultController,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'RehnCondensed',
+              color: AppColors.ivory,
+              fontSize: 36,
+              fontWeight: FontWeight.w900,
+            ),
+            decoration: InputDecoration(
+              hintText: '0–${round.challenge.maxResult}',
+              hintStyle: TextStyle(
+                color: AppColors.ivory.withValues(alpha: 0.28),
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: AppColors.ivory.withValues(alpha: 0.28),
+                ),
+              ),
+              focusedBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(color: _partyOrange, width: 2),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 18),
+        IconButton.filled(
+          onPressed: () {
+            final value = int.tryParse(_resultController.text);
+            if (value == null ||
+                value < 0 ||
+                value > round.challenge.maxResult) {
+              return;
+            }
+            _runCommand(
+              (service) =>
+                  service.submitResult(roomId: snapshot.room.id, result: value),
+            );
+          },
+          icon: const Icon(Icons.arrow_forward_rounded),
+          style: IconButton.styleFrom(
+            backgroundColor: _partyOrange,
+            foregroundColor: _partyNight,
+            minimumSize: const Size(58, 58),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _minimalStatus(String text) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      style: GoogleFonts.outfit(
+        color: AppColors.ivory.withValues(alpha: 0.58),
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+  Widget _buildFullScreenCamera({
+    required PartySnapshot snapshot,
+    required List<PartyMoment> moments,
+  }) {
+    final controller = _cameraController;
+    final round = snapshot.round;
+    final captureIsOpen =
+        round.phase == PartyRoundPhase.action ||
+        round.phase == PartyRoundPhase.resultEntry ||
+        round.phase == PartyRoundPhase.resultConfirm;
+    final canCapture =
+        captureIsOpen &&
+        moments.length < 3 &&
+        !_isCapturing &&
+        controller != null &&
+        controller.value.isInitialized;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_closeCamera());
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (controller != null && controller.value.isInitialized)
+              CameraPreview(controller)
+            else
+              _buildCameraLoading(),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0, 0.28, 0.66, 1],
+                  colors: [
+                    Color(0xB8000000),
+                    Colors.transparent,
+                    Colors.transparent,
+                    Color(0xD9000000),
+                  ],
+                ),
+              ),
+            ),
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(painter: _CameraFramePainter()),
+              ),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        IconButton(
+                          onPressed: _closeCamera,
+                          icon: const Icon(Icons.close_rounded),
+                          color: Colors.white,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.black38,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${round.performer.name.toUpperCase()}’S CHALLENGE',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white70,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                round.challenge.text,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.15,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (round.phase == PartyRoundPhase.action)
+                          _buildMinimalTimer(compact: true),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      captureIsOpen
+                          ? moments.isEmpty
+                                ? 'Save the moment'
+                                : '${moments.length} of 3 saved'
+                          : 'The shutter unlocks when the timer starts',
+                      style: GoogleFonts.outfit(
+                        color: captureIsOpen
+                            ? _partyOrangeSoft
+                            : Colors.white60,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 62,
+                          height: 62,
+                          child: moments.isEmpty
+                              ? const SizedBox.shrink()
+                              : ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    moments.last.signedUrl ?? '',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        const ColoredBox(color: Colors.white12),
+                                  ),
+                                ),
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: GestureDetector(
+                              onTap: canCapture
+                                  ? () => _captureMoment(snapshot)
+                                  : null,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 160),
+                                width: 82,
+                                height: 82,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: canCapture
+                                      ? _partyOrange
+                                      : Colors.white24,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 5,
+                                  ),
+                                  boxShadow: canCapture
+                                      ? const [
+                                          BoxShadow(
+                                            color: Colors.black54,
+                                            blurRadius: 16,
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: _isCapturing
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(25),
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2.5,
+                                        ),
+                                      )
+                                    : Icon(
+                                        moments.length >= 3
+                                            ? Icons.check_rounded
+                                            : Icons.camera_alt_rounded,
+                                        color: canCapture
+                                            ? _partyNight
+                                            : Colors.white54,
+                                        size: 32,
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 62,
+                          child: IconButton(
+                            onPressed: _availableCameras.length > 1
+                                ? _switchCamera
+                                : null,
+                            icon: const Icon(Icons.cameraswitch_rounded),
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _captureFlash ? 1 : 0,
+                  duration: const Duration(milliseconds: 90),
+                  child: const ColoredBox(color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCameraLoading() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isOpeningCamera)
+              const CircularProgressIndicator(color: _partyOrange)
+            else
+              const Icon(
+                Icons.no_photography_outlined,
+                color: Colors.white54,
+                size: 38,
+              ),
+            const SizedBox(height: 18),
+            Text(
+              _cameraError ?? 'Starting camera…',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: Colors.white70,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            if (_cameraError != null) ...[
+              const SizedBox(height: 18),
+              TextButton(
+                onPressed: _isOpeningCamera ? null : _openCamera,
+                child: const Text('TRY AGAIN'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Kept as a rollback-safe reference until the minimal Party screen is
+  // validated on physical devices.
+  // ignore: unused_element
   (Widget, Widget) _buildContent({
     required PartySnapshot snapshot,
     required Player? currentPlayer,
@@ -1203,11 +1823,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       icon: Icon(icon),
       label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       style: FilledButton.styleFrom(
-        minimumSize: const Size(160, 54),
+        minimumSize: const Size.fromHeight(56),
         backgroundColor: _partyOrange,
-        foregroundColor: AppColors.ink,
+        foregroundColor: _partyNight,
         textStyle: GoogleFonts.outfit(fontWeight: FontWeight.w900),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
@@ -1225,11 +1845,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       icon: Icon(icon),
       label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(140, 54),
+        minimumSize: const Size.fromHeight(54),
         foregroundColor: AppColors.ivory,
-        side: BorderSide(color: AppColors.ivory.withValues(alpha: 0.38)),
+        side: BorderSide(color: AppColors.ivory.withValues(alpha: 0.24)),
         textStyle: GoogleFonts.outfit(fontWeight: FontWeight.w900),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
@@ -1313,4 +1933,40 @@ class _PerformancePanel extends StatelessWidget {
       child: child,
     );
   }
+}
+
+class _CameraFramePainter extends CustomPainter {
+  const _CameraFramePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.7)
+      ..strokeWidth = 1.4
+      ..style = PaintingStyle.stroke;
+    const inset = 18.0;
+    const length = 38.0;
+    final left = inset;
+    final right = size.width - inset;
+    final top = inset;
+    final bottom = size.height - inset;
+
+    final path = Path()
+      ..moveTo(left, top + length)
+      ..lineTo(left, top)
+      ..lineTo(left + length, top)
+      ..moveTo(right - length, top)
+      ..lineTo(right, top)
+      ..lineTo(right, top + length)
+      ..moveTo(right, bottom - length)
+      ..lineTo(right, bottom)
+      ..lineTo(right - length, bottom)
+      ..moveTo(left + length, bottom)
+      ..lineTo(left, bottom)
+      ..lineTo(left, bottom - length);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CameraFramePainter oldDelegate) => false;
 }

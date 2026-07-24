@@ -20,6 +20,9 @@ import '../../../features/party/models/party_moment.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 
+const _partyCardOrange = Color(0xFFE47A32);
+const _partyCardOrangeSoft = Color(0xFFF0A060);
+
 class ResultsScreen extends ConsumerStatefulWidget {
   final String roomCode;
 
@@ -892,7 +895,7 @@ class _PartyRecapSheetState extends State<_PartyRecapSheet> {
                   ),
                   child: Center(
                     child: AspectRatio(
-                      aspectRatio: 4 / 5,
+                      aspectRatio: 9 / 16,
                       child: RepaintBoundary(
                         key: _cardKeys[index],
                         child: _PartyShareCard(
@@ -956,10 +959,11 @@ class _PartyShareCard extends StatelessWidget {
     final crowdDifference = recap.crowdGuess == null
         ? null
         : recap.result - recap.crowdGuess!;
+    final headlineValue = recap.performerGuess ?? recap.result;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: BorderRadius.circular(24),
       child: ColoredBox(
-        color: const Color(0xFF071F1C),
+        color: const Color(0xFF05080D),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -976,9 +980,9 @@ class _PartyShareCard extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF0D5B4B),
-                      Color(0xFF092722),
-                      Color(0xFF4A102F),
+                      Color(0xFF162A3A),
+                      Color(0xFF08121D),
+                      Color(0xFF24130B),
                     ],
                   ),
                 ),
@@ -990,9 +994,9 @@ class _PartyShareCard extends StatelessWidget {
                   end: Alignment.bottomCenter,
                   stops: [0, 0.42, 1],
                   colors: [
-                    Color(0x22000000),
-                    Color(0x66000000),
-                    Color(0xF2071715),
+                    Color(0x44000000),
+                    Color(0x55000000),
+                    Color(0xF205080D),
                   ],
                 ),
               ),
@@ -1005,8 +1009,8 @@ class _PartyShareCard extends StatelessWidget {
                   Row(
                     children: [
                       const Icon(
-                        Icons.casino_rounded,
-                        color: AppColors.brassLight,
+                        Icons.bolt_rounded,
+                        color: _partyCardOrangeSoft,
                         size: 22,
                       ),
                       const SizedBox(width: 8),
@@ -1021,9 +1025,9 @@ class _PartyShareCard extends StatelessWidget {
                       ),
                       const Spacer(),
                       Text(
-                        'PARTY MODE',
+                        'ROUND ${recap.roundNumber}',
                         style: GoogleFonts.outfit(
-                          color: AppColors.brassLight,
+                          color: _partyCardOrangeSoft,
                           fontSize: 10,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.2,
@@ -1033,9 +1037,11 @@ class _PartyShareCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    recap.performerName.toUpperCase(),
+                    recap.performerGuess == null
+                        ? recap.performerName.toUpperCase()
+                        : '${recap.performerName.toUpperCase()} SAID',
                     style: GoogleFonts.outfit(
-                      color: AppColors.neonCyan,
+                      color: _partyCardOrangeSoft,
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1.4,
@@ -1043,22 +1049,24 @@ class _PartyShareCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'DID ${recap.result} ${recap.answerUnit.toUpperCase()}',
+                    '$headlineValue\n${recap.answerUnit.toUpperCase()}',
                     style: const TextStyle(
                       fontFamily: 'RehnCondensed',
                       color: AppColors.ivory,
-                      fontSize: 44,
+                      fontSize: 60,
                       fontWeight: FontWeight.w900,
-                      height: 0.9,
+                      height: 0.8,
                       shadows: [Shadow(color: Colors.black87, blurRadius: 10)],
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
                   Text(
-                    'IN 60 SECONDS',
+                    recap.performerGuess == null
+                        ? 'IN 60 SECONDS'
+                        : 'REALITY CHECK: ${recap.result}',
                     style: GoogleFonts.outfit(
-                      color: AppColors.brassLight,
-                      fontSize: 15,
+                      color: _partyCardOrange,
+                      fontSize: 16,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1.4,
                     ),
@@ -1125,7 +1133,7 @@ class _RecapStat extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.36),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.28)),
+        border: Border.all(color: _partyCardOrange.withValues(alpha: 0.28)),
       ),
       child: Column(
         children: [
@@ -1147,7 +1155,7 @@ class _RecapStat extends StatelessWidget {
               value,
               maxLines: 1,
               style: GoogleFonts.outfit(
-                color: AppColors.brassLight,
+                color: _partyCardOrangeSoft,
                 fontSize: 17,
                 fontWeight: FontWeight.w900,
               ),
