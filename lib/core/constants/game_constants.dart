@@ -24,6 +24,7 @@ class GameConstants {
   static const int betTimerSeconds = 45;
   static const int partyBetTimerSeconds = 20;
   static const int roundResultsSeconds = 7;
+  static const int partyRoundResultsSeconds = 10;
   static const int roundTransitionSeconds = 1;
 
   static const int maxGuessSlots = 4;

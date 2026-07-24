@@ -89,6 +89,14 @@ void main() {
     );
   });
 
+  test('Party reveal leaves room for the board winner animation', () {
+    expect(GameConstants.partyRoundResultsSeconds, 10);
+    expect(
+      GameConstants.partyRoundResultsSeconds,
+      greaterThan(GameConstants.roundResultsSeconds),
+    );
+  });
+
   test('parses a shareable Party recap row', () {
     final recap = PartyRecapRound.fromJson({
       'round_number': 2,

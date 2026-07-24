@@ -918,6 +918,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 round.proposedResult!,
               )
         : null;
+    final winningPartyGuess =
+        round.phase == PartyRoundPhase.reveal && round.proposedResult != null
+        ? ref
+              .read(gameServiceProvider)
+              .determineWinner(sortedPartyGuesses, round.proposedResult!)
+        : null;
     final bets = round.bets
         .map((bet) {
           final player = bet.playerId == null
@@ -957,7 +963,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           correctAnswer: round.phase == PartyRoundPhase.reveal
               ? round.proposedResult
               : null,
-          winningGuessId: null,
+          winningGuessId: winningPartyGuess?.id,
           hasSubmittedGuess: round.ownGuess != null,
         );
     _partySnapshot = snapshot;
@@ -996,13 +1002,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _stopTimer();
         unawaited(_startRevealSequence(ref.read(gameStateProvider)));
         if (ref.read(isHostProvider)) {
-          _scheduleRoundAdvance(deadline: round.phaseEndsAt);
+          _scheduleRoundAdvance(
+            deadline: round.phaseEndsAt,
+            fallback: const Duration(
+              seconds: GameConstants.partyRoundResultsSeconds,
+            ),
+          );
         } else {
           _roundAdvanceTimer?.cancel();
           _roundAdvanceTimer = Timer(
             _phaseDelay(
                   round.phaseEndsAt,
-                  const Duration(seconds: GameConstants.roundResultsSeconds),
+                  const Duration(
+                    seconds: GameConstants.partyRoundResultsSeconds,
+                  ),
                 ) +
                 const Duration(seconds: 1),
             () {
@@ -1638,11 +1651,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     });
   }
 
-  void _scheduleRoundAdvance({DateTime? deadline}) {
+  void _scheduleRoundAdvance({DateTime? deadline, Duration? fallback}) {
     _roundAdvanceTimer?.cancel();
     final delay = _phaseDelay(
       deadline,
-      const Duration(seconds: GameConstants.roundResultsSeconds),
+      fallback ?? const Duration(seconds: GameConstants.roundResultsSeconds),
     );
     _roundAdvanceTimer = Timer(delay, () {
       if (mounted) unawaited(_nextRound());

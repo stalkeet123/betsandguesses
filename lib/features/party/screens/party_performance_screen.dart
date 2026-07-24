@@ -384,7 +384,6 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
               child: SafeArea(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final wide = constraints.maxWidth >= 720;
                     final content = _buildContent(
                       snapshot: snapshot,
                       currentPlayer: currentPlayer,
@@ -392,26 +391,30 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
                       isPerformer: isPerformer,
                       moments: moments,
                     );
+                    final cameraFirst =
+                        !isPerformer &&
+                        (round.phase == PartyRoundPhase.ready ||
+                            round.phase == PartyRoundPhase.action ||
+                            round.phase == PartyRoundPhase.resultEntry ||
+                            round.phase == PartyRoundPhase.resultConfirm);
                     return Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 920),
+                        constraints: const BoxConstraints(maxWidth: 760),
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-                          child: wide
-                              ? Row(
-                                  children: [
-                                    Expanded(flex: 11, child: content.$1),
-                                    const SizedBox(width: 14),
-                                    Expanded(flex: 9, child: content.$2),
-                                  ],
-                                )
-                              : Column(
-                                  children: [
-                                    Expanded(flex: 11, child: content.$1),
-                                    const SizedBox(height: 12),
-                                    Expanded(flex: 9, child: content.$2),
-                                  ],
-                                ),
+                          child: Column(
+                            children: [
+                              Expanded(
+                                flex: cameraFirst ? 64 : 54,
+                                child: cameraFirst ? content.$2 : content.$1,
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                flex: cameraFirst ? 36 : 46,
+                                child: cameraFirst ? content.$1 : content.$2,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -442,6 +445,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     };
 
     final missionPanel = _PerformancePanel(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -473,28 +477,32 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
               ),
             ],
           ),
-          const Spacer(),
+          const SizedBox(height: 8),
           Text(
             round.challenge.text,
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: 'RehnCondensed',
               color: AppColors.ivory,
-              fontSize: 38,
+              fontSize: 28,
               fontWeight: FontWeight.w900,
-              height: 0.96,
+              height: 0.94,
               shadows: const [Shadow(color: Colors.black87, blurRadius: 10)],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 7),
           Text(
             round.challenge.rules,
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.outfit(
               color: AppColors.ivory.withValues(alpha: 0.76),
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
-              height: 1.25,
+              height: 1.18,
             ),
           ),
           const Spacer(),
@@ -510,7 +518,12 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       ),
     );
 
-    final sidePanel = round.phase == PartyRoundPhase.action && !isPerformer
+    final sidePanel =
+        !isPerformer &&
+            (round.phase == PartyRoundPhase.ready ||
+                round.phase == PartyRoundPhase.action ||
+                round.phase == PartyRoundPhase.resultEntry ||
+                round.phase == PartyRoundPhase.resultConfirm)
         ? _buildCameraPanel(snapshot, moments)
         : _buildAudiencePanel(
             snapshot: snapshot,
@@ -523,30 +536,51 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   }
 
   Widget _buildLiveTimer() {
-    return Column(
-      children: [
-        Text(
-          '$_secondsRemaining',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'RehnCondensed',
-            color: AppColors.brassLight,
-            fontSize: 104,
-            fontWeight: FontWeight.w900,
-            height: 0.76,
-          ),
+    final urgent = _secondsRemaining <= 10;
+    return Container(
+      height: 68,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: urgent
+              ? const [Color(0xFF6B0E24), Color(0xFF2A0712)]
+              : const [Color(0xFF073B34), Color(0xFF10282B)],
         ),
-        const SizedBox(height: 8),
-        Text(
-          'SECONDS',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.outfit(
-            color: AppColors.ivory.withValues(alpha: 0.72),
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2,
-          ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: urgent ? AppColors.neonOrange : AppColors.brassLight,
+          width: 1.4,
         ),
-      ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            '$_secondsRemaining',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'RehnCondensed',
+              color: urgent ? Colors.white : AppColors.brassLight,
+              fontSize: 58,
+              fontWeight: FontWeight.w900,
+              height: 0.82,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'SECONDS\nLEFT',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(
+              color: AppColors.ivory.withValues(alpha: 0.72),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              height: 1.05,
+              letterSpacing: 1.3,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -748,106 +782,210 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   Widget _buildCameraPanel(PartySnapshot snapshot, List<PartyMoment> moments) {
     final controller = _cameraController;
     final full = moments.length >= 3;
+    final captureIsOpen =
+        snapshot.round.phase == PartyRoundPhase.action ||
+        snapshot.round.phase == PartyRoundPhase.resultEntry ||
+        snapshot.round.phase == PartyRoundPhase.resultConfirm;
+    final canCapture =
+        captureIsOpen &&
+        !full &&
+        !_isCapturing &&
+        controller != null &&
+        controller.value.isInitialized;
+
     return _PerformancePanel(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: ColoredBox(
-                color: Colors.black,
-                child: controller != null && controller.value.isInitialized
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Center(child: CameraPreview(controller)),
-                          Positioned(
-                            left: 10,
-                            top: 10,
-                            child: _cameraBadge('${moments.length}/3 MOMENTS'),
-                          ),
-                        ],
-                      )
-                    : Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.photo_camera_rounded,
-                                color: AppColors.neonCyan,
-                                size: 46,
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                _cameraError ??
-                                    'Capture the moment without leaving the game.',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.outfit(
-                                  color: AppColors.ivory,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              if (_cameraError == null && !full) ...[
-                                const SizedBox(height: 14),
-                                _primaryButton(
-                                  label: _isOpeningCamera
-                                      ? 'OPENING…'
-                                      : 'OPEN CAMERA',
-                                  icon: Icons.camera_alt_rounded,
-                                  onPressed: _isOpeningCamera
-                                      ? null
-                                      : _openCamera,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (controller != null && controller.value.isInitialized)
-            Row(
-              children: [
-                Expanded(child: _buildMomentStrip(moments)),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 62,
-                  height: 62,
-                  child: IconButton.filled(
-                    onPressed: full || _isCapturing
-                        ? null
-                        : () => _captureMoment(snapshot),
-                    icon: _isCapturing
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.camera_rounded, size: 30),
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.brassLight,
-                      foregroundColor: AppColors.ink,
-                    ),
+      padding: const EdgeInsets.all(7),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const ColoredBox(color: Colors.black),
+            if (controller != null && controller.value.isInitialized)
+              _buildCameraPreview(controller)
+            else
+              _buildCameraPlaceholder(full),
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0, 0.45, 1],
+                    colors: [
+                      Color(0x66000000),
+                      Colors.transparent,
+                      Color(0xD9000000),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          const SizedBox(height: 6),
-          Text(
-            'Photos are optional and shared only with this room.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(
-              color: AppColors.ivory.withValues(alpha: 0.48),
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 12,
+              child: Row(
+                children: [
+                  _cameraBadge(
+                    captureIsOpen ? 'CAMERA LIVE' : 'READY CAMERA',
+                    icon: captureIsOpen
+                        ? Icons.fiber_manual_record_rounded
+                        : Icons.videocam_outlined,
+                    accent: captureIsOpen
+                        ? AppColors.neonOrange
+                        : AppColors.neonCyan,
+                  ),
+                  const Spacer(),
+                  _cameraBadge('${moments.length}/3 MOMENTS'),
+                ],
+              ),
             ),
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          captureIsOpen
+                              ? 'SAVE THE MOMENT'
+                              : 'OPEN NOW, SHOOT WHEN THE TIMER STARTS',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            color: AppColors.ivory,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.7,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        _buildMomentStrip(moments),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: IconButton.filled(
+                      onPressed: canCapture
+                          ? () => _captureMoment(snapshot)
+                          : null,
+                      icon: _isCapturing
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : Icon(
+                              full
+                                  ? Icons.check_rounded
+                                  : captureIsOpen
+                                  ? Icons.camera_rounded
+                                  : Icons.timer_outlined,
+                              size: 32,
+                            ),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.brassLight,
+                        disabledBackgroundColor: full
+                            ? AppColors.felt.withValues(alpha: 0.92)
+                            : Colors.white.withValues(alpha: 0.18),
+                        foregroundColor: AppColors.ink,
+                        disabledForegroundColor: AppColors.ivory.withValues(
+                          alpha: 0.68,
+                        ),
+                        side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.72),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCameraPreview(CameraController controller) {
+    final previewSize = controller.value.previewSize;
+    if (previewSize == null) return CameraPreview(controller);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final portrait = constraints.maxHeight >= constraints.maxWidth;
+        final width = portrait ? previewSize.height : previewSize.width;
+        final height = portrait ? previewSize.width : previewSize.height;
+        return FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: CameraPreview(controller),
           ),
-        ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCameraPlaceholder(bool full) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(28, 28, 28, 110),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 74,
+              height: 74,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.neonCyan.withValues(alpha: 0.12),
+                border: Border.all(
+                  color: AppColors.neonCyan.withValues(alpha: 0.64),
+                  width: 1.5,
+                ),
+              ),
+              child: const Icon(
+                Icons.photo_camera_rounded,
+                color: AppColors.neonCyan,
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _cameraError ?? 'Frame the challenge and keep the best moment.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                height: 1.2,
+              ),
+            ),
+            if (_cameraError == null && !full) ...[
+              const SizedBox(height: 16),
+              _primaryButton(
+                label: _isOpeningCamera ? 'OPENING...' : 'OPEN CAMERA',
+                icon: Icons.camera_alt_rounded,
+                onPressed: _isOpeningCamera ? null : _openCamera,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -908,21 +1046,35 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     );
   }
 
-  Widget _cameraBadge(String text) {
+  Widget _cameraBadge(
+    String text, {
+    IconData? icon,
+    Color accent = AppColors.brassLight,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.68),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
       ),
-      child: Text(
-        text,
-        style: GoogleFonts.outfit(
-          color: AppColors.ivory,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.6,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, color: accent, size: 12),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            text,
+            style: GoogleFonts.outfit(
+              color: AppColors.ivory,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -412,3 +412,22 @@ Durum: `CANLIDA AKTIF, MANUEL KAMERA KABULU BEKLIYOR`
   uygulandi. Katalog dogrulamasi helper varligi, authenticated execute izni,
   anon engeli, `3` Party Storage policy'si ve upload/delete helper baglantilari
   icin `true / true / true / 3 / true / true` dondu.
+
+## Faz 18 - Party Reveal Penceresi
+
+Durum: `CANLIDA AKTIF, MANUEL AKIS KABULU BEKLIYOR`
+
+- Migration:
+  `supabase/migrations/20260724170000_extend_party_reveal_window.sql`
+- Rollback:
+  `supabase/rollbacks/20260724170000_extend_party_reveal_window.sql`
+- Performans ekranindan betting board'a donus, kazanan slot taramasi ve
+  kazanan isimlerinin gorunmesi icin Party reveal penceresi `7` saniyeden
+  `10` saniyeye cikarildi. Classic sonuc suresi degistirilmedi.
+- Party snapshot istemcide artik en yakin, asmayan tahmini de kazanan tahmin
+  olarak isaretler; betting board sonucu ve oyuncu payout'lari ayni reveal
+  yuzeyinde aciklanir.
+- Migration 2026-07-24 tarihinde Supabase SQL Editor ile canli projeye
+  uygulandi. Fonksiyondaki iki deadline'in da `10 seconds` oldugu, eski
+  `7 seconds` degerinin kalmadigi ve authenticated confirm izninin korundugu
+  `true / true / true` sonucu ile dogrulandi.
