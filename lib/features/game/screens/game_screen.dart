@@ -11,6 +11,8 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/services/audio_service.dart';
+import '../../../core/services/realtime_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../features/game/models/bet_model.dart';
@@ -70,10 +72,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
   PartySnapshot? _partySnapshot;
   bool _isPartyCommandInFlight = false;
   bool _partyRouteScheduled = false;
+  bool _isActive = true;
+  bool _isDisposed = false;
+  late final AudioService _audioService;
+  late final RealtimeService _realtimeService;
+
+  bool get _canUseRef => mounted && _isActive && !_isDisposed;
 
   @override
   void initState() {
     super.initState();
+    _audioService = ref.read(audioServiceProvider);
+    _realtimeService = ref.read(realtimeServiceProvider);
     WidgetsBinding.instance.addObserver(this);
     _bootstrapVisibleGameState();
     _initializeGame();
@@ -105,8 +115,23 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   @override
+  void activate() {
+    super.activate();
+    _isActive = true;
+  }
+
+  @override
+  void deactivate() {
+    _isActive = false;
+    _timer?.cancel();
+    _timer = null;
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
-    _scanSlotIndexNotifier.dispose();
+    _isDisposed = true;
+    _isActive = false;
     WidgetsBinding.instance.removeObserver(this);
     _stopTimer();
     _realtimeRetryTimer?.cancel();
@@ -114,7 +139,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _roundAdvanceTimer?.cancel();
     _questionStartTimer?.cancel();
     _cancelRevealEffects();
-    ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
+    _scanSlotIndexNotifier.dispose();
+    unawaited(_realtimeService.leaveRoom(widget.roomCode));
     super.dispose();
   }
 
@@ -223,7 +249,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (_revealedQuestionAudioRound == round) return;
     _revealedQuestionAudioRound = round;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!_canUseRef) return;
       final state = ref.read(gameStateProvider);
       if (state.currentRound != round || state.phase != RoundPhase.question) {
         return;
@@ -233,6 +259,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Player? _restoreCurrentPlayer(String roomId) {
+    if (!_canUseRef) return null;
     final existing = ref.read(currentPlayerProvider);
     final deviceId = ref.read(deviceIdProvider);
     Player? resolved;
@@ -835,7 +862,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     Room? roomOverride,
     bool synchronizeClock = true,
   }) async {
-    if (!mounted) return;
+    if (!_canUseRef) return;
     if (_isResyncing) {
       _resyncRequested = true;
       return;
@@ -847,6 +874,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _resyncRequested = false;
     try {
       if (refreshRealtime) await _setupRealtime();
+      if (!_canUseRef) return;
       final roomService = ref.read(roomServiceProvider);
       final partyService = ref.read(partyGameServiceProvider);
       final playerService = ref.read(playerServiceProvider);
@@ -858,7 +886,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
       final snapshot = await partyService.getSnapshot(currentRoom.id);
       final players = await playerService.getPlayers(currentRoom.id);
-      if (!mounted) return;
+      if (!_canUseRef) return;
       _players = players;
       _restoreCurrentPlayer(currentRoom.id);
       _applyPartySnapshot(snapshot);
@@ -868,7 +896,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _isResyncing = false;
       final shouldRepeat = _resyncRequested;
       _resyncRequested = false;
-      if (shouldRepeat && mounted) {
+      if (shouldRepeat && _canUseRef) {
         unawaited(_resyncPartySnapshot());
       }
     }
@@ -1046,11 +1074,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
         phase == PartyRoundPhase.action ||
         phase == PartyRoundPhase.resultEntry ||
         phase == PartyRoundPhase.resultConfirm;
-    if (!shouldOpenPerformance || _partyRouteScheduled || !mounted) return;
+    if (!shouldOpenPerformance || _partyRouteScheduled || !_canUseRef) return;
     _partyRouteScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _partyRouteScheduled = false;
-      if (!mounted) return;
+      if (!_canUseRef) return;
       context.goNamed(
         'party-performance',
         pathParameters: {'roomCode': widget.roomCode},
@@ -1059,10 +1087,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _broadcastPartyState(PartySnapshot snapshot) async {
-    await ref
-        .read(realtimeServiceProvider)
-        .broadcast(widget.roomCode, 'phase_change', {
-          'phase': snapshot.round.phase.gamePhase.name,
+    await _realtimeService.broadcast(widget.roomCode, 'phase_change', {
+      'phase': snapshot.round.phase.gamePhase.name,
           'round': snapshot.round.number,
           'state_version': snapshot.stateVersion,
         });
@@ -1075,19 +1101,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _isPartyCommandInFlight = true;
     try {
       final snapshot = await command();
+      if (!_canUseRef) return;
       _applyPartySnapshot(snapshot);
       unawaited(_broadcastPartyState(snapshot));
     } catch (error, stackTrace) {
       debugPrint('Party command failed: $error\n$stackTrace');
-      if (mounted) {
+      if (_canUseRef) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Could not continue: $error')));
       }
-      await _resyncPartySnapshot(synchronizeClock: false);
+      if (_canUseRef) {
+        await _resyncPartySnapshot(synchronizeClock: false);
+      }
     } finally {
       _isPartyCommandInFlight = false;
-      if (mounted) setState(() {});
+      if (_canUseRef) setState(() {});
     }
   }
 
@@ -1103,12 +1132,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     // Defer the provider update until after the build cycle
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (_canUseRef) {
         ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
       }
     });
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!_canUseRef) {
+        timer.cancel();
+        if (identical(_timer, timer)) _timer = null;
+        return;
+      }
       final deadline = _phaseDeadline;
       final remaining = deadline == null
           ? max(0, _timerSeconds - 1)
@@ -1120,15 +1154,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _timerSeconds = remaining;
         ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
         if (_timerSeconds == 10) {
-          ref.read(audioServiceProvider).startTicking();
+          _audioService.startTicking();
         }
       } else {
         timer.cancel();
         _timer = null;
         _timerSeconds = 0;
         ref.read(gameTimerProvider.notifier).setTimer(0);
-        ref.read(audioServiceProvider).stopTicking();
-        ref.read(audioServiceProvider).playTimeUp();
+        _audioService.stopTicking();
+        _audioService.playTimeUp();
         _handleTimerFinished();
       }
     });
@@ -1138,10 +1172,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _timer?.cancel();
     _timer = null;
     if (clearDeadline) _phaseDeadline = null;
-    ref.read(audioServiceProvider).stopTicking();
+    unawaited(_audioService.stopTicking());
   }
 
   void _handleTimerFinished() {
+    if (!_canUseRef) return;
     final gameState = ref.read(gameStateProvider);
     final room = ref.read(currentRoomProvider);
     if (room?.gameMode == GameMode.party) {
