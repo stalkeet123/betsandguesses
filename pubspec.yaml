@@ -1,7 +1,7 @@
 name: witsgame
 description: "Bets & Guesses party quiz and betting game"
 publish_to: 'none'
-version: 1.0.11+16
+version: 1.1.0+17
 
 environment:
   sdk: ^3.9.2

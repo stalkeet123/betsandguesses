@@ -47,6 +47,10 @@ enum RoundPhase {
   guessing,
   revealGuesses,
   betting,
+  partyReady,
+  partyAction,
+  partyResultEntry,
+  partyResultConfirm,
   revealAnswer,
   scoring;
 
@@ -62,6 +66,14 @@ enum RoundPhase {
         return 'Reveal Guesses';
       case RoundPhase.betting:
         return 'Betting';
+      case RoundPhase.partyReady:
+        return 'Get Ready';
+      case RoundPhase.partyAction:
+        return 'Challenge';
+      case RoundPhase.partyResultEntry:
+        return 'Enter Result';
+      case RoundPhase.partyResultConfirm:
+        return 'Confirm Result';
       case RoundPhase.revealAnswer:
         return 'Reveal Answer';
       case RoundPhase.scoring:
@@ -86,6 +98,23 @@ enum RoomStatus {
     return RoomStatus.values.firstWhere(
       (e) => e.name == value,
       orElse: () => RoomStatus.waiting,
+    );
+  }
+}
+
+enum GameMode {
+  classic,
+  party;
+
+  String get displayName => switch (this) {
+    GameMode.classic => 'CLASSIC',
+    GameMode.party => 'PARTY',
+  };
+
+  static GameMode fromString(String? value) {
+    return GameMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => GameMode.classic,
     );
   }
 }

@@ -42,21 +42,25 @@ class RoomService {
     int maxRounds = GameConstants.defaultRounds,
     int maxPlayers = GameConstants.freeMaxPlayers,
     String? category,
+    GameMode gameMode = GameMode.classic,
   }) async {
     for (var attempt = 0; attempt < 12; attempt++) {
       final code = Helpers.generateRoomCode();
       try {
-        final response = await _client.rpc(
-          'create_room_v2',
-          params: {
-            'p_code': code,
-            'p_max_rounds': maxRounds,
-            'p_max_players': maxPlayers,
-            'p_category': category == GameConstants.defaultCategory
-                ? null
-                : category,
-          },
-        );
+        final params = <String, dynamic>{
+          'p_code': code,
+          'p_max_rounds': maxRounds,
+          'p_max_players': maxPlayers,
+          'p_category': category == GameConstants.defaultCategory
+              ? null
+              : category,
+        };
+        final response = gameMode == GameMode.classic
+            ? await _client.rpc('create_room_v2', params: params)
+            : await _client.rpc(
+                'create_room_v3',
+                params: {...params, 'p_game_mode': gameMode.name},
+              );
         return Room.fromJson(Map<String, dynamic>.from(response as Map));
       } on PostgrestException catch (error) {
         if (error.code == '23505') continue;

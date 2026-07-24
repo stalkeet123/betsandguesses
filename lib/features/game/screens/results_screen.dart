@@ -101,8 +101,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final room = ref.read(currentRoomProvider);
     try {
       if (room != null) {
-        final roomService = ref.read(roomServiceProvider);
-        final resetRoom = await roomService.resetToLobbyAtomic(room.id);
+        final resetRoom = room.gameMode == GameMode.party
+            ? await ref.read(partyGameServiceProvider).resetToLobby(room.id)
+            : await ref.read(roomServiceProvider).resetToLobbyAtomic(room.id);
         if (resetRoom == null) {
           throw StateError('Secure lobby reset is unavailable.');
         }

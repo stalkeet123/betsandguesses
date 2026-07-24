@@ -126,6 +126,10 @@ class _PhasePill extends StatelessWidget {
     final color = switch (phase) {
       RoundPhase.guessing => AppColors.neonCyan,
       RoundPhase.betting => AppColors.brassLight,
+      RoundPhase.partyReady => AppColors.brassLight,
+      RoundPhase.partyAction => AppColors.neonCyan,
+      RoundPhase.partyResultEntry => AppColors.brass,
+      RoundPhase.partyResultConfirm => AppColors.chipGold,
       RoundPhase.revealAnswer => AppColors.neonGreen,
       RoundPhase.scoring => AppColors.chipGold,
       _ => AppColors.textMuted,

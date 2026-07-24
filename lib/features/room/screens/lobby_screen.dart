@@ -14,6 +14,7 @@ import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/providers/game_providers.dart';
+import '../../../features/party/models/party_snapshot.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
@@ -221,6 +222,35 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       final room = ref.read(currentRoomProvider);
       if (room == null) return;
 
+      if (room.gameMode == GameMode.party) {
+        final snapshot = await ref
+            .read(partyGameServiceProvider)
+            .startGame(
+              roomId: room.id,
+              guessDurationSeconds: GameConstants.guessTimerSeconds,
+            );
+        ref.read(currentRoomProvider.notifier).set(snapshot.room);
+        unawaited(
+          ref
+              .read(realtimeServiceProvider)
+              .broadcast(widget.roomCode, 'game_started', {
+                'room_id': room.id,
+                'mode': GameMode.party.name,
+                'round': snapshot.round.number,
+                'phase': snapshot.round.phase.gamePhase.name,
+                'state_version': snapshot.stateVersion,
+              }),
+        );
+        if (mounted) {
+          _isNavigatingToGame = true;
+          context.goNamed(
+            'game',
+            pathParameters: {'roomCode': widget.roomCode},
+          );
+        }
+        return;
+      }
+
       final gameService = ref.read(gameServiceProvider);
       final secureStart = await gameService.startGameSecure(
         roomId: room.id,
@@ -346,7 +376,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final isHost = ref.read(isHostProvider);
     if (!isHost) return false;
     final players = _activePlayers;
-    if (players.length < GameConstants.minPlayers) return false;
+    final room = ref.read(currentRoomProvider);
+    final minimumPlayers = room?.gameMode == GameMode.party
+        ? 3
+        : GameConstants.minPlayers;
+    if (players.length < minimumPlayers) return false;
     return players.where((p) => !p.isHost).every((p) => p.isReady);
   }
 
@@ -504,10 +538,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           children: [
             Expanded(child: _buildGoldRule()),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               flex: 5,
               child: Text(
-                'PRIVATE LOBBY',
+                ref.read(currentRoomProvider)?.gameMode == GameMode.party
+                    ? 'PARTY LOBBY'
+                    : 'CLASSIC LOBBY',
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 style: TextStyle(

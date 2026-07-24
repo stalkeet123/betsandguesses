@@ -10,6 +10,7 @@ class Room {
   final int maxRounds;
   final int maxPlayers;
   final String? category;
+  final GameMode gameMode;
   final RoundPhase roundPhase;
   final String? currentQuestionId;
   final int stateVersion;
@@ -26,6 +27,7 @@ class Room {
     this.maxRounds = GameConstants.defaultRounds,
     this.maxPlayers = GameConstants.freeMaxPlayers,
     this.category,
+    this.gameMode = GameMode.classic,
     this.roundPhase = RoundPhase.idle,
     this.currentQuestionId,
     this.stateVersion = 0,
@@ -44,6 +46,7 @@ class Room {
       maxRounds: json['max_rounds'] as int? ?? GameConstants.defaultRounds,
       maxPlayers: json['max_players'] as int? ?? GameConstants.freeMaxPlayers,
       category: json['category'] as String?,
+      gameMode: GameMode.fromString(json['game_mode'] as String?),
       roundPhase: RoundPhase.fromString(
         json['round_phase'] as String? ?? 'idle',
       ),
@@ -65,6 +68,7 @@ class Room {
       'max_rounds': maxRounds,
       'max_players': maxPlayers,
       'category': category,
+      'game_mode': gameMode.name,
       'round_phase': roundPhase.name,
       'current_question_id': currentQuestionId,
       'state_version': stateVersion,
@@ -84,6 +88,7 @@ class Room {
     int? maxRounds,
     int? maxPlayers,
     String? category,
+    GameMode? gameMode,
     RoundPhase? roundPhase,
     String? currentQuestionId,
     int? stateVersion,
@@ -100,6 +105,7 @@ class Room {
       maxRounds: maxRounds ?? this.maxRounds,
       maxPlayers: maxPlayers ?? this.maxPlayers,
       category: category ?? this.category,
+      gameMode: gameMode ?? this.gameMode,
       roundPhase: roundPhase ?? this.roundPhase,
       currentQuestionId: currentQuestionId ?? this.currentQuestionId,
       stateVersion: stateVersion ?? this.stateVersion,

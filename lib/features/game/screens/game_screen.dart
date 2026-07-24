@@ -20,6 +20,7 @@ import '../../../features/game/providers/game_providers.dart';
 import '../../../features/game/services/game_service.dart';
 import '../../../features/game/services/game_sync_policy.dart';
 import '../../../features/player/models/player_model.dart';
+import '../../../features/party/models/party_snapshot.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../models/game_state.dart';
@@ -65,6 +66,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _resyncRequested = false;
   DateTime? _phaseDeadline;
   final List<_PendingBetEvent> _pendingBetEvents = [];
+  PartySnapshot? _partySnapshot;
+  bool _isPartyCommandInFlight = false;
 
   @override
   void initState() {
@@ -122,15 +125,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
     switch (phase) {
       case RoundPhase.idle:
       case RoundPhase.betting:
+      case RoundPhase.partyReady:
         audio.startLobbyMusic();
         break;
       case RoundPhase.question:
         audio.stopBackgroundMusic(immediate: true);
         break;
       case RoundPhase.guessing:
+      case RoundPhase.partyAction:
         audio.startQuestionMusic();
         break;
       case RoundPhase.revealGuesses:
+      case RoundPhase.partyResultEntry:
+      case RoundPhase.partyResultConfirm:
       case RoundPhase.revealAnswer:
       case RoundPhase.scoring:
         audio.startMainBgm();
@@ -149,6 +156,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final playerService = ref.read(playerServiceProvider);
     _players = await playerService.getPlayers(room.id);
     _restoreCurrentPlayer(room.id);
+
+    if (room.gameMode == GameMode.party) {
+      unawaited(_setupRealtime());
+      await _resyncPartySnapshot(roomOverride: room);
+      return;
+    }
 
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final scores = <String, int>{};
@@ -240,6 +253,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
         roomId: roomId,
         onPhaseChange: (payload) {
           try {
+            if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+              unawaited(_resyncPartySnapshot());
+              return;
+            }
             final phase = RoundPhase.fromString(
               payload['phase'] as String? ?? 'idle',
             );
@@ -521,6 +538,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
         return;
       }
 
+      if (room.gameMode == GameMode.party) {
+        _roomSyncDebounceTimer?.cancel();
+        _roomSyncDebounceTimer = Timer(const Duration(milliseconds: 80), () {
+          if (mounted) {
+            unawaited(
+              _resyncPartySnapshot(roomOverride: room, synchronizeClock: false),
+            );
+          }
+        });
+        return;
+      }
+
       final gameState = ref.read(gameStateProvider);
       final newRound = room.currentRound > gameState.currentRound;
       final questionChanged =
@@ -622,6 +651,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
     final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
     if (currentRoom == null) return;
+    if (currentRoom.gameMode == GameMode.party) {
+      await _resyncPartySnapshot(
+        refreshRealtime: refreshRealtime,
+        roomOverride: roomOverride,
+        synchronizeClock: synchronizeClock,
+      );
+      return;
+    }
 
     _isResyncing = true;
     _resyncRequested = false;
@@ -786,6 +823,230 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  Future<void> _resyncPartySnapshot({
+    bool refreshRealtime = false,
+    Room? roomOverride,
+    bool synchronizeClock = true,
+  }) async {
+    if (_isResyncing) {
+      _resyncRequested = true;
+      return;
+    }
+    final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
+    if (currentRoom == null || currentRoom.gameMode != GameMode.party) return;
+
+    _isResyncing = true;
+    _resyncRequested = false;
+    try {
+      if (refreshRealtime) await _setupRealtime();
+      final roomService = ref.read(roomServiceProvider);
+      if (synchronizeClock) {
+        try {
+          await roomService.synchronizeServerClock(force: refreshRealtime);
+        } catch (_) {}
+      }
+
+      final snapshot = await ref
+          .read(partyGameServiceProvider)
+          .getSnapshot(currentRoom.id);
+      _players = await ref
+          .read(playerServiceProvider)
+          .getPlayers(currentRoom.id);
+      _restoreCurrentPlayer(currentRoom.id);
+      _applyPartySnapshot(snapshot);
+    } catch (error, stackTrace) {
+      debugPrint('Party snapshot sync failed: $error\n$stackTrace');
+    } finally {
+      _isResyncing = false;
+      final shouldRepeat = _resyncRequested;
+      _resyncRequested = false;
+      if (shouldRepeat && mounted) {
+        unawaited(_resyncPartySnapshot());
+      }
+    }
+  }
+
+  void _applyPartySnapshot(PartySnapshot snapshot) {
+    final previous = _partySnapshot;
+    if (previous != null &&
+        snapshot.round.number == previous.round.number &&
+        snapshot.stateVersion < previous.stateVersion) {
+      return;
+    }
+
+    final round = snapshot.round;
+    final question = Question(
+      id: round.challenge.id,
+      textTr: round.challenge.text,
+      textEn: round.challenge.text,
+      answer: round.phase == PartyRoundPhase.reveal
+          ? round.proposedResult
+          : null,
+      answerUnit: round.challenge.answerUnit,
+      category: 'Party Challenge',
+      source: round.challenge.rules,
+    );
+    final guesses = round.guesses
+        .map(
+          (guess) => Guess(
+            id: guess.id,
+            roomId: snapshot.room.id,
+            roundNumber: round.number,
+            playerId: guess.playerId ?? 'anonymous-${guess.id}',
+            questionId: round.challenge.id,
+            value: guess.value,
+            playerName: guess.playerName,
+            playerColor: guess.playerColor,
+          ),
+        )
+        .toList(growable: false);
+    final sortedPartyGuesses = List<Guess>.of(guesses)
+      ..sort((a, b) => a.value.compareTo(b.value));
+    final winningPartySlot =
+        round.phase == PartyRoundPhase.reveal && round.proposedResult != null
+        ? ref
+              .read(gameServiceProvider)
+              .determineWinningBetSlotIndex(
+                sortedPartyGuesses,
+                round.proposedResult!,
+              )
+        : null;
+    final bets = round.bets
+        .map((bet) {
+          final player = bet.playerId == null
+              ? null
+              : _playerById(bet.playerId!);
+          return Bet(
+            id: bet.id,
+            roomId: snapshot.room.id,
+            roundNumber: round.number,
+            playerId: bet.playerId ?? 'hidden-${bet.id}',
+            slotIndex: bet.slotIndex,
+            chips: bet.chips,
+            payoutMultiplier: GameConstants.boardOdds[bet.slotIndex],
+            won: winningPartySlot == bet.slotIndex,
+            playerName: player?.name,
+            playerColor: player?.avatarColor,
+            positionX: bet.positionX,
+            positionY: bet.positionY,
+          );
+        })
+        .toList(growable: false);
+
+    final currentPlayer = ref.read(currentPlayerProvider);
+    ref.read(currentRoomProvider.notifier).set(snapshot.room);
+    ref
+        .read(gameStateProvider.notifier)
+        .applySnapshot(
+          roomId: snapshot.room.id,
+          roomCode: snapshot.room.code,
+          currentRound: round.number,
+          maxRounds: snapshot.turnCount,
+          phase: round.phase.gamePhase,
+          currentQuestion: question,
+          guesses: guesses,
+          bets: bets,
+          scores: snapshot.scores,
+          correctAnswer: round.phase == PartyRoundPhase.reveal
+              ? round.proposedResult
+              : null,
+          winningGuessId: null,
+          hasSubmittedGuess: round.ownGuess != null,
+        );
+    _partySnapshot = snapshot;
+
+    if (previous?.round.number != round.number) {
+      _guessInput = '';
+      _selectedChipValue = null;
+      _selectedBetId = null;
+      _isSubmittingGuess = false;
+      _roundWinners.clear();
+      _roundPayouts.clear();
+      _revealedResultRound = null;
+    }
+    _syncAudioForPhase(round.phase.gamePhase);
+    switch (round.phase) {
+      case PartyRoundPhase.guessing:
+        _startTimer(
+          GameConstants.guessTimerSeconds,
+          deadline: round.phaseEndsAt,
+        );
+        break;
+      case PartyRoundPhase.betting:
+        _startTimer(GameConstants.betTimerSeconds, deadline: round.phaseEndsAt);
+        break;
+      case PartyRoundPhase.action:
+        _startTimer(
+          round.challenge.durationSeconds,
+          deadline: round.phaseEndsAt,
+        );
+        break;
+      case PartyRoundPhase.reveal:
+        _stopTimer();
+        unawaited(_startRevealSequence(ref.read(gameStateProvider)));
+        if (ref.read(isHostProvider)) {
+          _scheduleRoundAdvance(deadline: round.phaseEndsAt);
+        } else {
+          _roundAdvanceTimer?.cancel();
+          _roundAdvanceTimer = Timer(
+            _phaseDelay(
+                  round.phaseEndsAt,
+                  const Duration(seconds: GameConstants.roundResultsSeconds),
+                ) +
+                const Duration(seconds: 1),
+            () {
+              if (mounted) unawaited(_resyncPartySnapshot());
+            },
+          );
+        }
+        break;
+      case PartyRoundPhase.ready:
+      case PartyRoundPhase.resultEntry:
+      case PartyRoundPhase.resultConfirm:
+        _stopTimer();
+        break;
+    }
+    if (currentPlayer?.id == round.performer.id &&
+        round.phase != PartyRoundPhase.betting) {
+      _selectedChipValue = null;
+      _selectedBetId = null;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _broadcastPartyState(PartySnapshot snapshot) async {
+    await ref
+        .read(realtimeServiceProvider)
+        .broadcast(widget.roomCode, 'phase_change', {
+          'phase': snapshot.round.phase.gamePhase.name,
+          'round': snapshot.round.number,
+          'state_version': snapshot.stateVersion,
+        });
+  }
+
+  Future<void> _runPartyCommand(
+    Future<PartySnapshot> Function() command,
+  ) async {
+    if (_isPartyCommandInFlight) return;
+    _isPartyCommandInFlight = true;
+    try {
+      final snapshot = await command();
+      _applyPartySnapshot(snapshot);
+      unawaited(_broadcastPartyState(snapshot));
+    } catch (error, stackTrace) {
+      debugPrint('Party command failed: $error\n$stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not continue: $error')));
+      }
+      await _resyncPartySnapshot(synchronizeClock: false);
+    } finally {
+      _isPartyCommandInFlight = false;
+      if (mounted) setState(() {});
+    }
+  }
+
   void _startTimer(int fallbackSeconds, {DateTime? deadline}) {
     _stopTimer();
     _phaseDeadline = deadline;
@@ -838,6 +1099,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   void _handleTimerFinished() {
     final gameState = ref.read(gameStateProvider);
+    final room = ref.read(currentRoomProvider);
+    if (room?.gameMode == GameMode.party) {
+      if (gameState.phase == RoundPhase.guessing) {
+        _revealGuesses();
+      } else if (gameState.phase == RoundPhase.betting) {
+        _revealAnswer();
+      } else if (gameState.phase == RoundPhase.partyAction) {
+        _runPartyCommand(
+          () => ref.read(partyGameServiceProvider).openResultEntry(room!.id),
+        );
+      }
+      return;
+    }
     if (gameState.phase == RoundPhase.guessing) {
       _revealGuesses();
     } else if (gameState.phase == RoundPhase.betting) {
@@ -908,6 +1182,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _isRevealingGuesses = true;
 
     try {
+      if (room.gameMode == GameMode.party) {
+        await _runPartyCommand(
+          () => ref
+              .read(partyGameServiceProvider)
+              .advanceToBetting(
+                room.id,
+                durationSeconds: GameConstants.betTimerSeconds,
+              ),
+        );
+        return;
+      }
       final gameService = ref.read(gameServiceProvider);
       final realtimeService = ref.read(realtimeServiceProvider);
       final gameNotifier = ref.read(gameStateProvider.notifier);
@@ -974,6 +1259,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Future<void> _revealAnswer() async {
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
+
+    if (room.gameMode == GameMode.party) {
+      _stopTimer();
+      await _runPartyCommand(
+        () => ref.read(partyGameServiceProvider).beginReady(room.id),
+      );
+      return;
+    }
 
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
@@ -1149,6 +1442,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   int _currentPlayerRoundPayout(GameState gameState) {
     final currentPlayer = ref.read(currentPlayerProvider);
+    final partyRound = _partySnapshot?.round;
+    if (currentPlayer != null &&
+        partyRound?.phase == PartyRoundPhase.reveal &&
+        partyRound?.performer.id == currentPlayer.id) {
+      return _partyPerformerBonus(partyRound!);
+    }
     final winningSlotIndex = _winningBetSlotIndex(gameState);
     if (currentPlayer == null || winningSlotIndex == null) return 0;
 
@@ -1163,6 +1462,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return payout;
   }
 
+  int _partyPerformerBonus(PartyRoundSnapshot round) {
+    final result = round.proposedResult;
+    final values = round.guesses.map((guess) => guess.value).toList()..sort();
+    if (result == null || values.isEmpty) return 0;
+    final middle = values.length ~/ 2;
+    final crowdLine = values.length.isOdd
+        ? values[middle]
+        : ((values[middle - 1] + values[middle]) / 2).ceil();
+    return result >= crowdLine ? 2 : 0;
+  }
+
   int _currentPlayerTotalBets(GameState gameState) {
     final currentPlayer = ref.read(currentPlayerProvider);
     if (currentPlayer == null) return 0;
@@ -1171,10 +1481,60 @@ class _GameScreenState extends ConsumerState<GameScreen>
         .fold(0, (sum, bet) => sum + bet.chips);
   }
 
+  bool _canCurrentPlayerEditBets(GameState gameState) {
+    if (gameState.phase != RoundPhase.betting) return false;
+    final room = ref.read(currentRoomProvider);
+    final player = ref.read(currentPlayerProvider);
+    if (room?.gameMode != GameMode.party) return true;
+    return player != null && _partySnapshot?.round.performer.id != player.id;
+  }
+
   Future<void> _nextRound() async {
     final gameState = ref.read(gameStateProvider);
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
+    if (room.gameMode == GameMode.party) {
+      if (!ref.read(isHostProvider)) {
+        await _resyncPartySnapshot();
+        return;
+      }
+      if (_isPartyCommandInFlight) return;
+      _isPartyCommandInFlight = true;
+      try {
+        final response = await ref
+            .read(partyGameServiceProvider)
+            .advanceRound(room.id);
+        if (response['finished'] == true) {
+          final roomJson = response['room'];
+          if (roomJson is Map) {
+            ref
+                .read(currentRoomProvider.notifier)
+                .set(Room.fromJson(Map<String, dynamic>.from(roomJson)));
+          }
+          unawaited(
+            ref
+                .read(realtimeServiceProvider)
+                .broadcast(widget.roomCode, 'game_ended', const {}),
+          );
+          if (mounted) {
+            context.goNamed(
+              'results',
+              pathParameters: {'roomCode': widget.roomCode},
+            );
+          }
+          return;
+        }
+        final snapshot = PartySnapshot.fromJson(response);
+        _applyPartySnapshot(snapshot);
+        unawaited(_broadcastPartyState(snapshot));
+      } catch (error, stackTrace) {
+        debugPrint('Party round advance failed: $error\n$stackTrace');
+        await _resyncPartySnapshot(synchronizeClock: false);
+      } finally {
+        _isPartyCommandInFlight = false;
+      }
+      return;
+    }
     final roomService = ref.read(roomServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
 
@@ -1290,6 +1650,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     setState(() => _isSubmittingGuess = true);
 
     try {
+      if (room.gameMode == GameMode.party) {
+        final snapshot = await ref
+            .read(partyGameServiceProvider)
+            .submitGuess(roomId: room.id, value: value);
+        _applyPartySnapshot(snapshot);
+        unawaited(_broadcastPartyState(snapshot));
+        return;
+      }
       await gameService.submitGuess(
         roomId: room.id,
         roundNumber: gameState.currentRound,
@@ -1384,6 +1752,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (room == null || player == null || _isBetOperationInFlight) {
       return;
     }
+    if (room.gameMode == GameMode.party &&
+        _partySnapshot?.round.performer.id == player.id) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The performer predicts, but does not bet this round.'),
+        ),
+      );
+      return;
+    }
 
     final totalBets = _currentPlayerTotalBets(gameState);
     final currentScore = gameState.scores[player.id] ?? player.score;
@@ -1430,6 +1807,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (mounted) setState(() {});
 
     try {
+      if (room.gameMode == GameMode.party) {
+        final snapshot = await ref
+            .read(partyGameServiceProvider)
+            .placeBet(
+              roomId: room.id,
+              slotIndex: slotIndex,
+              chips: chips,
+              clientActionId: clientActionId,
+              positionX: safeDx,
+              positionY: safeDy,
+            );
+        gameNotifier.removeBetById(optimisticId);
+        _applyPartySnapshot(snapshot);
+        unawaited(_broadcastPartyState(snapshot));
+        return;
+      }
       final bet = await gameService.placeBet(
         roomId: room.id,
         roundNumber: gameState.currentRound,
@@ -1519,6 +1912,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (mounted) setState(() {});
 
     try {
+      if (room.gameMode == GameMode.party) {
+        final snapshot = await ref
+            .read(partyGameServiceProvider)
+            .moveBet(
+              roomId: room.id,
+              betId: sourceBet.id,
+              slotIndex: targetSlotIndex,
+              positionX: safeDx,
+              positionY: safeDy,
+            );
+        _applyPartySnapshot(snapshot);
+        unawaited(_broadcastPartyState(snapshot));
+        return;
+      }
       final movedBet = await gameService.updateBet(
         betId: sourceBet.id,
         targetGuessId: targetGuessId,
@@ -1583,6 +1990,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     try {
       if (!bet.id.startsWith('local-')) {
+        final room = ref.read(currentRoomProvider);
+        if (room?.gameMode == GameMode.party) {
+          final snapshot = await ref
+              .read(partyGameServiceProvider)
+              .removeBet(roomId: room!.id, betId: bet.id);
+          _applyPartySnapshot(snapshot);
+          unawaited(_broadcastPartyState(snapshot));
+          return;
+        }
         await gameService.removeBet(bet.id);
         unawaited(
           realtimeService
@@ -1811,7 +2227,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(width: 8),
               Text(
-                'QUESTION',
+                ref.read(currentRoomProvider)?.gameMode == GameMode.party
+                    ? 'PARTY CHALLENGE'
+                    : 'QUESTION',
                 style: GoogleFonts.outfit(
                   color: AppColors.felt,
                   fontSize: 14,
@@ -2086,7 +2504,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             )
             .toList();
 
-        final canEdit = gameState.phase == RoundPhase.betting;
+        final canEdit = _canCurrentPlayerEditBets(gameState);
         final pickerTitle = !canEdit
             ? 'CHIPS LOCKED'
             : selectedBet != null
@@ -2529,11 +2947,37 @@ class _GameScreenState extends ConsumerState<GameScreen>
           Expanded(
             child: gameState.currentQuestion == null
                 ? const _QuestionLoadingText(color: AppColors.feltDark)
-                : _AdaptiveQuestionText(
-                    text: gameState.currentQuestion!.getText(locale: 'en'),
-                    color: AppColors.feltDark,
-                    minFontSize: 22,
-                    maxFontSize: 46,
+                : Column(
+                    children: [
+                      Expanded(
+                        child: _AdaptiveQuestionText(
+                          text: gameState.currentQuestion!.getText(
+                            locale: 'en',
+                          ),
+                          color: AppColors.feltDark,
+                          minFontSize: 22,
+                          maxFontSize: 46,
+                        ),
+                      ),
+                      if (ref.read(currentRoomProvider)?.gameMode ==
+                              GameMode.party &&
+                          gameState.currentQuestion?.source != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          gameState.currentQuestion!.source!,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            color: AppColors.mahoganyDark.withValues(
+                              alpha: 0.76,
+                            ),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
           ),
         ],
@@ -3812,7 +4256,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildBettingBoardAsset(GameState gameState, String? currentPlayerId) {
-    final canEdit = gameState.phase == RoundPhase.betting;
+    final canEdit = _canCurrentPlayerEditBets(gameState);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -4945,6 +5389,350 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
+  Future<void> _showPartyResultEntryDialog() async {
+    final snapshot = _partySnapshot;
+    if (snapshot == null || !ref.read(isHostProvider)) return;
+    final controller = TextEditingController();
+    final result = await showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.feltDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.brassLight, width: 1.5),
+        ),
+        title: Text(
+          'ENTER THE RESULT',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.outfit(
+            color: AppColors.brassLight,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${snapshot.round.performer.name} · ${snapshot.round.challenge.answerUnit}',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory,
+                fontSize: 34,
+                fontWeight: FontWeight.w900,
+              ),
+              decoration: InputDecoration(
+                hintText: '0–${snapshot.round.challenge.maxResult}',
+                hintStyle: TextStyle(
+                  color: AppColors.ivory.withValues(alpha: 0.35),
+                ),
+                filled: true,
+                fillColor: Colors.black.withValues(alpha: 0.25),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: AppColors.brass.withValues(alpha: 0.55),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(
+                    color: AppColors.brassLight,
+                    width: 2,
+                  ),
+                ),
+              ),
+              onSubmitted: (value) {
+                final parsed = int.tryParse(value);
+                if (parsed != null &&
+                    parsed >= 0 &&
+                    parsed <= snapshot.round.challenge.maxResult) {
+                  Navigator.of(dialogContext).pop(parsed);
+                }
+              },
+            ),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(controller.text);
+              if (parsed == null ||
+                  parsed < 0 ||
+                  parsed > snapshot.round.challenge.maxResult) {
+                return;
+              }
+              Navigator.of(dialogContext).pop(parsed);
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.brassLight,
+              foregroundColor: AppColors.ink,
+            ),
+            child: const Text('SEND FOR CONFIRMATION'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    await _runPartyCommand(
+      () => ref
+          .read(partyGameServiceProvider)
+          .submitResult(roomId: snapshot.room.id, result: result),
+    );
+  }
+
+  Widget _buildPartyPhaseOverlay(GameState gameState) {
+    final snapshot = _partySnapshot;
+    if (snapshot == null) return const SizedBox.shrink();
+    final round = snapshot.round;
+    if (round.phase == PartyRoundPhase.guessing ||
+        round.phase == PartyRoundPhase.betting ||
+        round.phase == PartyRoundPhase.reveal) {
+      return const SizedBox.shrink();
+    }
+
+    final currentPlayer = ref.read(currentPlayerProvider);
+    final isHost = currentPlayer?.isHost == true;
+    final isPerformer = currentPlayer?.id == round.performer.id;
+    final hostId = _players.where((player) => player.isHost).firstOrNull?.id;
+    final requiredConfirmerId = round.performer.id == hostId
+        ? round.witness?.id
+        : round.performer.id;
+    final isRequiredConfirmer = currentPlayer?.id == requiredConfirmerId;
+
+    String eyebrow;
+    String title;
+    String detail;
+    List<Widget> actions = const [];
+    switch (round.phase) {
+      case PartyRoundPhase.ready:
+        eyebrow = 'GET READY';
+        title = '${round.performer.name}, YOU’RE UP';
+        detail = round.performerReady
+            ? 'Performer is ready. The host can start the 60-second timer.'
+            : '${round.challenge.rules}\nThe timer starts only after the performer is ready.';
+        actions = [
+          if (isPerformer && !round.performerReady)
+            _partyActionButton(
+              label: 'I’M READY',
+              icon: Icons.check_circle_rounded,
+              onPressed: () => _runPartyCommand(
+                () => ref
+                    .read(partyGameServiceProvider)
+                    .markPerformerReady(snapshot.room.id),
+              ),
+            ),
+          if (isHost && round.performerReady)
+            _partyActionButton(
+              label: 'START 60 SECONDS',
+              icon: Icons.timer_rounded,
+              onPressed: () => _runPartyCommand(
+                () => ref
+                    .read(partyGameServiceProvider)
+                    .startAction(snapshot.room.id),
+              ),
+            ),
+        ];
+        break;
+      case PartyRoundPhase.action:
+        eyebrow = 'LIVE CHALLENGE';
+        title = '${round.performer.name.toUpperCase()} — GO!';
+        detail = round.challenge.rules;
+        break;
+      case PartyRoundPhase.resultEntry:
+        eyebrow = 'TIME’S UP';
+        title = 'WHAT WAS THE RESULT?';
+        detail = isHost
+            ? 'Enter the observed result. It must be confirmed before points are awarded.'
+            : 'Waiting for the host to enter the result.';
+        actions = [
+          if (isHost)
+            _partyActionButton(
+              label: 'ENTER RESULT',
+              icon: Icons.dialpad_rounded,
+              onPressed: _showPartyResultEntryDialog,
+            ),
+        ];
+        break;
+      case PartyRoundPhase.resultConfirm:
+        eyebrow = 'CONFIRM RESULT';
+        title =
+            '${round.proposedResult ?? '—'} ${round.challenge.answerUnit.toUpperCase()}';
+        final confirmerName = round.performer.id == hostId
+            ? round.witness?.name ?? 'the witness'
+            : round.performer.name;
+        detail = isRequiredConfirmer
+            ? 'Does this match what happened?'
+            : 'Waiting for $confirmerName to confirm the host’s result.';
+        actions = [
+          if (isRequiredConfirmer) ...[
+            _partyActionButton(
+              label: 'CONFIRM',
+              icon: Icons.verified_rounded,
+              onPressed: () => _runPartyCommand(
+                () => ref
+                    .read(partyGameServiceProvider)
+                    .confirmResult(snapshot.room.id),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _partyActionButton(
+              label: 'CORRECT IT',
+              icon: Icons.edit_rounded,
+              isSecondary: true,
+              onPressed: () => _runPartyCommand(
+                () => ref
+                    .read(partyGameServiceProvider)
+                    .disputeResult(snapshot.room.id),
+              ),
+            ),
+          ],
+        ];
+        break;
+      case PartyRoundPhase.guessing:
+      case PartyRoundPhase.betting:
+      case PartyRoundPhase.reveal:
+        return const SizedBox.shrink();
+    }
+
+    return Positioned.fill(
+      child: ColoredBox(
+        color: AppColors.ink.withValues(alpha: 0.82),
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Container(
+                margin: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF092E28),
+                      Color(0xFF0E4A3E),
+                      Color(0xFF24101B),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: AppColors.brassLight, width: 1.5),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black54,
+                      blurRadius: 30,
+                      offset: Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      eyebrow,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.brassLight,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.8,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                        height: 1.05,
+                      ),
+                    ),
+                    if (round.phase == PartyRoundPhase.action) ...[
+                      const SizedBox(height: 14),
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final seconds = ref.watch(gameTimerProvider);
+                          return Text(
+                            '$seconds',
+                            style: const TextStyle(
+                              fontFamily: 'RehnCondensed',
+                              color: AppColors.brassLight,
+                              fontSize: 96,
+                              fontWeight: FontWeight.w900,
+                              height: 0.85,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Text(
+                      detail,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: 0.78),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (actions.isNotEmpty) ...[
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: actions,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _partyActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onPressed,
+    bool isSecondary = false,
+  }) {
+    return Flexible(
+      child: FilledButton.icon(
+        onPressed: _isPartyCommandInFlight ? null : onPressed,
+        icon: Icon(icon, size: 20),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        style: FilledButton.styleFrom(
+          backgroundColor: isSecondary
+              ? AppColors.mahogany
+              : AppColors.brassLight,
+          foregroundColor: isSecondary ? AppColors.ivory : AppColors.ink,
+          minimumSize: const Size(150, 52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final routeState = ref.watch(
@@ -5138,6 +5926,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
               ),
+              if (ref.read(currentRoomProvider)?.gameMode == GameMode.party)
+                _buildPartyPhaseOverlay(ref.read(gameStateProvider)),
             ],
           ),
         ),
@@ -5685,7 +6475,8 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
 
   Future<void> _launchStore() async {
     final uri = Uri.parse(
-        'https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr');
+      'https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr',
+    );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -5720,7 +6511,10 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           onTap: _launchStore,
-          child: const CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
+          child: const CachedAssetImage(
+            AppAssetPaths.logo,
+            fit: BoxFit.contain,
+          ),
         ),
       ),
     );

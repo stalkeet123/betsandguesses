@@ -8,6 +8,7 @@ import '../services/revenuecat_service.dart';
 import '../../features/room/services/room_service.dart';
 import '../../features/player/services/player_service.dart';
 import '../../features/game/services/game_service.dart';
+import '../../features/party/services/party_game_service.dart';
 import '../../features/player/models/player_model.dart';
 
 // ── Supabase Client ──
@@ -26,6 +27,10 @@ final playerServiceProvider = Provider<PlayerService>((ref) {
 
 final gameServiceProvider = Provider<GameService>((ref) {
   return GameService(ref.watch(supabaseClientProvider));
+});
+
+final partyGameServiceProvider = Provider<PartyGameService>((ref) {
+  return PartyGameService(ref.watch(supabaseClientProvider));
 });
 
 final realtimeServiceProvider = Provider<RealtimeService>((ref) {
@@ -89,10 +94,11 @@ class PlayerNameNotifier extends Notifier<String> {
 
 // ── Current Player (after joining a room) ──
 // Onboarding
-final onboardingSeenProvider =
-    NotifierProvider<OnboardingSeenNotifier, bool>(() {
-      return OnboardingSeenNotifier();
-    });
+final onboardingSeenProvider = NotifierProvider<OnboardingSeenNotifier, bool>(
+  () {
+    return OnboardingSeenNotifier();
+  },
+);
 
 class OnboardingSeenNotifier extends Notifier<bool> {
   static const _key = 'onboarding_seen_v1';
