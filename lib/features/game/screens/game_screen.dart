@@ -835,6 +835,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     Room? roomOverride,
     bool synchronizeClock = true,
   }) async {
+    if (!mounted) return;
     if (_isResyncing) {
       _resyncRequested = true;
       return;
@@ -847,18 +848,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
     try {
       if (refreshRealtime) await _setupRealtime();
       final roomService = ref.read(roomServiceProvider);
+      final partyService = ref.read(partyGameServiceProvider);
+      final playerService = ref.read(playerServiceProvider);
       if (synchronizeClock) {
         try {
           await roomService.synchronizeServerClock(force: refreshRealtime);
         } catch (_) {}
       }
 
-      final snapshot = await ref
-          .read(partyGameServiceProvider)
-          .getSnapshot(currentRoom.id);
-      _players = await ref
-          .read(playerServiceProvider)
-          .getPlayers(currentRoom.id);
+      final snapshot = await partyService.getSnapshot(currentRoom.id);
+      final players = await playerService.getPlayers(currentRoom.id);
+      if (!mounted) return;
+      _players = players;
       _restoreCurrentPlayer(currentRoom.id);
       _applyPartySnapshot(snapshot);
     } catch (error, stackTrace) {
@@ -2530,7 +2531,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         currentPlayer?.id == partyRound?.performer.id) {
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
@@ -2549,27 +2550,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
             const Icon(
               Icons.sports_gymnastics_rounded,
               color: AppColors.brassLight,
-              size: 27,
+              size: 23,
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 3),
             Text(
               'FRIENDS ARE BETTING',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 color: AppColors.ivory,
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.8,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 1),
             Text(
               'Your performance starts after the betting timer.',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 color: AppColors.ivory.withValues(alpha: 0.62),
-                fontSize: 10,
+                fontSize: 9,
                 fontWeight: FontWeight.w600,
+                height: 1,
               ),
             ),
           ],

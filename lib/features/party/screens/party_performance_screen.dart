@@ -19,6 +19,13 @@ import '../models/party_snapshot.dart';
 import '../providers/party_session_provider.dart';
 import '../services/party_game_service.dart';
 
+const _partyNight = Color(0xFF050C16);
+const _partyNightBlue = Color(0xFF0A1C2C);
+const _partyBlueRaised = Color(0xFF102A3E);
+const _partyOrange = Color(0xFFE47A32);
+const _partyOrangeSoft = Color(0xFFF0A060);
+const _partyMutedBlue = Color(0xFF7892A7);
+
 class PartyPerformanceScreen extends ConsumerStatefulWidget {
   final String roomCode;
 
@@ -372,9 +379,9 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      const Color(0xFF160718).withValues(alpha: 0.62),
-                      const Color(0xFF052B28).withValues(alpha: 0.88),
-                      Colors.black.withValues(alpha: 0.74),
+                      _partyNight.withValues(alpha: 0.72),
+                      _partyNightBlue.withValues(alpha: 0.92),
+                      Colors.black.withValues(alpha: 0.82),
                     ],
                   ),
                 ),
@@ -451,17 +458,13 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.bolt_rounded,
-                color: AppColors.brassLight,
-                size: 20,
-              ),
+              const Icon(Icons.bolt_rounded, color: _partyOrangeSoft, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   phaseLabel,
                   style: GoogleFonts.outfit(
-                    color: AppColors.brassLight,
+                    color: _partyOrangeSoft,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.4,
                   ),
@@ -543,12 +546,12 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: urgent
-              ? const [Color(0xFF6B0E24), Color(0xFF2A0712)]
-              : const [Color(0xFF073B34), Color(0xFF10282B)],
+              ? const [Color(0xFF5B2415), Color(0xFF1B1010)]
+              : const [_partyBlueRaised, _partyNightBlue],
         ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: urgent ? AppColors.neonOrange : AppColors.brassLight,
+          color: urgent ? _partyOrange : _partyMutedBlue,
           width: 1.4,
         ),
       ),
@@ -561,7 +564,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'RehnCondensed',
-              color: urgent ? Colors.white : AppColors.brassLight,
+              color: urgent ? Colors.white : _partyOrangeSoft,
               fontSize: 58,
               fontWeight: FontWeight.w900,
               height: 0.82,
@@ -664,7 +667,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
               },
               icon: const Icon(Icons.arrow_forward_rounded),
               style: IconButton.styleFrom(
-                backgroundColor: AppColors.brassLight,
+                backgroundColor: _partyOrange,
                 foregroundColor: AppColors.ink,
                 minimumSize: const Size(58, 58),
               ),
@@ -681,7 +684,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'RehnCondensed',
-                color: AppColors.brassLight,
+                color: _partyOrangeSoft,
                 fontSize: 46,
                 fontWeight: FontWeight.w900,
               ),
@@ -747,7 +750,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
             isPerformer
                 ? Icons.sports_gymnastics_rounded
                 : Icons.groups_rounded,
-            color: AppColors.neonCyan,
+            color: _partyMutedBlue,
             size: 48,
           ),
           const SizedBox(height: 14),
@@ -832,9 +835,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
                     icon: captureIsOpen
                         ? Icons.fiber_manual_record_rounded
                         : Icons.videocam_outlined,
-                    accent: captureIsOpen
-                        ? AppColors.neonOrange
-                        : AppColors.neonCyan,
+                    accent: captureIsOpen ? _partyOrange : _partyMutedBlue,
                   ),
                   const Spacer(),
                   _cameraBadge('${moments.length}/3 MOMENTS'),
@@ -896,9 +897,9 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
                               size: 32,
                             ),
                       style: IconButton.styleFrom(
-                        backgroundColor: AppColors.brassLight,
+                        backgroundColor: _partyOrange,
                         disabledBackgroundColor: full
-                            ? AppColors.felt.withValues(alpha: 0.92)
+                            ? _partyBlueRaised.withValues(alpha: 0.92)
                             : Colors.white.withValues(alpha: 0.18),
                         foregroundColor: AppColors.ink,
                         disabledForegroundColor: AppColors.ivory.withValues(
@@ -921,24 +922,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   }
 
   Widget _buildCameraPreview(CameraController controller) {
-    final previewSize = controller.value.previewSize;
-    if (previewSize == null) return CameraPreview(controller);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final portrait = constraints.maxHeight >= constraints.maxWidth;
-        final width = portrait ? previewSize.height : previewSize.width;
-        final height = portrait ? previewSize.width : previewSize.height;
-        return FittedBox(
-          fit: BoxFit.cover,
-          clipBehavior: Clip.hardEdge,
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: CameraPreview(controller),
-          ),
-        );
-      },
-    );
+    return CameraPreview(controller);
   }
 
   Widget _buildCameraPlaceholder(bool full) {
@@ -953,15 +937,15 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
               height: 74,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.neonCyan.withValues(alpha: 0.12),
+                color: _partyMutedBlue.withValues(alpha: 0.12),
                 border: Border.all(
-                  color: AppColors.neonCyan.withValues(alpha: 0.64),
+                  color: _partyMutedBlue.withValues(alpha: 0.64),
                   width: 1.5,
                 ),
               ),
               child: const Icon(
                 Icons.photo_camera_rounded,
-                color: AppColors.neonCyan,
+                color: _partyMutedBlue,
                 size: 36,
               ),
             ),
@@ -1049,7 +1033,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   Widget _cameraBadge(
     String text, {
     IconData? icon,
-    Color accent = AppColors.brassLight,
+    Color accent = _partyOrangeSoft,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1086,13 +1070,13 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.24),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.36)),
+        border: Border.all(color: _partyOrange.withValues(alpha: 0.42)),
       ),
       child: Text(
         text,
         textAlign: TextAlign.center,
         style: GoogleFonts.outfit(
-          color: AppColors.brassLight,
+          color: _partyOrangeSoft,
           fontSize: 11,
           fontWeight: FontWeight.w900,
           letterSpacing: 0.7,
@@ -1115,7 +1099,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       style: FilledButton.styleFrom(
         minimumSize: const Size(160, 54),
-        backgroundColor: AppColors.brassLight,
+        backgroundColor: _partyOrange,
         foregroundColor: AppColors.ink,
         textStyle: GoogleFonts.outfit(fontWeight: FontWeight.w900),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1147,18 +1131,18 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
 
   Widget _buildLoading(String? error) {
     return Scaffold(
-      backgroundColor: AppColors.feltDark,
+      backgroundColor: _partyNight,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(28),
           child: error == null
-              ? const CircularProgressIndicator(color: AppColors.brassLight)
+              ? const CircularProgressIndicator(color: _partyOrange)
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(
                       Icons.cloud_off_rounded,
-                      color: AppColors.brassLight,
+                      color: _partyOrangeSoft,
                       size: 42,
                     ),
                     const SizedBox(height: 14),
@@ -1203,14 +1187,14 @@ class _PerformancePanel extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFF082F2A).withValues(alpha: 0.96),
-            const Color(0xFF111D25).withValues(alpha: 0.96),
-            const Color(0xFF2B0C22).withValues(alpha: 0.94),
+            _partyNightBlue.withValues(alpha: 0.98),
+            _partyBlueRaised.withValues(alpha: 0.96),
+            _partyNight.withValues(alpha: 0.98),
           ],
         ),
         borderRadius: BorderRadius.circular(26),
         border: Border.all(
-          color: AppColors.brassLight.withValues(alpha: 0.64),
+          color: _partyOrange.withValues(alpha: 0.58),
           width: 1.3,
         ),
         boxShadow: [
