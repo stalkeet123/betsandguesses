@@ -2226,16 +2226,23 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 color: AppColors.felt,
               ),
               const SizedBox(width: 8),
-              Text(
-                ref.read(currentRoomProvider)?.gameMode == GameMode.party
-                    ? 'PARTY CHALLENGE'
-                    : 'QUESTION',
-                style: GoogleFonts.outfit(
-                  color: AppColors.felt,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.8,
-                  height: 1,
+              Flexible(
+                flex: 3,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    ref.read(currentRoomProvider)?.gameMode == GameMode.party
+                        ? 'PARTY CHALLENGE'
+                        : 'QUESTION',
+                    maxLines: 1,
+                    style: GoogleFonts.outfit(
+                      color: AppColors.felt,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                      height: 1,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -5517,14 +5524,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     String eyebrow;
     String title;
     String detail;
+    late final String statusText;
     List<Widget> actions = const [];
     switch (round.phase) {
       case PartyRoundPhase.ready:
         eyebrow = 'GET READY';
         title = '${round.performer.name}, YOU’RE UP';
-        detail = round.performerReady
-            ? 'Performer is ready. The host can start the 60-second timer.'
-            : '${round.challenge.rules}\nThe timer starts only after the performer is ready.';
+        detail = round.challenge.rules;
+        statusText = round.performerReady
+            ? (isHost
+                  ? 'READY — START THE 60-SECOND TIMER'
+                  : 'PERFORMER READY — WAITING FOR THE HOST')
+            : (isPerformer
+                  ? 'TAP I’M READY WHEN YOU ARE IN POSITION'
+                  : 'WAITING FOR ${round.performer.name.toUpperCase()} TO TAP I’M READY');
         actions = [
           if (isPerformer && !round.performerReady)
             _partyActionButton(
@@ -5552,6 +5565,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
         eyebrow = 'LIVE CHALLENGE';
         title = '${round.performer.name.toUpperCase()} — GO!';
         detail = round.challenge.rules;
+        statusText =
+            'COUNT ONLY VALID ${round.challenge.answerUnit.toUpperCase()}';
         break;
       case PartyRoundPhase.resultEntry:
         eyebrow = 'TIME’S UP';
@@ -5559,6 +5574,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         detail = isHost
             ? 'Enter the observed result. It must be confirmed before points are awarded.'
             : 'Waiting for the host to enter the result.';
+        statusText = isHost ? 'HOST INPUT REQUIRED' : 'WAITING FOR HOST';
         actions = [
           if (isHost)
             _partyActionButton(
@@ -5578,6 +5594,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         detail = isRequiredConfirmer
             ? 'Does this match what happened?'
             : 'Waiting for $confirmerName to confirm the host’s result.';
+        statusText = isRequiredConfirmer
+            ? 'YOUR CONFIRMATION IS REQUIRED'
+            : 'WAITING FOR ${confirmerName.toUpperCase()}';
         actions = [
           if (isRequiredConfirmer) ...[
             _partyActionButton(
@@ -5611,7 +5630,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     return Positioned.fill(
       child: ColoredBox(
-        color: AppColors.ink.withValues(alpha: 0.82),
+        color: AppColors.ink.withValues(alpha: 0.58),
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -5689,6 +5708,31 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.24),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: AppColors.brassLight.withValues(alpha: 0.42),
+                        ),
+                      ),
+                      child: Text(
+                        statusText,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.outfit(
+                          color: AppColors.brassLight,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.55,
+                          height: 1.1,
+                        ),
                       ),
                     ),
                     if (actions.isNotEmpty) ...[
