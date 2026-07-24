@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/core/constants/game_constants.dart';
+import 'package:witsgame/features/party/models/party_moment.dart';
 import 'package:witsgame/features/party/models/party_snapshot.dart';
 
 void main() {
@@ -78,5 +79,32 @@ void main() {
       RoundPhase.partyResultConfirm,
     );
     expect(PartyRoundPhase.reveal.gamePhase, RoundPhase.revealAnswer);
+  });
+
+  test('Party betting stays shorter than Classic betting', () {
+    expect(GameConstants.partyBetTimerSeconds, 20);
+    expect(
+      GameConstants.partyBetTimerSeconds,
+      lessThan(GameConstants.betTimerSeconds),
+    );
+  });
+
+  test('parses a shareable Party recap row', () {
+    final recap = PartyRecapRound.fromJson({
+      'round_number': 2,
+      'performer_id': 'john-id',
+      'performer_name': 'John',
+      'challenge_text': 'How many push-ups can John do in 60 seconds?',
+      'answer_unit': 'push-ups',
+      'result': 37,
+      'crowd_guess': 24,
+      'performer_guess': 32,
+      'closest_player_name': 'Maya',
+      'closest_guess': 35,
+    });
+
+    expect(recap.result, 37);
+    expect(recap.crowdGuess, 24);
+    expect(recap.closestPlayerName, 'Maya');
   });
 }

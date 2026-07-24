@@ -369,3 +369,28 @@ Durum: `CANLIDA AKTIF, MANUEL COKLU OYUNCU KABULU BEKLIYOR`
 - Canli katalog dogrulamasi `game_mode=true`, `6` Party tablosu, `17` client
   RPC'si ve `12` aktif challenge sonucu verdi.
 - Flutter analiz temiz, Party/Room/Game model testleri basarili.
+
+## Faz 16 - Ayri Performans Ekrani ve Party Recap
+
+Durum: `CANLIDA AKTIF, MANUEL KAMERA VE COKLU OYUNCU KABULU BEKLIYOR`
+
+- Migration:
+  `supabase/migrations/20260724150000_party_performance_media.sql`
+- Rollback:
+  `supabase/rollbacks/20260724150000_party_performance_media.sql`
+- Party bahis suresi Classic'ten ayrilarak `20` saniyeye indirildi; Classic
+  bahis suresi `45` saniye olarak korundu.
+- Betting deadline'i bitmeden performans route'u acilmaz. Ready, action, sonuc
+  girisi ve sonuc onayi artik betting board ustundeki popup yerine
+  `/party/performance/:roomCode` ekraninda calisir.
+- Performans saatini yalnizca host baslatir. Tum challenge'lar authoritative
+  sunucu deadline'i ile `60` saniye calisir.
+- Oda uyeleri performans sirasinda tur basina toplam uc private JPEG
+  yukleyebilir. Bucket okuma/yukleme politikalari room uyeligiyle sinirlidir.
+- Oyun sonu Party Recap, gercek sonuc, oda medyani, en yakin tahmin ve tur
+  fotografini 4:5 paylasim kartinda birlestirir.
+- Migration 2026-07-24 tarihinde Supabase SQL Editor ile canli projeye
+  uygulandi. Katalog dogrulamasi `media_table=true`, `private_bucket=true`,
+  `4` media/recap RPC'si, `3` Storage policy'si ve host-start gate sonucu
+  `true` dondu.
+- Flutter analiz temiz, `24` test basarili ve release Web build basarili.

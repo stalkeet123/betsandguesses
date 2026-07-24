@@ -52,5 +52,11 @@
 			<string>https</string>
 			<string>http</string>
 		</array>
+		<key>NSCameraUsageDescription</key>
+		<string>Take optional party photos during live challenges.</string>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>The camera plugin may request microphone access for camera sessions.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Save your Bets &amp; Guesses party recap cards.</string>
 	</dict>
 </plist>

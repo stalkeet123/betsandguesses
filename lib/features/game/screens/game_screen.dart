@@ -21,6 +21,7 @@ import '../../../features/game/services/game_service.dart';
 import '../../../features/game/services/game_sync_policy.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/party/models/party_snapshot.dart';
+import '../../../features/party/providers/party_session_provider.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../models/game_state.dart';
@@ -68,6 +69,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final List<_PendingBetEvent> _pendingBetEvents = [];
   PartySnapshot? _partySnapshot;
   bool _isPartyCommandInFlight = false;
+  bool _partyRouteScheduled = false;
 
   @override
   void initState() {
@@ -90,7 +92,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (phase == RoundPhase.guessing) {
       _startTimer(GameConstants.guessTimerSeconds, deadline: room.phaseEndsAt);
     } else if (phase == RoundPhase.betting) {
-      _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
+      _startTimer(
+        room.gameMode == GameMode.party
+            ? GameConstants.partyBetTimerSeconds
+            : GameConstants.betTimerSeconds,
+        deadline: room.phaseEndsAt,
+      );
     }
     if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
       _playQuestionRevealForRoundOnce(max(1, room.currentRound));
@@ -954,6 +961,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           hasSubmittedGuess: round.ownGuess != null,
         );
     _partySnapshot = snapshot;
+    ref.read(partySessionProvider.notifier).setSnapshot(snapshot);
 
     if (previous?.round.number != round.number) {
       _guessInput = '';
@@ -973,7 +981,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
         );
         break;
       case PartyRoundPhase.betting:
-        _startTimer(GameConstants.betTimerSeconds, deadline: round.phaseEndsAt);
+        _startTimer(
+          GameConstants.partyBetTimerSeconds,
+          deadline: round.phaseEndsAt,
+        );
         break;
       case PartyRoundPhase.action:
         _startTimer(
@@ -1006,12 +1017,31 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _stopTimer();
         break;
     }
+    _routeToPartyPerformanceWhenNeeded(round.phase);
     if (currentPlayer?.id == round.performer.id &&
         round.phase != PartyRoundPhase.betting) {
       _selectedChipValue = null;
       _selectedBetId = null;
     }
     if (mounted) setState(() {});
+  }
+
+  void _routeToPartyPerformanceWhenNeeded(PartyRoundPhase phase) {
+    final shouldOpenPerformance =
+        phase == PartyRoundPhase.ready ||
+        phase == PartyRoundPhase.action ||
+        phase == PartyRoundPhase.resultEntry ||
+        phase == PartyRoundPhase.resultConfirm;
+    if (!shouldOpenPerformance || _partyRouteScheduled || !mounted) return;
+    _partyRouteScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _partyRouteScheduled = false;
+      if (!mounted) return;
+      context.goNamed(
+        'party-performance',
+        pathParameters: {'roomCode': widget.roomCode},
+      );
+    });
   }
 
   Future<void> _broadcastPartyState(PartySnapshot snapshot) async {
@@ -1188,7 +1218,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               .read(partyGameServiceProvider)
               .advanceToBetting(
                 room.id,
-                durationSeconds: GameConstants.betTimerSeconds,
+                durationSeconds: GameConstants.partyBetTimerSeconds,
               ),
         );
         return;
@@ -2481,6 +2511,59 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildChipPicker(Player? currentPlayer, GameState gameState) {
+    final partyRound = _partySnapshot?.round;
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party &&
+        gameState.phase == RoundPhase.betting &&
+        currentPlayer?.id == partyRound?.performer.id) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.feltDark.withValues(alpha: 0.92),
+              AppColors.mahoganyDark.withValues(alpha: 0.78),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: AppColors.brassLight.withValues(alpha: 0.58),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.sports_gymnastics_rounded,
+              color: AppColors.brassLight,
+              size: 27,
+            ),
+            const SizedBox(height: 5),
+            Text(
+              'FRIENDS ARE BETTING',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.8,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Your performance starts after the betting timer.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory.withValues(alpha: 0.62),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final myBets = currentPlayer == null
         ? const <Bet>[]
         : gameState.bets
@@ -5502,6 +5585,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
+  // Kept temporarily for migration-safe rollback; Party phases now route to
+  // PartyPerformanceScreen and this overlay is never mounted.
+  // ignore: unused_element
   Widget _buildPartyPhaseOverlay(GameState gameState) {
     final snapshot = _partySnapshot;
     if (snapshot == null) return const SizedBox.shrink();
@@ -5970,8 +6056,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
               ),
-              if (ref.read(currentRoomProvider)?.gameMode == GameMode.party)
-                _buildPartyPhaseOverlay(ref.read(gameStateProvider)),
             ],
           ),
         ),
