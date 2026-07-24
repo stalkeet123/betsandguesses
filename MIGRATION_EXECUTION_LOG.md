@@ -394,3 +394,21 @@ Durum: `CANLIDA AKTIF, MANUEL KAMERA VE COKLU OYUNCU KABULU BEKLIYOR`
   `4` media/recap RPC'si, `3` Storage policy'si ve host-start gate sonucu
   `true` dondu.
 - Flutter analiz temiz, `24` test basarili ve release Web build basarili.
+
+## Faz 17 - Party Moment Storage RLS Hotfix
+
+Durum: `CANLIDA AKTIF, MANUEL KAMERA KABULU BEKLIYOR`
+
+- Migration:
+  `supabase/migrations/20260724160000_fix_party_moment_storage_policy.sql`
+- Rollback:
+  `supabase/rollbacks/20260724160000_fix_party_moment_storage_policy.sql`
+- Storage insert/delete policy'lerinin `players` tablosunu istemci RLS
+  baglaminda sorgulamasi nedeniyle olusan `403 Unauthorized` giderildi.
+- Oda, oyuncu, auth kullanicisi ve baglanti durumu kontrolu
+  `security definer` bir helper'a tasindi. Bucket gizliligi, yalnizca JPEG
+  kabulu ve `room/round/player/file` path siniri korundu.
+- Migration 2026-07-24 tarihinde Supabase SQL Editor ile canli projeye
+  uygulandi. Katalog dogrulamasi helper varligi, authenticated execute izni,
+  anon engeli, `3` Party Storage policy'si ve upload/delete helper baglantilari
+  icin `true / true / true / 3 / true / true` dondu.
