@@ -147,7 +147,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _resyncFromServer(refreshRealtime: true);
+      if (_canUseRef) {
+        unawaited(_resyncFromServer(refreshRealtime: true));
+      }
     } else {
       _stopTimer(clearDeadline: false);
     }
@@ -277,9 +279,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _setupRealtime({bool resyncAfterConnect = false}) async {
+    if (!_canUseRef) return;
     _realtimeRetryTimer?.cancel();
     _realtimeRetryTimer = null;
-    final realtimeService = ref.read(realtimeServiceProvider);
+    final realtimeService = _realtimeService;
     final roomId = ref.read(currentRoomProvider)?.id;
     try {
       await realtimeService.joinRoom(
@@ -287,6 +290,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         roomId: roomId,
         onPhaseChange: (payload) {
           try {
+            if (!_canUseRef) return;
             if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
               unawaited(_resyncPartySnapshot());
               return;
@@ -356,9 +360,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
           }
         },
         onGuessSubmitted: (_) {
-          _maybeAutoRevealGuesses();
+          if (_canUseRef) unawaited(_maybeAutoRevealGuesses());
         },
         onGuessesRevealed: (payload) {
+          if (!_canUseRef) return;
           if (!_payloadMatchesCurrentRound(payload)) return;
           final guessesData = payload['guesses'] as List<dynamic>?;
           if (guessesData != null) {
@@ -369,16 +374,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
           }
         },
         onBetPlaced: (payload) {
-          _applyBetPlacedPayload(payload);
+          if (_canUseRef) _applyBetPlacedPayload(payload);
         },
         onBetRemoved: (payload) {
-          _applyBetRemovedPayload(payload);
+          if (_canUseRef) _applyBetRemovedPayload(payload);
         },
         onBetRowChanged: (record, isDelete) {
-          _applyBetDatabaseChange(record, isDelete: isDelete);
+          if (_canUseRef) {
+            _applyBetDatabaseChange(record, isDelete: isDelete);
+          }
         },
         onRoomRowChanged: _applyRoomDatabaseChange,
         onScoreUpdate: (payload) {
+          if (!_canUseRef) return;
           if (!_payloadMatchesCurrentRound(payload)) return;
           final scoresData = payload['scores'] as Map<String, dynamic>?;
           if (scoresData != null) {
@@ -388,6 +396,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         },
         onAnswerRevealed: (payload) {
           try {
+            if (!_canUseRef) return;
             if (!_payloadMatchesCurrentRound(payload)) return;
             final answer = (payload['answer'] as num?)?.toInt();
             final winningGuessId = payload['winning_guess_id'] as String?;
@@ -404,6 +413,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           }
         },
         onGameStarted: (payload) {
+          if (!_canUseRef) return;
           final questionData = payload['question'] as Map<String, dynamic>?;
           if (questionData == null) return;
 
@@ -433,7 +443,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           _syncAudioForPhase(phase);
         },
         onGameEnded: (_) {
-          if (mounted) {
+          if (_canUseRef) {
             context.goNamed(
               'results',
               pathParameters: {'roomCode': widget.roomCode},
@@ -441,14 +451,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
           }
         },
       );
-      if (resyncAfterConnect && mounted) {
+      if (resyncAfterConnect && _canUseRef) {
         unawaited(_resyncFromServer());
       }
     } catch (error, stackTrace) {
       debugPrint('Realtime subscription failed: $error\n$stackTrace');
-      if (!mounted) return;
+      if (!_canUseRef) return;
       _realtimeRetryTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted) {
+        if (_canUseRef) {
           unawaited(_setupRealtime(resyncAfterConnect: true));
         }
       });
@@ -545,6 +555,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _applyRoomDatabaseChange(Map<String, dynamic> record) {
+    if (!_canUseRef) return;
     try {
       final room = Room.fromJson(record);
       final currentRoom = ref.read(currentRoomProvider);
@@ -563,7 +574,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ref.read(currentRoomProvider.notifier).set(room);
       if (room.status == RoomStatus.finished) {
         _roomSyncDebounceTimer?.cancel();
-        if (mounted) {
+        if (_canUseRef) {
           context.goNamed(
             'results',
             pathParameters: {'roomCode': widget.roomCode},
@@ -575,7 +586,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (room.gameMode == GameMode.party) {
         _roomSyncDebounceTimer?.cancel();
         _roomSyncDebounceTimer = Timer(const Duration(milliseconds: 80), () {
-          if (mounted) {
+          if (_canUseRef) {
             unawaited(
               _resyncPartySnapshot(roomOverride: room, synchronizeClock: false),
             );
@@ -628,11 +639,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
           room.roundPhase == RoundPhase.scoring) {
         _scheduleRoundAdvance(deadline: room.phaseEndsAt);
       }
-      if (mounted) setState(() {});
+      if (_canUseRef) setState(() {});
 
       _roomSyncDebounceTimer?.cancel();
       _roomSyncDebounceTimer = Timer(const Duration(milliseconds: 80), () {
-        if (mounted) {
+        if (_canUseRef) {
           unawaited(
             _resyncFromServer(roomOverride: room, synchronizeClock: false),
           );
@@ -679,6 +690,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     Room? roomOverride,
     bool synchronizeClock = true,
   }) async {
+    if (!_canUseRef) return;
     if (_isResyncing) {
       _resyncRequested = true;
       return;
@@ -903,6 +915,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _applyPartySnapshot(PartySnapshot snapshot) {
+    if (!_canUseRef) return;
     final previous = _partySnapshot;
     if (previous != null &&
         snapshot.round.number == previous.round.number &&
@@ -1048,7 +1061,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ) +
                 const Duration(seconds: 1),
             () {
-              if (mounted) unawaited(_resyncPartySnapshot());
+              if (_canUseRef) unawaited(_resyncPartySnapshot());
             },
           );
         }
@@ -1065,7 +1078,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _selectedChipValue = null;
       _selectedBetId = null;
     }
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
   }
 
   void _routeToPartyPerformanceWhenNeeded(PartyRoundPhase phase) {
@@ -1089,9 +1102,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Future<void> _broadcastPartyState(PartySnapshot snapshot) async {
     await _realtimeService.broadcast(widget.roomCode, 'phase_change', {
       'phase': snapshot.round.phase.gamePhase.name,
-          'round': snapshot.round.number,
-          'state_version': snapshot.stateVersion,
-        });
+      'round': snapshot.round.number,
+      'state_version': snapshot.stateVersion,
+    });
   }
 
   Future<void> _runPartyCommand(
@@ -1106,11 +1119,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       unawaited(_broadcastPartyState(snapshot));
     } catch (error, stackTrace) {
       debugPrint('Party command failed: $error\n$stackTrace');
-      if (_canUseRef) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not continue: $error')));
-      }
+      _showGameMessage('Could not continue: $error');
       if (_canUseRef) {
         await _resyncPartySnapshot(synchronizeClock: false);
       }
@@ -1118,6 +1127,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _isPartyCommandInFlight = false;
       if (_canUseRef) setState(() {});
     }
+  }
+
+  void _showGameMessage(String message) {
+    if (!_canUseRef) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _goToResults() {
+    if (!_canUseRef) return;
+    context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
   }
 
   void _startTimer(int fallbackSeconds, {DateTime? deadline}) {
@@ -1431,7 +1452,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _cancelRevealEffects();
     final sequenceId = _revealSequenceId;
     await ref.read(audioServiceProvider).playResultReveal();
-    if (!mounted || sequenceId != _revealSequenceId) return;
+    if (!_canUseRef || sequenceId != _revealSequenceId) return;
 
     final resolvedPayouts =
         payouts ??
@@ -1470,7 +1491,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     });
 
     _slotScanTimer = Timer.periodic(const Duration(milliseconds: 240), (timer) {
-      if (!mounted || sequenceId != _revealSequenceId) {
+      if (!_canUseRef || sequenceId != _revealSequenceId) {
         timer.cancel();
         return;
       }
@@ -1484,12 +1505,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _playRevealAudioForCurrentPlayer(gameState);
         _revealEffectTimers.add(
           Timer(const Duration(milliseconds: 240), () {
-            if (mounted) ref.read(audioServiceProvider).playClink();
+            if (_canUseRef) _audioService.playClink();
           }),
         );
         return;
       }
-      ref.read(audioServiceProvider).playClick();
+      _audioService.playClick();
       _scanSlotIndexNotifier.value = scanOrder[step];
     });
   }
@@ -1569,6 +1590,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _nextRound() async {
+    if (!_canUseRef) return;
     final gameState = ref.read(gameStateProvider);
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
@@ -1579,10 +1601,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
       if (_isPartyCommandInFlight) return;
       _isPartyCommandInFlight = true;
+      final partyService = ref.read(partyGameServiceProvider);
       try {
-        final response = await ref
-            .read(partyGameServiceProvider)
-            .advanceRound(room.id);
+        final response = await partyService.advanceRound(room.id);
+        if (!_canUseRef) return;
         if (response['finished'] == true) {
           final roomJson = response['room'];
           if (roomJson is Map) {
@@ -1591,16 +1613,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 .set(Room.fromJson(Map<String, dynamic>.from(roomJson)));
           }
           unawaited(
-            ref
-                .read(realtimeServiceProvider)
-                .broadcast(widget.roomCode, 'game_ended', const {}),
+            _realtimeService.broadcast(widget.roomCode, 'game_ended', const {}),
           );
-          if (mounted) {
-            context.goNamed(
-              'results',
-              pathParameters: {'roomCode': widget.roomCode},
-            );
-          }
+          _goToResults();
           return;
         }
         final snapshot = PartySnapshot.fromJson(response);
@@ -1608,7 +1623,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         unawaited(_broadcastPartyState(snapshot));
       } catch (error, stackTrace) {
         debugPrint('Party round advance failed: $error\n$stackTrace');
-        await _resyncPartySnapshot(synchronizeClock: false);
+        if (_canUseRef) {
+          await _resyncPartySnapshot(synchronizeClock: false);
+        }
       } finally {
         _isPartyCommandInFlight = false;
       }
@@ -1678,7 +1695,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ? Duration.zero
         : const Duration(milliseconds: 250);
     _questionStartTimer = Timer(delay + failoverGrace, () {
-      if (!mounted) return;
+      if (!_canUseRef) return;
       final latestRoom = ref.read(currentRoomProvider);
       if (latestRoom?.currentRound == room.currentRound &&
           latestRoom?.roundPhase == RoundPhase.question) {
@@ -1694,11 +1711,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
       fallback ?? const Duration(seconds: GameConstants.roundResultsSeconds),
     );
     _roundAdvanceTimer = Timer(delay, () {
-      if (mounted) unawaited(_nextRound());
+      if (_canUseRef) unawaited(_nextRound());
     });
   }
 
   Future<void> _submitGuess(int value) async {
+    if (!_canUseRef) return;
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
 
@@ -1713,12 +1731,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
       gameState = ref.read(gameStateProvider);
     }
     if (player == null || gameState.hasSubmittedGuess) {
-      if (mounted && player == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Player connection could not be restored.'),
-          ),
-        );
+      if (player == null) {
+        _showGameMessage('Player connection could not be restored.');
       }
       return;
     }
@@ -1726,13 +1740,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
 
+    if (!_canUseRef) return;
     setState(() => _isSubmittingGuess = true);
 
     try {
       if (room.gameMode == GameMode.party) {
-        final snapshot = await ref
-            .read(partyGameServiceProvider)
-            .submitGuess(roomId: room.id, value: value);
+        final partyService = ref.read(partyGameServiceProvider);
+        final snapshot = await partyService.submitGuess(
+          roomId: room.id,
+          value: value,
+        );
+        if (!_canUseRef) return;
         _applyPartySnapshot(snapshot);
         unawaited(_broadcastPartyState(snapshot));
         return;
@@ -1753,13 +1771,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
       await _maybeAutoRevealGuesses();
     } catch (error, stackTrace) {
       debugPrint('Guess submit failed: $error\n$stackTrace');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Guess could not be sent. Try again.')),
-        );
-      }
+      _showGameMessage('Guess could not be sent. Try again.');
     } finally {
-      if (mounted) setState(() => _isSubmittingGuess = false);
+      if (_canUseRef) setState(() => _isSubmittingGuess = false);
     }
   }
 
@@ -1825,6 +1839,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _placeBet(int slotIndex, int chips, {Offset? position}) async {
+    if (!_canUseRef) return;
     final room = ref.read(currentRoomProvider);
     final player = ref.read(currentPlayerProvider);
     final gameState = ref.read(gameStateProvider);
@@ -1883,20 +1898,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     final gameNotifier = ref.read(gameStateProvider.notifier);
     gameNotifier.addBet(optimisticBet);
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
 
     try {
       if (room.gameMode == GameMode.party) {
-        final snapshot = await ref
-            .read(partyGameServiceProvider)
-            .placeBet(
-              roomId: room.id,
-              slotIndex: slotIndex,
-              chips: chips,
-              clientActionId: clientActionId,
-              positionX: safeDx,
-              positionY: safeDy,
-            );
+        final partyService = ref.read(partyGameServiceProvider);
+        final snapshot = await partyService.placeBet(
+          roomId: room.id,
+          slotIndex: slotIndex,
+          chips: chips,
+          clientActionId: clientActionId,
+          positionX: safeDx,
+          positionY: safeDy,
+        );
+        if (!_canUseRef) return;
         gameNotifier.removeBetById(optimisticId);
         _applyPartySnapshot(snapshot);
         unawaited(_broadcastPartyState(snapshot));
@@ -1941,7 +1956,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       debugPrint('Bet placement failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       gameNotifier.removeBetById(optimisticId);
-      if (mounted) {
+      if (_canUseRef) {
         unawaited(_resyncFromServer(synchronizeClock: false));
       }
     } finally {
@@ -1949,7 +1964,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     _selectedBetId = null;
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
   }
 
   Future<void> _moveBet(
@@ -1957,6 +1972,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     int targetSlotIndex, {
     Offset? position,
   }) async {
+    if (!_canUseRef) return;
     final room = ref.read(currentRoomProvider);
     final gameState = ref.read(gameStateProvider);
     if (room == null ||
@@ -1988,19 +2004,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _isBetOperationInFlight = true;
     ref.read(audioServiceProvider).playDrop();
     gameNotifier.addBet(optimisticBet);
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
 
     try {
       if (room.gameMode == GameMode.party) {
-        final snapshot = await ref
-            .read(partyGameServiceProvider)
-            .moveBet(
-              roomId: room.id,
-              betId: sourceBet.id,
-              slotIndex: targetSlotIndex,
-              positionX: safeDx,
-              positionY: safeDy,
-            );
+        final partyService = ref.read(partyGameServiceProvider);
+        final snapshot = await partyService.moveBet(
+          roomId: room.id,
+          betId: sourceBet.id,
+          slotIndex: targetSlotIndex,
+          positionX: safeDx,
+          positionY: safeDy,
+        );
+        if (!_canUseRef) return;
         _applyPartySnapshot(snapshot);
         unawaited(_broadcastPartyState(snapshot));
         return;
@@ -2038,7 +2054,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     } catch (error, stackTrace) {
       debugPrint('Bet move failed: $error\n$stackTrace');
       gameNotifier.addBet(oldBet);
-      if (mounted) {
+      if (_canUseRef) {
         unawaited(_resyncFromServer(synchronizeClock: false));
       }
     } finally {
@@ -2047,7 +2063,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     _selectedBetId = sourceBet.id;
     _selectedChipValue = null;
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
   }
 
   String? _targetGuessIdForSlot(int slotIndex, GameState gameState) {
@@ -2055,7 +2071,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _removeBetById(Bet bet) async {
-    if (_isBetOperationInFlight) return;
+    if (_isBetOperationInFlight || !_canUseRef) return;
 
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
@@ -2065,15 +2081,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
     ref.read(audioServiceProvider).playClick();
     if (_selectedBetId == bet.id) _selectedBetId = null;
     gameNotifier.removeBetById(bet.id);
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
 
     try {
       if (!bet.id.startsWith('local-')) {
         final room = ref.read(currentRoomProvider);
         if (room?.gameMode == GameMode.party) {
-          final snapshot = await ref
-              .read(partyGameServiceProvider)
-              .removeBet(roomId: room!.id, betId: bet.id);
+          final partyService = ref.read(partyGameServiceProvider);
+          final snapshot = await partyService.removeBet(
+            roomId: room!.id,
+            betId: bet.id,
+          );
+          if (!_canUseRef) return;
           _applyPartySnapshot(snapshot);
           unawaited(_broadcastPartyState(snapshot));
           return;
@@ -2095,14 +2114,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     } catch (error, stackTrace) {
       debugPrint('Bet removal failed: $error\n$stackTrace');
       gameNotifier.addBet(bet);
-      if (mounted) {
+      if (_canUseRef) {
         unawaited(_resyncFromServer(synchronizeClock: false));
       }
     } finally {
       _isBetOperationInFlight = false;
     }
 
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
   }
 
   Bet? _selectedBet(GameState gameState) {

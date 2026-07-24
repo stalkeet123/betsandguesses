@@ -9,8 +9,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/services/realtime_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/cached_asset_image.dart';
 import '../../player/models/player_model.dart';
 import '../../room/models/room_model.dart';
 import '../../room/providers/room_providers.dart';
@@ -47,22 +47,51 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   bool _isOpeningCamera = false;
   bool _isCapturing = false;
   bool _routeScheduled = false;
+  bool _snapshotSyncScheduled = false;
+  bool _isRefreshingSnapshot = false;
+  bool _refreshRequested = false;
+  bool _isActive = true;
+  bool _isDisposed = false;
   String? _cameraError;
   List<Player> _players = const [];
+  PartySnapshot? _pendingSnapshot;
+  late final PartySessionNotifier _partySession;
+  late final RealtimeService _realtimeService;
+
+  bool get _canUseRef => mounted && _isActive && !_isDisposed;
 
   @override
   void initState() {
     super.initState();
+    _partySession = ref.read(partySessionProvider.notifier);
+    _realtimeService = ref.read(realtimeServiceProvider);
     WidgetsBinding.instance.addObserver(this);
     unawaited(_bootstrap());
   }
 
   @override
+  void activate() {
+    super.activate();
+    _isActive = true;
+  }
+
+  @override
+  void deactivate() {
+    _isActive = false;
+    _timer?.cancel();
+    _timer = null;
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    _isDisposed = true;
+    _isActive = false;
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _resultController.dispose();
     unawaited(_cameraController?.dispose());
+    unawaited(_realtimeService.leaveRoom(widget.roomCode));
     super.dispose();
   }
 
@@ -74,24 +103,23 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       return;
     }
     if (state == AppLifecycleState.resumed) {
+      if (!_canUseRef) return;
       final room = ref.read(currentRoomProvider);
       if (room != null) {
-        unawaited(
-          ref
-              .read(partySessionProvider.notifier)
-              .load(room.id, loadMoments: true),
-        );
+        unawaited(_refreshSnapshot(room.id, loadMoments: true));
       }
     }
   }
 
   Future<void> _bootstrap() async {
     try {
+      if (!_canUseRef) return;
+      final roomService = ref.read(roomServiceProvider);
+      final playerService = ref.read(playerServiceProvider);
       var room = ref.read(currentRoomProvider);
       if (room == null || room.code != widget.roomCode) {
-        room = await ref
-            .read(roomServiceProvider)
-            .findRoomByCode(widget.roomCode);
+        room = await roomService.findRoomByCode(widget.roomCode);
+        if (!_canUseRef) return;
         if (room == null) throw StateError('Party room not found.');
         ref.read(currentRoomProvider.notifier).set(room);
       }
@@ -101,22 +129,25 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       }
 
       try {
-        await ref.read(roomServiceProvider).synchronizeServerClock();
+        await roomService.synchronizeServerClock();
       } catch (_) {}
-      _players = await ref.read(playerServiceProvider).getPlayers(room.id);
+      _players = await playerService.getPlayers(room.id);
+      if (!_canUseRef) return;
       _restoreCurrentPlayer(room.id);
-      final snapshot = await ref
-          .read(partySessionProvider.notifier)
-          .load(room.id, loadMoments: true);
-      if (snapshot != null) _syncSnapshot(snapshot);
+      final snapshot = await _partySession.load(room.id, loadMoments: true);
+      if (!_canUseRef) return;
+      await _setupRealtime(room.id);
+      if (!_canUseRef) return;
+      if (snapshot != null) _queueSnapshotSync(snapshot);
     } catch (error, stackTrace) {
       debugPrint('Party performance bootstrap failed: $error\n$stackTrace');
     } finally {
-      if (mounted) setState(() => _isBootstrapping = false);
+      if (_canUseRef) setState(() => _isBootstrapping = false);
     }
   }
 
   Player? _restoreCurrentPlayer(String roomId) {
+    if (!_canUseRef) return null;
     final current = ref.read(currentPlayerProvider);
     if (current != null && current.roomId == roomId) return current;
     final deviceId = ref.read(deviceIdProvider);
@@ -129,7 +160,72 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     return null;
   }
 
+  Future<void> _setupRealtime(String roomId) async {
+    if (!_canUseRef) return;
+    try {
+      await _realtimeService.joinRoom(
+        widget.roomCode,
+        roomId: roomId,
+        onPhaseChange: (_) => unawaited(_refreshSnapshot(roomId)),
+        onGuessSubmitted: (_) {},
+        onGuessesRevealed: (_) {},
+        onBetPlaced: (_) {},
+        onBetRemoved: (_) {},
+        onScoreUpdate: (_) {},
+        onAnswerRevealed: (_) {},
+        onGameStarted: (_) => unawaited(_refreshSnapshot(roomId)),
+        onGameEnded: (_) {
+          if (_canUseRef) _scheduleRoute('results');
+        },
+        onRoomRowChanged: (_) => unawaited(_refreshSnapshot(roomId)),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Party performance realtime failed: $error\n$stackTrace');
+    }
+  }
+
+  Future<void> _refreshSnapshot(
+    String roomId, {
+    bool loadMoments = false,
+  }) async {
+    if (!_canUseRef) return;
+    if (_isRefreshingSnapshot) {
+      _refreshRequested = true;
+      return;
+    }
+    _isRefreshingSnapshot = true;
+    _refreshRequested = false;
+    try {
+      final snapshot = await _partySession.load(
+        roomId,
+        loadMoments: loadMoments,
+      );
+      if (_canUseRef && snapshot != null) _queueSnapshotSync(snapshot);
+    } finally {
+      _isRefreshingSnapshot = false;
+      if (_refreshRequested && _canUseRef) {
+        _refreshRequested = false;
+        unawaited(_refreshSnapshot(roomId, loadMoments: loadMoments));
+      }
+    }
+  }
+
+  void _queueSnapshotSync(PartySnapshot snapshot) {
+    if (!_canUseRef) return;
+    _pendingSnapshot = snapshot;
+    if (_snapshotSyncScheduled) return;
+    _snapshotSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _snapshotSyncScheduled = false;
+      final pending = _pendingSnapshot;
+      _pendingSnapshot = null;
+      if (!_canUseRef || pending == null) return;
+      _syncSnapshot(pending);
+    });
+  }
+
   void _syncSnapshot(PartySnapshot snapshot) {
+    if (!_canUseRef) return;
     ref.read(currentRoomProvider.notifier).set(snapshot.room);
     if (snapshot.room.status == RoomStatus.finished) {
       _scheduleRoute('results');
@@ -153,11 +249,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   }
 
   void _scheduleRoute(String routeName) {
-    if (_routeScheduled || !mounted) return;
+    if (_routeScheduled || !_canUseRef) return;
     _routeScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _routeScheduled = false;
-      if (!mounted) return;
+      if (!_canUseRef) return;
       context.goNamed(routeName, pathParameters: {'roomCode': widget.roomCode});
     });
   }
@@ -173,7 +269,10 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         ? snapshot.round.challenge.durationSeconds
         : _remainingSeconds(deadline);
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
+      if (!_canUseRef) {
+        timer.cancel();
+        return;
+      }
       final latest = ref.read(partySessionProvider).snapshot;
       final latestDeadline = latest?.round.phaseEndsAt;
       final remaining = latestDeadline == null
@@ -189,7 +288,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         );
       }
     });
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
   }
 
   int _remainingSeconds(DateTime deadline) {
@@ -209,22 +308,27 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
   Future<void> _runCommand(
     Future<PartySnapshot> Function(PartyGameService service) command,
   ) async {
-    final snapshot = await ref
-        .read(partySessionProvider.notifier)
-        .runCommand(command);
-    if (!mounted) return;
+    if (!_canUseRef) return;
+    final snapshot = await _partySession.runCommand(command);
+    if (!_canUseRef) return;
     if (snapshot == null) {
       final error = ref.read(partySessionProvider).errorMessage;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error ?? 'Could not continue. Try again.')),
-      );
+      _showMessage(error ?? 'Could not continue. Try again.');
       return;
     }
-    _syncSnapshot(snapshot);
+    _queueSnapshotSync(snapshot);
+    unawaited(
+      _realtimeService.broadcast(widget.roomCode, 'phase_change', {
+        'phase': snapshot.round.phase.gamePhase.name,
+        'round': snapshot.round.number,
+        'state_version': snapshot.stateVersion,
+        'phase_ends_at': snapshot.round.phaseEndsAt?.toIso8601String(),
+      }),
+    );
   }
 
   Future<void> _openCamera() async {
-    if (_isOpeningCamera || _cameraController != null) return;
+    if (!_canUseRef || _isOpeningCamera || _cameraController != null) return;
     setState(() {
       _isOpeningCamera = true;
       _cameraError = null;
@@ -242,7 +346,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         enableAudio: false,
       );
       await controller.initialize();
-      if (!mounted) {
+      if (!_canUseRef) {
         await controller.dispose();
         return;
       }
@@ -254,7 +358,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     } catch (_) {
       _cameraError = 'Camera is unavailable on this device.';
     } finally {
-      if (mounted) setState(() => _isOpeningCamera = false);
+      if (_canUseRef) setState(() => _isOpeningCamera = false);
     }
   }
 
@@ -262,10 +366,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     final controller = _cameraController;
     _cameraController = null;
     if (controller != null) await controller.dispose();
-    if (mounted) setState(() {});
+    if (_canUseRef) setState(() {});
   }
 
   Future<void> _captureMoment(PartySnapshot snapshot) async {
+    if (!_canUseRef) return;
     final controller = _cameraController;
     final player = ref.read(currentPlayerProvider);
     final currentMoments = _momentsForRound(snapshot.round.number);
@@ -281,25 +386,21 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       HapticFeedback.mediumImpact();
       final photo = await controller.takePicture();
       final Uint8List bytes = await photo.readAsBytes();
-      final moment = await ref
-          .read(partySessionProvider.notifier)
-          .uploadMoment(
-            roomId: snapshot.room.id,
-            roundNumber: snapshot.round.number,
-            playerId: player.id,
-            bytes: bytes,
-          );
-      if (!mounted) return;
+      final moment = await _partySession.uploadMoment(
+        roomId: snapshot.room.id,
+        roundNumber: snapshot.round.number,
+        playerId: player.id,
+        bytes: bytes,
+      );
+      if (!_canUseRef) return;
       if (moment == null) {
         final error = ref.read(partySessionProvider).errorMessage;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error ?? 'Photo could not be saved.')),
-        );
+        _showMessage(error ?? 'Photo could not be saved.');
       } else {
         HapticFeedback.heavyImpact();
       }
     } finally {
-      if (mounted) setState(() => _isCapturing = false);
+      if (_canUseRef) setState(() => _isCapturing = false);
     }
   }
 
@@ -309,6 +410,13 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         .moments
         .where((moment) => moment.roundNumber == round)
         .toList(growable: false);
+  }
+
+  void _showMessage(String message) {
+    if (!_canUseRef) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   bool _isRequiredConfirmer(PartyRoundSnapshot round, Player? currentPlayer) {
@@ -324,18 +432,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     final room = ref.watch(currentRoomProvider);
     if (room != null) {
       ref.listen(roomStreamProvider(room.id), (_, next) {
+        if (!_canUseRef) return;
         final rows = next.asData?.value;
         if (rows == null || rows.isEmpty) return;
         final updatedRoom = Room.fromJson(rows.first);
-        ref.read(currentRoomProvider.notifier).set(updatedRoom);
-        unawaited(
-          ref
-              .read(partySessionProvider.notifier)
-              .load(updatedRoom.id, loadMoments: true)
-              .then((snapshot) {
-                if (snapshot != null && mounted) _syncSnapshot(snapshot);
-              }),
-        );
+        unawaited(_refreshSnapshot(updatedRoom.id, loadMoments: true));
       });
     }
 
@@ -343,7 +444,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       _,
       snapshot,
     ) {
-      if (snapshot != null) _syncSnapshot(snapshot);
+      if (snapshot != null) _queueSnapshotSync(snapshot);
     });
 
     final session = ref.watch(partySessionProvider);
@@ -367,21 +468,25 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         body: Stack(
           children: [
             const Positioned.fill(
-              child: CachedAssetImage(
-                AppAssetPaths.background,
-                fit: BoxFit.cover,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [_partyNight, _partyNightBlue, Color(0xFF07111D)],
+                  ),
+                ),
               ),
             ),
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
+                  gradient: RadialGradient(
+                    center: const Alignment(0.85, -0.85),
+                    radius: 1.15,
                     colors: [
-                      _partyNight.withValues(alpha: 0.72),
-                      _partyNightBlue.withValues(alpha: 0.92),
-                      Colors.black.withValues(alpha: 0.82),
+                      _partyOrange.withValues(alpha: 0.13),
+                      Colors.transparent,
                     ],
                   ),
                 ),
