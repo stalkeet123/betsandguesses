@@ -355,3 +355,17 @@ Durum: `CANLIDA AKTIF, STATIK DOGRULAMA TAMAM`
 Bir Web + bir mobil istemciyle tek bir normal tam oyun kabul turu yapilmalidir:
 Round 1 katmani/whoosh, tahmin-bahis yatay gecisi, sabit lobi paneli ve ikinci
 tur gecisi ayni akista gozlenmelidir.
+
+## Faz 15 - Party Challenge Modu
+
+Durum: `CANLIDA AKTIF, MANUEL COKLU OYUNCU KABULU BEKLIYOR`
+
+- `20260724090000` ile `20260724140000` arasindaki alti Party migration'i
+  2026-07-24 tarihinde canli projede tek transaction olarak uygulandi.
+- Classic oda ve oyun RPC'leri degistirilmedi; mevcut odalar `classic`
+  varsayimina sahip.
+- Party verileri dogrudan client tablo erisimine kapali, faza gore filtrelenen
+  snapshot ve authenticated RPC komutlariyla calisiyor.
+- Canli katalog dogrulamasi `game_mode=true`, `6` Party tablosu, `17` client
+  RPC'si ve `12` aktif challenge sonucu verdi.
+- Flutter analiz temiz, Party/Room/Game model testleri basarili.

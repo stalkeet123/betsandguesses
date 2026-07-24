@@ -31,7 +31,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isLoading = false;
   String? _prefilledRoomCode;
   bool _showQrJoinGuide = false;
-  GameMode _selectedGameMode = GameMode.classic;
 
   @override
   void initState() {
@@ -130,7 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : GameConstants.freeMaxRounds;
     var selectedMaxPlayers = GameConstants.freeMaxPlayers;
     var selectedCategory = GameConstants.defaultCategory;
-    var selectedMode = _selectedGameMode;
+    var selectedMode = GameMode.classic;
 
     _showHomeSheet(
       title: 'SETUP',
@@ -171,7 +170,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 selectedMaxPlayers = 3;
                               }
                             });
-                            setState(() => _selectedGameMode = mode);
                           },
                         ),
                       ),
@@ -701,39 +699,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _buildHomeModeSwitch() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.ink.withValues(alpha: 0.74),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.brass.withValues(alpha: 0.45)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.24),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          for (final mode in GameMode.values)
-            Expanded(
-              child: _modeSetupButton(
-                mode: mode,
-                selected: _selectedGameMode == mode,
-                onTap: () {
-                  ref.read(audioServiceProvider).playClick();
-                  setState(() => _selectedGameMode = mode);
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _setupSlider({
     required IconData icon,
     required String label,
@@ -1150,8 +1115,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               _buildNamePanel(),
                               const SizedBox(height: 10),
                               if (!kIsWeb) ...[
-                                _dimIfGuide(child: _buildHomeModeSwitch()),
-                                const SizedBox(height: 10),
                                 _dimIfGuide(
                                   child: _buildHeroActionButton(
                                     label: 'CREATE LOBBY',

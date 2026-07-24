@@ -64,6 +64,12 @@ class RoomService {
         return Room.fromJson(Map<String, dynamic>.from(response as Map));
       } on PostgrestException catch (error) {
         if (error.code == '23505') continue;
+        if (gameMode == GameMode.party && error.code == 'PGRST202') {
+          throw StateError(
+            'Party Mode is waiting for its server update. '
+            'Classic rooms are still available.',
+          );
+        }
         rethrow;
       }
     }
