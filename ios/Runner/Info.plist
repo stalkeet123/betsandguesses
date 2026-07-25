@@ -53,10 +53,10 @@
 			<string>http</string>
 		</array>
 		<key>NSCameraUsageDescription</key>
-		<string>Take optional party photos during live challenges.</string>
+		<string>Bets &amp; Guesses requires camera access so you can take and share party photos with friends during live challenges.</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>The camera plugin may request microphone access for camera sessions.</string>
+		<string>Bets &amp; Guesses requires microphone access to record audio when capturing video during party challenges.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
-		<string>Save your Bets &amp; Guesses party recap cards.</string>
+		<string>Bets &amp; Guesses requires access to your photo library to save your party recap cards so you can share them.</string>
 	</dict>
 </plist>
