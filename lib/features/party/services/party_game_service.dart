@@ -1,7 +1,4 @@
-import 'dart:typed_data';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../room/models/room_model.dart';
 import '../models/party_moment.dart';
@@ -14,13 +11,13 @@ class PartyGameService {
 
   Future<PartySnapshot> startGame({
     required String roomId,
-    int guessDurationSeconds = 30,
+    int bettingDurationSeconds = 20,
   }) async {
     final response = await _client.rpc(
-      'start_party_game_v1',
+      'start_party_game_v2',
       params: {
         'p_room_id': roomId,
-        'p_guess_duration_seconds': guessDurationSeconds,
+        'p_betting_duration_seconds': bettingDurationSeconds,
       },
     );
     return PartySnapshot.fromJson(Map<String, dynamic>.from(response as Map));
@@ -32,17 +29,6 @@ class PartyGameService {
       params: {'p_room_id': roomId},
     );
     return PartySnapshot.fromJson(Map<String, dynamic>.from(response as Map));
-  }
-
-  Future<PartySnapshot> submitGuess({
-    required String roomId,
-    required int value,
-  }) async {
-    await _client.rpc(
-      'submit_party_guess_v1',
-      params: {'p_room_id': roomId, 'p_value': value},
-    );
-    return getSnapshot(roomId);
   }
 
   Future<PartySnapshot> advanceToBetting(
@@ -170,38 +156,10 @@ class PartyGameService {
 
   Future<Map<String, dynamic>> advanceRound(String roomId) async {
     final response = await _client.rpc(
-      'advance_party_round_v1',
-      params: {'p_room_id': roomId, 'p_guess_duration_seconds': 30},
+      'advance_party_round_v2',
+      params: {'p_room_id': roomId, 'p_betting_duration_seconds': 20},
     );
     return Map<String, dynamic>.from(response as Map);
-  }
-
-  Future<List<PartyMoment>> getMoments(
-    String roomId, {
-    int? roundNumber,
-  }) async {
-    final response = await _client.rpc(
-      'get_party_moments_v1',
-      params: {'p_room_id': roomId, 'p_round_number': roundNumber},
-    );
-    final rows = (response as List? ?? const [])
-        .map(
-          (value) =>
-              PartyMoment.fromJson(Map<String, dynamic>.from(value as Map)),
-        )
-        .toList(growable: false);
-    return Future.wait(
-      rows.map((moment) async {
-        try {
-          final url = await _client.storage
-              .from('party-moments')
-              .createSignedUrl(moment.storagePath, 3600);
-          return moment.copyWith(signedUrl: url);
-        } catch (_) {
-          return moment;
-        }
-      }),
-    );
   }
 
   Future<List<PartyRecapRound>> getRecap(String roomId) async {
@@ -215,61 +173,6 @@ class PartyGameService {
               PartyRecapRound.fromJson(Map<String, dynamic>.from(value as Map)),
         )
         .toList(growable: false);
-  }
-
-  Future<PartyMoment> uploadMoment({
-    required String roomId,
-    required int roundNumber,
-    required String playerId,
-    required Uint8List bytes,
-  }) async {
-    final captureId = const Uuid().v4();
-    final path = '$roomId/$roundNumber/$playerId/$captureId.jpg';
-    await _client.storage
-        .from('party-moments')
-        .uploadBinary(
-          path,
-          bytes,
-          fileOptions: const FileOptions(
-            contentType: 'image/jpeg',
-            cacheControl: '3600',
-            upsert: false,
-          ),
-        );
-
-    late final PartyMoment moment;
-    try {
-      final response = await _client.rpc(
-        'register_party_moment_v1',
-        params: {
-          'p_room_id': roomId,
-          'p_round_number': roundNumber,
-          'p_storage_path': path,
-        },
-      );
-      moment = PartyMoment.fromJson(Map<String, dynamic>.from(response as Map));
-    } catch (_) {
-      try {
-        await _client.storage.from('party-moments').remove([path]);
-      } catch (_) {}
-      rethrow;
-    }
-
-    try {
-      final url = await _client.storage
-          .from('party-moments')
-          .createSignedUrl(path, 3600);
-      return moment.copyWith(signedUrl: url);
-    } catch (_) {
-      return moment;
-    }
-  }
-
-  Future<void> deleteMoment(PartyMoment moment) async {
-    await _client.rpc(
-      'delete_party_moment_v1',
-      params: {'p_room_id': moment.roomId, 'p_moment_id': moment.id},
-    );
   }
 
   Future<Room> resetToLobby(String roomId) async {

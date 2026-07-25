@@ -16,6 +16,8 @@ import '../../../core/widgets/cached_asset_image.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/party/models/party_moment.dart';
+import '../../../features/party/models/party_snapshot.dart';
+import '../../../features/party/providers/party_local_media_provider.dart';
 
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
@@ -64,7 +66,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
 
-    final players = await ref.read(playerServiceProvider).getPlayers(room.id);
+    final playersFuture = ref.read(playerServiceProvider).getPlayers(room.id);
+    final recapFuture = room.gameMode == GameMode.party
+        ? ref.read(partyGameServiceProvider).getRecap(room.id)
+        : Future.value(const <PartyRecapRound>[]);
+    final players = await playersFuture;
     players.sort((a, b) {
       final scoreOrder = b.score.compareTo(a.score);
       if (scoreOrder != 0) return scoreOrder;
@@ -73,20 +79,15 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       return a.id.compareTo(b.id);
     });
 
-    var partyMoments = const <PartyMoment>[];
+    final partyMoments = ref
+        .read(partyLocalMediaProvider)
+        .where((moment) => moment.roomId == room.id)
+        .toList(growable: false);
     var partyRecap = const <PartyRecapRound>[];
-    if (room.gameMode == GameMode.party) {
-      try {
-        final service = ref.read(partyGameServiceProvider);
-        final results = await Future.wait<Object>([
-          service.getMoments(room.id),
-          service.getRecap(room.id),
-        ]);
-        partyMoments = results[0] as List<PartyMoment>;
-        partyRecap = results[1] as List<PartyRecapRound>;
-      } catch (error, stackTrace) {
-        debugPrint('Party recap load failed: $error\n$stackTrace');
-      }
+    try {
+      partyRecap = await recapFuture;
+    } catch (error, stackTrace) {
+      debugPrint('Party recap load failed: $error\n$stackTrace');
     }
 
     if (mounted) {
@@ -114,6 +115,10 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   void _goHome() {
     if (_hasLeftResults) return;
     _hasLeftResults = true;
+    final roomId = ref.read(currentRoomProvider)?.id;
+    if (roomId != null) {
+      ref.read(partyLocalMediaProvider.notifier).clearRoom(roomId);
+    }
     ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
     ref.read(currentRoomProvider.notifier).set(null);
     ref.read(currentPlayerProvider.notifier).set(null);
@@ -124,6 +129,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   void _openLobby(Room room) {
     if (!mounted || _hasLeftResults) return;
     _hasLeftResults = true;
+    ref.read(partyLocalMediaProvider.notifier).clearRoom(room.id);
     ref.read(currentRoomProvider.notifier).set(room);
     ref.read(gameStateProvider.notifier).reset();
     context.goNamed('lobby', pathParameters: {'roomCode': widget.roomCode});
@@ -782,12 +788,17 @@ class _PartyRecapSheetState extends State<_PartyRecapSheet> {
   late final List<GlobalKey> _cardKeys;
   int _index = 0;
   bool _isSharing = false;
+  final Map<int, Uint8List> _renderedCards = {};
+  final Map<int, Future<Uint8List>> _renderJobs = {};
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(viewportFraction: 0.9);
     _cardKeys = List.generate(widget.rounds.length, (_) => GlobalKey());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.rounds.isNotEmpty) _prewarmCard(0);
+    });
   }
 
   @override
@@ -798,11 +809,50 @@ class _PartyRecapSheetState extends State<_PartyRecapSheet> {
 
   PartyMoment? _momentForRound(int roundNumber) {
     for (final moment in widget.moments) {
-      if (moment.roundNumber == roundNumber && moment.signedUrl != null) {
-        return moment;
-      }
+      if (moment.roundNumber == roundNumber) return moment;
     }
     return null;
+  }
+
+  Future<Uint8List> _renderCard(int index) {
+    final cached = _renderedCards[index];
+    if (cached != null) return Future.value(cached);
+    return _renderJobs
+        .putIfAbsent(index, () async {
+          await WidgetsBinding.instance.endOfFrame;
+          final boundary =
+              _cardKeys[index].currentContext?.findRenderObject()
+                  as RenderRepaintBoundary?;
+          if (boundary == null) throw StateError('Recap card is not ready.');
+          final image = await boundary.toImage(pixelRatio: 2);
+          try {
+            final byteData = await image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            if (byteData == null) {
+              throw StateError('Recap image could not be made.');
+            }
+            final bytes = byteData.buffer.asUint8List();
+            _renderedCards[index] = bytes;
+            if (mounted) setState(() {});
+            return bytes;
+          } finally {
+            image.dispose();
+          }
+        })
+        .catchError((Object error) {
+          _renderJobs.remove(index);
+          throw error;
+        });
+  }
+
+  void _prewarmCard(int index) {
+    if (index < 0 ||
+        index >= widget.rounds.length ||
+        _renderedCards.containsKey(index)) {
+      return;
+    }
+    _renderCard(index).catchError((_) => Uint8List(0));
   }
 
   Future<void> _shareCurrentCard() async {
@@ -810,22 +860,18 @@ class _PartyRecapSheetState extends State<_PartyRecapSheet> {
     final shareBox = context.findRenderObject() as RenderBox?;
     setState(() => _isSharing = true);
     try {
-      await WidgetsBinding.instance.endOfFrame;
-      final boundary =
-          _cardKeys[_index].currentContext?.findRenderObject()
-              as RenderRepaintBoundary?;
-      if (boundary == null) throw StateError('Recap card is not ready.');
-      final image = await boundary.toImage(pixelRatio: 3);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      if (byteData == null) throw StateError('Recap image could not be made.');
-      final Uint8List bytes = byteData.buffer.asUint8List();
+      final bytes = await _renderCard(_index);
       final recap = widget.rounds[_index];
+      final resultText = recap.challengeType == PartyChallengeType.binary
+          ? (recap.result == 1
+                ? 'completed the challenge'
+                : 'missed the challenge')
+          : 'did ${recap.result} ${recap.answerUnit}';
       await SharePlus.instance.share(
         ShareParams(
           text:
-              '${recap.performerName} did ${recap.result} '
-              '${recap.answerUnit} in 60 seconds — Bets & Guesses Party Mode',
+              '${recap.performerName} $resultText — '
+              'Bets & Guesses Party Mode',
           files: [
             XFile.fromData(
               bytes,
@@ -885,7 +931,12 @@ class _PartyRecapSheetState extends State<_PartyRecapSheet> {
             child: PageView.builder(
               controller: _pageController,
               itemCount: widget.rounds.length,
-              onPageChanged: (value) => setState(() => _index = value),
+              onPageChanged: (value) {
+                setState(() => _index = value);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _prewarmCard(value);
+                });
+              },
               itemBuilder: (context, index) {
                 final recap = widget.rounds[index];
                 return Padding(
@@ -956,10 +1007,10 @@ class _PartyShareCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final crowdDifference = recap.crowdGuess == null
-        ? null
-        : recap.result - recap.crowdGuess!;
-    final headlineValue = recap.performerGuess ?? recap.result;
+    final isBinary = recap.challengeType == PartyChallengeType.binary;
+    final headline = isBinary
+        ? (recap.result == 1 ? 'DID IT' : 'FAILED')
+        : '${recap.result}\n${recap.answerUnit.toUpperCase()}';
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: ColoredBox(
@@ -967,12 +1018,8 @@ class _PartyShareCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (moment?.signedUrl != null)
-              Image.network(
-                moment!.signedUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              )
+            if (moment != null)
+              Image.memory(moment!.bytes, fit: BoxFit.cover, cacheWidth: 1080)
             else
               const DecoratedBox(
                 decoration: BoxDecoration(
@@ -1037,9 +1084,7 @@ class _PartyShareCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    recap.performerGuess == null
-                        ? recap.performerName.toUpperCase()
-                        : '${recap.performerName.toUpperCase()} SAID',
+                    recap.performerName.toUpperCase(),
                     style: GoogleFonts.outfit(
                       color: _partyCardOrangeSoft,
                       fontSize: 14,
@@ -1049,7 +1094,7 @@ class _PartyShareCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '$headlineValue\n${recap.answerUnit.toUpperCase()}',
+                    headline,
                     style: const TextStyle(
                       fontFamily: 'RehnCondensed',
                       color: AppColors.ivory,
@@ -1061,9 +1106,9 @@ class _PartyShareCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    recap.performerGuess == null
-                        ? 'IN 60 SECONDS'
-                        : 'REALITY CHECK: ${recap.result}',
+                    isBinary
+                        ? '${recap.durationSeconds}-SECOND CHALLENGE'
+                        : 'IN ${recap.durationSeconds} SECONDS',
                     style: GoogleFonts.outfit(
                       color: _partyCardOrange,
                       fontSize: 16,
@@ -1088,24 +1133,28 @@ class _PartyShareCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: _RecapStat(
-                          label: 'ROOM GUESSED',
-                          value: recap.crowdGuess?.toString() ?? '—',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _RecapStat(
-                          label: 'BEAT THE ROOM',
-                          value: crowdDifference == null
+                          label: isBinary ? 'ROOM SAID YES' : 'ROOM LINE',
+                          value: recap.crowdGuess == null
                               ? '—'
-                              : '${crowdDifference >= 0 ? '+' : ''}$crowdDifference',
+                              : isBinary
+                              ? '${recap.crowdGuess}%'
+                              : '${recap.crowdGuess}',
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: _RecapStat(
-                          label: 'CLOSEST',
-                          value: recap.closestPlayerName ?? '—',
+                          label: 'RESULT',
+                          value: isBinary
+                              ? (recap.result == 1 ? 'SUCCESS' : 'FAILED')
+                              : '${recap.result}',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _RecapStat(
+                          label: 'EARNED',
+                          value: '+${recap.performerBonus}',
                         ),
                       ),
                     ],

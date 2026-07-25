@@ -935,17 +935,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
       category: 'Party Challenge',
       source: round.challenge.rules,
     );
-    final guesses = round.guesses
+    // Count challenges own four authored board boundaries. They are represented
+    // as anonymous guesses so the established five-slot Classic board remains
+    // reusable. Binary challenges render their own YES/NO board.
+    final guesses = round.challenge.betBoundaries
+        .asMap()
+        .entries
         .map(
-          (guess) => Guess(
-            id: guess.id,
+          (entry) => Guess(
+            id: 'party-boundary-${round.challenge.id}-${entry.key}',
             roomId: snapshot.room.id,
             roundNumber: round.number,
-            playerId: guess.playerId ?? 'anonymous-${guess.id}',
+            playerId: 'party-boundary-${entry.key}',
             questionId: round.challenge.id,
-            value: guess.value,
-            playerName: guess.playerName,
-            playerColor: guess.playerColor,
+            value: entry.value,
           ),
         )
         .toList(growable: false);
@@ -953,18 +956,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ..sort((a, b) => a.value.compareTo(b.value));
     final winningPartySlot =
         round.phase == PartyRoundPhase.reveal && round.proposedResult != null
-        ? ref
-              .read(gameServiceProvider)
-              .determineWinningBetSlotIndex(
-                sortedPartyGuesses,
-                round.proposedResult!,
-              )
-        : null;
-    final winningPartyGuess =
-        round.phase == PartyRoundPhase.reveal && round.proposedResult != null
-        ? ref
-              .read(gameServiceProvider)
-              .determineWinner(sortedPartyGuesses, round.proposedResult!)
+        ? round.challenge.isBinary
+              ? round.proposedResult
+              : ref
+                    .read(gameServiceProvider)
+                    .determineWinningBetSlotIndex(
+                      sortedPartyGuesses,
+                      round.proposedResult!,
+                    )
         : null;
     final bets = round.bets
         .map((bet) {
@@ -978,7 +977,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
             playerId: bet.playerId ?? 'hidden-${bet.id}',
             slotIndex: bet.slotIndex,
             chips: bet.chips,
-            payoutMultiplier: GameConstants.boardOdds[bet.slotIndex],
+            payoutMultiplier: round.challenge.isBinary
+                ? 2
+                : GameConstants.boardOdds[bet.slotIndex],
             won: winningPartySlot == bet.slotIndex,
             playerName: player?.name,
             playerColor: player?.avatarColor,
@@ -1005,8 +1006,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           correctAnswer: round.phase == PartyRoundPhase.reveal
               ? round.proposedResult
               : null,
-          winningGuessId: winningPartyGuess?.id,
-          hasSubmittedGuess: round.ownGuess != null,
+          winningGuessId: null,
+          hasSubmittedGuess: false,
         );
     _partySnapshot = snapshot;
     ref.read(partySessionProvider.notifier).setSnapshot(snapshot);
@@ -1468,19 +1469,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
         .map((entry) => entry.key)
         .toSet();
     final winningSlotIndex = _winningBetSlotIndex(gameState);
-    final scanOrder = [
-      4,
-      3,
-      2,
-      1,
-      0,
-      4,
-      3,
-      2,
-      1,
-      0,
-      if (winningSlotIndex != null) winningSlotIndex,
-    ];
+    final scanOrder = _partySnapshot?.round.challenge.isBinary == true
+        ? [0, 1, 0, 1, if (winningSlotIndex != null) winningSlotIndex]
+        : [
+            4,
+            3,
+            2,
+            1,
+            0,
+            4,
+            3,
+            2,
+            1,
+            0,
+            if (winningSlotIndex != null) winningSlotIndex,
+          ];
 
     var step = 0;
     setState(() {
@@ -1535,6 +1538,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   int? _winningBetSlotIndex(GameState gameState) {
     final correctAnswer = gameState.correctAnswer;
     if (correctAnswer == null) return null;
+    if (_partySnapshot?.round.challenge.isBinary == true) {
+      return correctAnswer == 1 ? 1 : 0;
+    }
     return ref
         .read(gameServiceProvider)
         .determineWinningBetSlotIndex(gameState.sortedGuesses, correctAnswer);
@@ -1563,14 +1569,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   int _partyPerformerBonus(PartyRoundSnapshot round) {
-    final result = round.proposedResult;
-    final values = round.guesses.map((guess) => guess.value).toList()..sort();
-    if (result == null || values.isEmpty) return 0;
-    final middle = values.length ~/ 2;
-    final crowdLine = values.length.isOdd
-        ? values[middle]
-        : ((values[middle - 1] + values[middle]) / 2).ceil();
-    return result >= crowdLine ? 2 : 0;
+    return round.performerBonus;
   }
 
   int _currentPlayerTotalBets(GameState gameState) {
@@ -1744,17 +1743,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     setState(() => _isSubmittingGuess = true);
 
     try {
-      if (room.gameMode == GameMode.party) {
-        final partyService = ref.read(partyGameServiceProvider);
-        final snapshot = await partyService.submitGuess(
-          roomId: room.id,
-          value: value,
-        );
-        if (!_canUseRef) return;
-        _applyPartySnapshot(snapshot);
-        unawaited(_broadcastPartyState(snapshot));
-        return;
-      }
+      if (room.gameMode == GameMode.party) return;
       await gameService.submitGuess(
         roomId: room.id,
         roundNumber: gameState.currentRound,
@@ -1849,9 +1838,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (room.gameMode == GameMode.party &&
         _partySnapshot?.round.performer.id == player.id) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('The performer predicts, but does not bet this round.'),
-        ),
+        const SnackBar(content: Text('The performer does not bet this round.')),
       );
       return;
     }
@@ -1889,7 +1876,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       targetGuessId: targetGuessId,
       slotIndex: slotIndex,
       chips: chips,
-      payoutMultiplier: GameConstants.boardOdds[slotIndex],
+      payoutMultiplier:
+          room.gameMode == GameMode.party &&
+              _partySnapshot?.round.challenge.isBinary == true
+          ? 2
+          : GameConstants.boardOdds[slotIndex],
       playerName: player.name,
       playerColor: player.avatarColor,
       positionX: safeDx,
@@ -1996,7 +1987,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final optimisticBet = sourceBet.copyWith(
       targetGuessId: targetGuessId,
       slotIndex: targetSlotIndex,
-      payoutMultiplier: GameConstants.boardOdds[targetSlotIndex],
+      payoutMultiplier:
+          room.gameMode == GameMode.party &&
+              _partySnapshot?.round.challenge.isBinary == true
+          ? 2
+          : GameConstants.boardOdds[targetSlotIndex],
       positionX: safeDx,
       positionY: safeDy,
     );
@@ -2383,6 +2378,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final answer = resultSettled
         ? gameState.correctAnswer ?? gameState.currentQuestion?.answer
         : null;
+    final isBinary = _partySnapshot?.round.challenge.isBinary == true;
+    final answerText = answer == null
+        ? '--'
+        : isBinary
+        ? (answer == 1 ? 'SUCCESS' : 'FAILED')
+        : _formatGuessValue(answer);
     final accent = didWin && resultSettled
         ? AppColors.chipGold
         : AppColors.brassLight;
@@ -2453,7 +2454,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           child: Column(
             children: [
               Text(
-                'ANSWER',
+                isBinary ? 'RESULT' : 'ANSWER',
                 maxLines: 1,
                 style: GoogleFonts.outfit(
                   color: didWin && resultSettled
@@ -2494,12 +2495,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                       FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
-                              answer == null ? '--' : _formatGuessValue(answer),
+                              answerText,
                               maxLines: 1,
                               style: TextStyle(
                                 fontFamily: 'RehnCondensed',
                                 color: headlineColor,
-                                fontSize: 76,
+                                fontSize: isBinary ? 54 : 76,
                                 fontWeight: FontWeight.w900,
                                 height: 0.86,
                                 letterSpacing: 0,
@@ -4421,13 +4422,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final boundaryValues = _boardBoundaryValues(gameState);
+        final isBinary = _partySnapshot?.round.challenge.isBinary == true;
         final isReveal = _isRevealPhase(gameState);
         final winningSlotIndex = isReveal
             ? _winningBetSlotIndex(gameState)
             : null;
+        final activeSlots = isBinary ? _binaryBetSlots : _betSlots;
         final orderedSlots = [
-          ..._betSlots.where((slot) => !slot.isSweetSpot),
-          ..._betSlots.where((slot) => slot.isSweetSpot),
+          ...activeSlots.where((slot) => !slot.isSweetSpot),
+          ...activeSlots.where((slot) => slot.isSweetSpot),
         ];
 
         return Padding(
@@ -4463,13 +4466,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         child: _buildCodedBetSlot(
                           spec: spec,
                           isWinningReveal: activeRevealSlotIndex == spec.index,
-                          boundaries: boundaryValues,
+                          boundaries: isBinary ? const <int>[] : boundaryValues,
                         ),
                       ),
                     ),
                   if (_showWinnerBadge && winningSlotIndex != null)
                     ..._buildWinParticles(size, winningSlotIndex),
-                  ..._buildBoundaryLabels(boundaryValues, size),
+                  if (!isBinary) ..._buildBoundaryLabels(boundaryValues, size),
                   if (!(_showWinnerBadge && winningSlotIndex != null))
                     _buildAllPlacedChips(
                       gameState.bets,
@@ -4498,6 +4501,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   List<int> _boardBoundaryValues(GameState gameState) {
+    final partyBoundaries = _partySnapshot?.round.challenge.betBoundaries;
+    if (partyBoundaries != null && partyBoundaries.length == 4) {
+      return partyBoundaries;
+    }
     return ref
         .read(gameServiceProvider)
         .boardBoundaryValues(gameState.sortedGuesses);
@@ -4606,7 +4613,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         .toList();
     if (winningBets.isEmpty) return const [];
 
-    final odds = GameConstants.boardOdds[winningSlotIndex];
+    final odds = _partySnapshot?.round.challenge.isBinary == true
+        ? 2
+        : GameConstants.boardOdds[winningSlotIndex];
     final center = Offset(
       (spec.rect.left + spec.rect.width * 0.5) * boardSize.width,
       (spec.rect.top + spec.rect.height * 0.5) * boardSize.height,
@@ -5508,7 +5517,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   _BetSlotSpec? _betSlotSpecFor(int slotIndex) {
-    for (final spec in _betSlots) {
+    final slots = _partySnapshot?.round.challenge.isBinary == true
+        ? _binaryBetSlots
+        : _betSlots;
+    for (final spec in slots) {
       if (spec.index == slotIndex) return spec;
     }
     return null;
@@ -5706,7 +5718,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             ),
           if (isHost && round.performerReady)
             _partyActionButton(
-              label: 'START 60 SECONDS',
+              label: 'START ${round.challenge.durationSeconds} SECONDS',
               icon: Icons.timer_rounded,
               onPressed: () => _runPartyCommand(
                 () => ref
@@ -5942,7 +5954,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final phase = routeState.$1;
     final isGameOver =
         routeState.$2 >= routeState.$3 && phase == RoundPhase.idle;
-
     if (isGameOver) {
       return Consumer(
         builder: (context, ref, _) {
@@ -6168,6 +6179,23 @@ const List<_BetSlotSpec> _betSlots = [
     4,
     _BetSlotTone.green,
     Rect.fromLTWH(0.055, 0.798, 0.890, 0.182),
+  ),
+];
+
+const List<_BetSlotSpec> _binaryBetSlots = [
+  _BetSlotSpec(
+    1,
+    'YES',
+    2,
+    _BetSlotTone.green,
+    Rect.fromLTWH(0.055, 0.035, 0.890, 0.445),
+  ),
+  _BetSlotSpec(
+    0,
+    'NO',
+    2,
+    _BetSlotTone.red,
+    Rect.fromLTWH(0.055, 0.520, 0.890, 0.445),
   ),
 ];
 

@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'party_snapshot.dart';
+
 class PartyMoment {
   final String id;
   final String roomId;
@@ -5,9 +9,8 @@ class PartyMoment {
   final String uploaderPlayerId;
   final String uploaderName;
   final String? uploaderColor;
-  final String storagePath;
+  final Uint8List bytes;
   final DateTime createdAt;
-  final String? signedUrl;
 
   const PartyMoment({
     required this.id,
@@ -16,38 +19,9 @@ class PartyMoment {
     required this.uploaderPlayerId,
     required this.uploaderName,
     required this.uploaderColor,
-    required this.storagePath,
+    required this.bytes,
     required this.createdAt,
-    this.signedUrl,
   });
-
-  factory PartyMoment.fromJson(Map<String, dynamic> json) {
-    return PartyMoment(
-      id: json['id'] as String,
-      roomId: json['room_id'] as String,
-      roundNumber: (json['round_number'] as num).toInt(),
-      uploaderPlayerId: json['uploader_player_id'] as String,
-      uploaderName: json['uploader_name'] as String? ?? 'Player',
-      uploaderColor: json['uploader_color'] as String?,
-      storagePath: json['storage_path'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String).toUtc(),
-      signedUrl: json['signed_url'] as String?,
-    );
-  }
-
-  PartyMoment copyWith({String? signedUrl}) {
-    return PartyMoment(
-      id: id,
-      roomId: roomId,
-      roundNumber: roundNumber,
-      uploaderPlayerId: uploaderPlayerId,
-      uploaderName: uploaderName,
-      uploaderColor: uploaderColor,
-      storagePath: storagePath,
-      createdAt: createdAt,
-      signedUrl: signedUrl ?? this.signedUrl,
-    );
-  }
 }
 
 class PartyRecapRound {
@@ -61,6 +35,9 @@ class PartyRecapRound {
   final int? performerGuess;
   final String? closestPlayerName;
   final int? closestGuess;
+  final int performerBonus;
+  final PartyChallengeType challengeType;
+  final int durationSeconds;
 
   const PartyRecapRound({
     required this.roundNumber,
@@ -73,6 +50,9 @@ class PartyRecapRound {
     required this.performerGuess,
     required this.closestPlayerName,
     required this.closestGuess,
+    required this.performerBonus,
+    required this.challengeType,
+    required this.durationSeconds,
   });
 
   factory PartyRecapRound.fromJson(Map<String, dynamic> json) {
@@ -87,6 +67,11 @@ class PartyRecapRound {
       performerGuess: (json['performer_guess'] as num?)?.toInt(),
       closestPlayerName: json['closest_player_name'] as String?,
       closestGuess: (json['closest_guess'] as num?)?.toInt(),
+      performerBonus: (json['performer_bonus'] as num?)?.toInt() ?? 0,
+      challengeType: PartyChallengeType.fromString(
+        json['challenge_type'] as String?,
+      ),
+      durationSeconds: (json['duration_seconds'] as num?)?.toInt() ?? 60,
     );
   }
 }

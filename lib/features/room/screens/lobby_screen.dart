@@ -227,7 +227,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             .read(partyGameServiceProvider)
             .startGame(
               roomId: room.id,
-              guessDurationSeconds: GameConstants.guessTimerSeconds,
+              bettingDurationSeconds: GameConstants.partyBetTimerSeconds,
             );
         ref.read(currentRoomProvider.notifier).set(snapshot.room);
         unawaited(

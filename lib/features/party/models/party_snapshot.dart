@@ -18,6 +18,18 @@ enum PartyRoundPhase {
   }
 }
 
+enum PartyChallengeType {
+  count,
+  binary;
+
+  static PartyChallengeType fromString(String? value) {
+    return PartyChallengeType.values.firstWhere(
+      (type) => type.name == value,
+      orElse: () => PartyChallengeType.count,
+    );
+  }
+}
+
 class PartyParticipant {
   final String id;
   final String name;
@@ -45,6 +57,9 @@ class PartyChallenge {
   final String answerUnit;
   final int durationSeconds;
   final int maxResult;
+  final List<int> betBoundaries;
+  final PartyChallengeType type;
+  final int performerSuccessBonus;
 
   const PartyChallenge({
     required this.id,
@@ -53,9 +68,18 @@ class PartyChallenge {
     required this.answerUnit,
     required this.durationSeconds,
     required this.maxResult,
+    required this.betBoundaries,
+    required this.type,
+    required this.performerSuccessBonus,
   });
 
+  bool get isBinary => type == PartyChallengeType.binary;
+
   factory PartyChallenge.fromJson(Map<String, dynamic> json) {
+    final type = PartyChallengeType.fromString(
+      json['challenge_type'] as String?,
+    );
+    final rawBoundaries = json['bet_boundaries'] as List?;
     return PartyChallenge(
       id: json['id'] as String,
       text: json['text'] as String,
@@ -63,6 +87,16 @@ class PartyChallenge {
       answerUnit: json['answer_unit'] as String,
       durationSeconds: (json['duration_seconds'] as num).toInt(),
       maxResult: (json['max_result'] as num).toInt(),
+      betBoundaries:
+          (rawBoundaries ??
+                  (type == PartyChallengeType.binary
+                      ? const []
+                      : const [25, 50, 75, 100]))
+              .map((value) => (value as num).toInt())
+              .toList(growable: false),
+      type: type,
+      performerSuccessBonus:
+          (json['performer_success_bonus'] as num?)?.toInt() ?? 3,
     );
   }
 }
@@ -139,6 +173,7 @@ class PartyRoundSnapshot {
   final List<PartyGuessSnapshot> guesses;
   final List<PartyBetSnapshot> bets;
   final int? proposedResult;
+  final int performerBonus;
 
   const PartyRoundSnapshot({
     required this.number,
@@ -154,6 +189,7 @@ class PartyRoundSnapshot {
     required this.guesses,
     required this.bets,
     required this.proposedResult,
+    required this.performerBonus,
   });
 
   factory PartyRoundSnapshot.fromJson(Map<String, dynamic> json) {
@@ -197,6 +233,7 @@ class PartyRoundSnapshot {
           )
           .toList(growable: false),
       proposedResult: (json['proposed_result'] as num?)?.toInt(),
+      performerBonus: (json['performer_bonus'] as num?)?.toInt() ?? 0,
     );
   }
 }

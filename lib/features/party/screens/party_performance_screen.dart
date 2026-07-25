@@ -16,6 +16,7 @@ import '../../room/models/room_model.dart';
 import '../../room/providers/room_providers.dart';
 import '../models/party_moment.dart';
 import '../models/party_snapshot.dart';
+import '../providers/party_local_media_provider.dart';
 import '../providers/party_session_provider.dart';
 import '../services/party_game_service.dart';
 
@@ -69,6 +70,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     super.initState();
     _partySession = ref.read(partySessionProvider.notifier);
     _realtimeService = ref.read(realtimeServiceProvider);
+    final cachedSnapshot = ref.read(partySessionProvider).snapshot;
+    if (cachedSnapshot?.room.code == widget.roomCode) {
+      _isBootstrapping = false;
+      _pendingSnapshot = cachedSnapshot;
+    }
     WidgetsBinding.instance.addObserver(this);
     unawaited(_bootstrap());
   }
@@ -110,7 +116,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       if (!_canUseRef) return;
       final room = ref.read(currentRoomProvider);
       if (room != null) {
-        unawaited(_refreshSnapshot(room.id, loadMoments: true));
+        unawaited(_refreshSnapshot(room.id));
       }
       if (_showCamera && _cameraController == null) {
         unawaited(_openCamera());
@@ -135,17 +141,21 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         return;
       }
 
-      try {
-        await roomService.synchronizeServerClock();
-      } catch (_) {}
-      _players = await playerService.getPlayers(room.id);
+      unawaited(() async {
+        try {
+          await roomService.synchronizeServerClock();
+        } catch (_) {}
+      }());
+      final playerFuture = playerService.getPlayers(room.id);
+      final snapshotFuture = _partySession.load(room.id);
+      _players = await playerFuture;
       if (!_canUseRef) return;
       _restoreCurrentPlayer(room.id);
-      final snapshot = await _partySession.load(room.id, loadMoments: true);
-      if (!_canUseRef) return;
-      await _setupRealtime(room.id);
+      final snapshot = await snapshotFuture;
       if (!_canUseRef) return;
       if (snapshot != null) _queueSnapshotSync(snapshot);
+      if (_isBootstrapping) setState(() => _isBootstrapping = false);
+      unawaited(_setupRealtime(room.id));
     } catch (error, stackTrace) {
       debugPrint('Party performance bootstrap failed: $error\n$stackTrace');
     } finally {
@@ -191,10 +201,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     }
   }
 
-  Future<void> _refreshSnapshot(
-    String roomId, {
-    bool loadMoments = false,
-  }) async {
+  Future<void> _refreshSnapshot(String roomId) async {
     if (!_canUseRef) return;
     if (_isRefreshingSnapshot) {
       _refreshRequested = true;
@@ -203,16 +210,13 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     _isRefreshingSnapshot = true;
     _refreshRequested = false;
     try {
-      final snapshot = await _partySession.load(
-        roomId,
-        loadMoments: loadMoments,
-      );
+      final snapshot = await _partySession.load(roomId);
       if (_canUseRef && snapshot != null) _queueSnapshotSync(snapshot);
     } finally {
       _isRefreshingSnapshot = false;
       if (_refreshRequested && _canUseRef) {
         _refreshRequested = false;
-        unawaited(_refreshSnapshot(roomId, loadMoments: loadMoments));
+        unawaited(_refreshSnapshot(roomId));
       }
     }
   }
@@ -283,7 +287,10 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       final latest = ref.read(partySessionProvider).snapshot;
       final latestDeadline = latest?.round.phaseEndsAt;
       final remaining = latestDeadline == null
-          ? (_secondsRemaining - 1).clamp(0, 60)
+          ? (_secondsRemaining - 1).clamp(
+              0,
+              snapshot.round.challenge.durationSeconds,
+            )
           : _remainingSeconds(latestDeadline);
       setState(() => _secondsRemaining = remaining);
       if (remaining > 0) return;
@@ -373,8 +380,9 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
       final selected = cameras[_cameraIndex];
       openingController = CameraController(
         selected,
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
       );
       await openingController.initialize().timeout(const Duration(seconds: 12));
       if (!_canUseRef || !_showCamera) {
@@ -440,19 +448,18 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         });
       }
       final Uint8List bytes = await photo.readAsBytes();
-      final moment = await _partySession.uploadMoment(
-        roomId: snapshot.room.id,
-        roundNumber: snapshot.round.number,
-        playerId: player.id,
-        bytes: bytes,
-      );
+      ref
+          .read(partyLocalMediaProvider.notifier)
+          .add(
+            roomId: snapshot.room.id,
+            roundNumber: snapshot.round.number,
+            playerId: player.id,
+            playerName: player.name,
+            playerColor: player.avatarColor,
+            bytes: bytes,
+          );
       if (!_canUseRef) return;
-      if (moment == null) {
-        final error = ref.read(partySessionProvider).errorMessage;
-        _showMessage(error ?? 'Photo could not be saved.');
-      } else {
-        HapticFeedback.heavyImpact();
-      }
+      HapticFeedback.heavyImpact();
     } finally {
       if (_canUseRef) setState(() => _isCapturing = false);
     }
@@ -460,9 +467,12 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
 
   List<PartyMoment> _momentsForRound(int round) {
     return ref
-        .read(partySessionProvider)
-        .moments
-        .where((moment) => moment.roundNumber == round)
+        .read(partyLocalMediaProvider)
+        .where((moment) {
+          final playerId = ref.read(currentPlayerProvider)?.id;
+          return moment.roundNumber == round &&
+              moment.uploaderPlayerId == playerId;
+        })
         .toList(growable: false);
   }
 
@@ -490,7 +500,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         final rows = next.asData?.value;
         if (rows == null || rows.isEmpty) return;
         final updatedRoom = Room.fromJson(rows.first);
-        unawaited(_refreshSnapshot(updatedRoom.id, loadMoments: true));
+        unawaited(_refreshSnapshot(updatedRoom.id));
       });
     }
 
@@ -511,8 +521,14 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
     final currentPlayer = ref.watch(currentPlayerProvider);
     final isHost = currentPlayer?.isHost == true;
     final isPerformer = currentPlayer?.id == round.performer.id;
-    final moments = session.moments
-        .where((moment) => moment.roundNumber == round.number)
+    final moments = ref
+        .watch(partyLocalMediaProvider)
+        .where(
+          (moment) =>
+              moment.roomId == snapshot.room.id &&
+              moment.roundNumber == round.number &&
+              moment.uploaderPlayerId == currentPlayer?.id,
+        )
         .toList(growable: false);
 
     if (_showCamera) {
@@ -657,7 +673,15 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
 
   Widget _buildMinimalTimer({bool compact = false}) {
     final urgent = _secondsRemaining <= 10;
-    final progress = (_secondsRemaining / 60).clamp(0.0, 1.0);
+    final duration =
+        ref
+            .read(partySessionProvider)
+            .snapshot
+            ?.round
+            .challenge
+            .durationSeconds ??
+        60;
+    final progress = (_secondsRemaining / duration).clamp(0.0, 1.0);
     final size = compact ? 84.0 : 142.0;
     return Center(
       child: SizedBox(
@@ -726,7 +750,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _primaryButton(
-                label: 'START 60 SECONDS',
+                label: 'START ${round.challenge.durationSeconds} SECONDS',
                 icon: Icons.play_arrow_rounded,
                 onPressed: () => _runCommand(
                   (service) => service.startAction(snapshot.room.id),
@@ -757,9 +781,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
           children: [
             _minimalStatus(
               isPerformer
-                  ? 'Go. The room is counting.'
+                  ? 'Go. Give it your best shot.'
                   : isHost
-                  ? 'Keep the count clean.'
+                  ? (round.challenge.isBinary
+                        ? 'Watch the success condition.'
+                        : 'Keep the count clean.')
                   : 'Catch the moment, not the pose.',
             ),
             if (cameraButton != null) ...[
@@ -785,7 +811,9 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '${round.proposedResult ?? '—'} ${round.challenge.answerUnit}',
+                round.challenge.isBinary
+                    ? (round.proposedResult == 1 ? 'SUCCESS' : 'FAILED')
+                    : '${round.proposedResult ?? '—'} ${round.challenge.answerUnit}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'RehnCondensed',
@@ -839,6 +867,33 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
 
   Widget _buildMinimalResultEntry(PartySnapshot snapshot) {
     final round = snapshot.round;
+    if (round.challenge.isBinary) {
+      return Row(
+        children: [
+          Expanded(
+            child: _secondaryButton(
+              label: 'FAILED',
+              icon: Icons.close_rounded,
+              onPressed: () => _runCommand(
+                (service) =>
+                    service.submitResult(roomId: snapshot.room.id, result: 0),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _primaryButton(
+              label: 'SUCCESS',
+              icon: Icons.check_rounded,
+              onPressed: () => _runCommand(
+                (service) =>
+                    service.submitResult(roomId: snapshot.room.id, result: 1),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
         Expanded(
@@ -1031,11 +1086,10 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
                               ? const SizedBox.shrink()
                               : ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    moments.last.signedUrl ?? '',
+                                  child: Image.memory(
+                                    moments.last.bytes,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const ColoredBox(color: Colors.white12),
+                                    cacheWidth: 240,
                                   ),
                                 ),
                         ),
@@ -1335,7 +1389,7 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
             if (isHost) ...[
               const SizedBox(height: 14),
               _primaryButton(
-                label: 'START 60 SECONDS',
+                label: 'START ${round.challenge.durationSeconds} SECONDS',
                 icon: Icons.play_arrow_rounded,
                 onPressed: () => _runCommand(
                   (service) => service.startAction(snapshot.room.id),
@@ -1348,64 +1402,16 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
         if (!isHost) {
           return _waitingPill('HOST IS ENTERING THE RESULT');
         }
-        return Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _resultController,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
-                  color: AppColors.ivory,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w900,
-                ),
-                decoration: InputDecoration(
-                  hintText: '0–${round.challenge.maxResult}',
-                  hintStyle: TextStyle(
-                    color: AppColors.ivory.withValues(alpha: 0.34),
-                  ),
-                  filled: true,
-                  fillColor: Colors.black.withValues(alpha: 0.26),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            IconButton.filled(
-              onPressed: () {
-                final value = int.tryParse(_resultController.text);
-                if (value == null ||
-                    value < 0 ||
-                    value > round.challenge.maxResult) {
-                  return;
-                }
-                _runCommand(
-                  (service) => service.submitResult(
-                    roomId: snapshot.room.id,
-                    result: value,
-                  ),
-                );
-              },
-              icon: const Icon(Icons.arrow_forward_rounded),
-              style: IconButton.styleFrom(
-                backgroundColor: _partyOrange,
-                foregroundColor: AppColors.ink,
-                minimumSize: const Size(58, 58),
-              ),
-            ),
-          ],
-        );
+        return _buildMinimalResultEntry(snapshot);
       case PartyRoundPhase.resultConfirm:
         final canConfirm = _isRequiredConfirmer(round, currentPlayer);
         if (!canConfirm) return _waitingPill('WAITING FOR SCORE CONFIRMATION');
         return Column(
           children: [
             Text(
-              '${round.proposedResult ?? '—'} ${round.challenge.answerUnit}',
+              round.challenge.isBinary
+                  ? (round.proposedResult == 1 ? 'SUCCESS' : 'FAILED')
+                  : '${round.proposedResult ?? '—'} ${round.challenge.answerUnit}',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'RehnCondensed',
@@ -1726,14 +1732,11 @@ class _PartyPerformanceScreenState extends ConsumerState<PartyPerformanceScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: moment.signedUrl == null
-                      ? const ColoredBox(color: Colors.white12)
-                      : Image.network(
-                          moment.signedUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const ColoredBox(color: Colors.white12),
-                        ),
+                  child: Image.memory(
+                    moment.bytes,
+                    fit: BoxFit.cover,
+                    cacheWidth: 240,
+                  ),
                 ),
               ),
             ),
