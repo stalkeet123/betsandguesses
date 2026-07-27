@@ -99,6 +99,7 @@ Future<void> _pumpScene(
             currentPlayer: player,
             secondsRemaining: secondsRemaining,
             commandInFlight: false,
+            stageTop: 235,
             onMarkReady: noAction,
             onStartAction: noAction,
             onOpenResultEntry: noAction,

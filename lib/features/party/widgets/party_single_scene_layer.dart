@@ -27,6 +27,7 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
   final Player? currentPlayer;
   final int secondsRemaining;
   final bool commandInFlight;
+  final double stageTop;
   final PartySceneAction onMarkReady;
   final PartySceneAction onStartAction;
   final PartySceneAction onOpenResultEntry;
@@ -40,6 +41,7 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
     required this.currentPlayer,
     required this.secondsRemaining,
     required this.commandInFlight,
+    this.stageTop = 0,
     required this.onMarkReady,
     required this.onStartAction,
     required this.onOpenResultEntry,
@@ -347,33 +349,22 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     return Stack(
       fit: StackFit.expand,
       children: [
-        IgnorePointer(
-          ignoring: !stageVisible,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Expanded(flex: 50, child: SizedBox.expand()),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    flex: 50,
-                    child: AnimatedSlide(
-                      offset: stageVisible
-                          ? Offset.zero
-                          : const Offset(0.04, 0),
-                      duration: const Duration(milliseconds: 460),
-                      curve: Curves.easeOutCubic,
-                      child: AnimatedOpacity(
-                        opacity: stageVisible ? 1 : 0,
-                        duration: const Duration(milliseconds: 360),
-                        curve: Curves.easeOutCubic,
-                        child: _buildStage(moments),
-                      ),
-                    ),
-                  ),
-                ],
+        Positioned(
+          left: 8,
+          right: 8,
+          top: widget.stageTop,
+          bottom: 6,
+          child: IgnorePointer(
+            ignoring: !stageVisible,
+            child: AnimatedSlide(
+              offset: stageVisible ? Offset.zero : const Offset(0, 0.05),
+              duration: const Duration(milliseconds: 480),
+              curve: Curves.easeOutCubic,
+              child: AnimatedOpacity(
+                opacity: stageVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeOutCubic,
+                child: _buildStage(moments),
               ),
             ),
           ),
@@ -387,71 +378,46 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     final round = widget.snapshot.round;
     final canOpenCamera = !_isPerformer && moments.length < 3;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: PartyPalette.midnight.withValues(alpha: 0.97),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: PartyPalette.orange.withValues(alpha: 0.34),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _buildStageLabel()),
+              const SizedBox(width: 10),
+              _cameraButton(
+                enabled: canOpenCamera,
+                momentCount: moments.length,
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: PartyPalette.nightDeep.withValues(alpha: 0.55),
-              blurRadius: 24,
-              offset: const Offset(-8, 8),
-            ),
-          ],
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            const _BoardEcho(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: _buildStageLabel()),
-                      const SizedBox(width: 10),
-                      _cameraButton(
-                        enabled: canOpenCamera,
-                        momentCount: moments.length,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 360),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) {
-                        final scale = Tween<double>(
-                          begin: 0.985,
-                          end: 1,
-                        ).animate(animation);
-                        return FadeTransition(
-                          opacity: animation,
-                          child: ScaleTransition(scale: scale, child: child),
-                        );
-                      },
-                      child: KeyedSubtree(
-                        key: ValueKey(
-                          '${round.number}-${round.phase}-${round.performerReady}',
-                        ),
-                        child: _buildStageBody(),
-                      ),
-                    ),
-                  ),
-                ],
+          const SizedBox(height: 6),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 360),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final scale = Tween<double>(
+                  begin: 0.985,
+                  end: 1,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(scale: scale, child: child),
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey(
+                  '${round.number}-${round.phase}-${round.performerReady}',
+                ),
+                child: _buildStageBody(),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -524,7 +490,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                   ),
                   const SizedBox(width: 7),
                   Text(
-                    '$momentCount/3',
+                    'CAMERA  ·  $momentCount/3',
                     style: GoogleFonts.outfit(
                       color: enabled
                           ? PartyPalette.cream
@@ -1215,35 +1181,6 @@ class _StageKicker extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w900,
         letterSpacing: 1.8,
-      ),
-    );
-  }
-}
-
-class _BoardEcho extends StatelessWidget {
-  const _BoardEcho();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Opacity(
-        opacity: 0.12,
-        child: Column(
-          children: List.generate(
-            5,
-            (index) => Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: index == 4
-                        ? BorderSide.none
-                        : const BorderSide(color: PartyPalette.blueMuted),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

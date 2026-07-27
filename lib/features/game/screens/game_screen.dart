@@ -5897,6 +5897,215 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
+  Widget _buildPartySingleSceneSurface(PartySnapshot snapshot) {
+    final gameState = ref.watch(gameStateProvider);
+    final currentPlayer = ref.watch(currentPlayerProvider);
+    final secondsRemaining = ref.watch(gameTimerProvider);
+    final round = snapshot.round;
+    final performanceVisible =
+        round.phase == PartyRoundPhase.ready ||
+        round.phase == PartyRoundPhase.action ||
+        round.phase == PartyRoundPhase.resultEntry ||
+        round.phase == PartyRoundPhase.resultConfirm;
+    const motion = Duration(milliseconds: 520);
+    const fadeMotion = Duration(milliseconds: 320);
+
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const _PartyNightBackground(),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final height = constraints.maxHeight;
+                    final compact = height < 700;
+                    final gap = compact ? 8.0 : 10.0;
+                    final logoTop = 6.0;
+                    final logoHeight = compact ? 76.0 : 92.0;
+                    final timerHeight = compact ? 39.0 : 42.0;
+                    final leftColumnWidth = (width - 4) / 2;
+                    final left = 6.0;
+                    final leftWidth = leftColumnWidth - 12;
+                    final boardLeft = leftColumnWidth + 4;
+                    final boardWidth = width - boardLeft;
+                    final timerBetTop = logoTop + logoHeight + 4;
+                    final questionBetTop = timerBetTop + timerHeight + gap;
+                    final chipHeight = compact ? 96.0 : 102.0;
+                    final rawQuestionHeight =
+                        height -
+                        questionBetTop -
+                        chipHeight -
+                        (gap * 2) -
+                        (compact ? 100 : 120) -
+                        8;
+                    final questionBetHeight = min(
+                      height * (compact ? 0.28 : 0.29),
+                      max(compact ? 112.0 : 132.0, rawQuestionHeight),
+                    );
+                    final chipTop = questionBetTop + questionBetHeight + gap;
+                    final playersTop = chipTop + chipHeight + gap;
+                    final playersHeight = max(72.0, height - playersTop - 8);
+                    final questionPerformanceTop = logoTop + logoHeight + 6;
+                    final questionPerformanceHeight = (height * 0.20)
+                        .clamp(compact ? 108.0 : 122.0, compact ? 136.0 : 154.0)
+                        .toDouble();
+                    final stageTop =
+                        (questionPerformanceTop + questionPerformanceHeight + 6)
+                            .clamp(0.0, height - 190)
+                            .toDouble();
+
+                    Widget fadingElement({required Widget child}) {
+                      return IgnorePointer(
+                        ignoring: performanceVisible,
+                        child: AnimatedScale(
+                          scale: performanceVisible ? 0.94 : 1,
+                          alignment: Alignment.topCenter,
+                          duration: motion,
+                          curve: Curves.easeOutCubic,
+                          child: AnimatedOpacity(
+                            opacity: performanceVisible ? 0 : 1,
+                            duration: fadeMotion,
+                            curve: Curves.easeOutCubic,
+                            child: child,
+                          ),
+                        ),
+                      );
+                    }
+
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          left: left,
+                          top: logoTop,
+                          width: leftWidth,
+                          height: logoHeight,
+                          child: _buildPartyModeMark(),
+                        ),
+                        AnimatedPositioned(
+                          duration: motion,
+                          curve: Curves.easeInOutCubic,
+                          left: performanceVisible ? boardLeft + 6 : left,
+                          top: performanceVisible
+                              ? logoTop + ((logoHeight - timerHeight) / 2)
+                              : timerBetTop,
+                          width: performanceVisible
+                              ? max(120.0, boardWidth - 12)
+                              : leftWidth,
+                          height: timerHeight,
+                          child: _buildRoundTimer(gameState),
+                        ),
+                        AnimatedPositioned(
+                          duration: motion,
+                          curve: Curves.easeInOutCubic,
+                          left: left,
+                          top: performanceVisible
+                              ? questionPerformanceTop
+                              : questionBetTop,
+                          width: performanceVisible ? width - 12 : leftWidth,
+                          height: performanceVisible
+                              ? questionPerformanceHeight
+                              : questionBetHeight,
+                          child: _buildQuestionCard(context, gameState),
+                        ),
+                        Positioned(
+                          left: left,
+                          top: chipTop,
+                          width: leftWidth,
+                          height: chipHeight,
+                          child: fadingElement(
+                            child: _buildChipPicker(currentPlayer, gameState),
+                          ),
+                        ),
+                        Positioned(
+                          left: left,
+                          top: playersTop,
+                          width: leftWidth,
+                          height: playersHeight,
+                          child: fadingElement(
+                            child: _buildPlayersStrip(gameState),
+                          ),
+                        ),
+                        AnimatedPositioned(
+                          duration: motion,
+                          curve: Curves.easeInOutCubic,
+                          left: performanceVisible ? width + 24 : boardLeft,
+                          top: 0,
+                          width: boardWidth,
+                          height: height,
+                          child: IgnorePointer(
+                            ignoring: performanceVisible,
+                            child: AnimatedOpacity(
+                              opacity: performanceVisible ? 0 : 1,
+                              duration: fadeMotion,
+                              child: _buildBettingBoardAsset(
+                                gameState,
+                                currentPlayer?.id,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: PartySingleSceneLayer(
+                            key: const ValueKey('party-single-scene'),
+                            snapshot: snapshot,
+                            currentPlayer: currentPlayer,
+                            secondsRemaining: secondsRemaining,
+                            commandInFlight: _isPartyCommandInFlight,
+                            stageTop: stageTop,
+                            onMarkReady: () => _runPartyCommand(
+                              () => ref
+                                  .read(partyGameServiceProvider)
+                                  .markPerformerReady(snapshot.room.id),
+                            ),
+                            onStartAction: () => _runPartyCommand(
+                              () => ref
+                                  .read(partyGameServiceProvider)
+                                  .startAction(snapshot.room.id),
+                            ),
+                            onOpenResultEntry: () => _runPartyCommand(
+                              () => ref
+                                  .read(partyGameServiceProvider)
+                                  .openResultEntry(snapshot.room.id),
+                            ),
+                            onSubmitResult: (result) => _runPartyCommand(
+                              () => ref
+                                  .read(partyGameServiceProvider)
+                                  .submitResult(
+                                    roomId: snapshot.room.id,
+                                    result: result,
+                                  ),
+                            ),
+                            onConfirmResult: () => _runPartyCommand(
+                              () => ref
+                                  .read(partyGameServiceProvider)
+                                  .confirmResult(snapshot.room.id),
+                            ),
+                            onDisputeResult: () => _runPartyCommand(
+                              () => ref
+                                  .read(partyGameServiceProvider)
+                                  .disputeResult(snapshot.room.id),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final routeState = ref.watch(
@@ -5935,6 +6144,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
           },
         ),
       );
+    }
+    if (isPartyMode && partySnapshot != null) {
+      return _buildPartySingleSceneSurface(partySnapshot);
     }
 
     return _buildPhaseSurfaceTransition(
@@ -6268,7 +6480,7 @@ class _PartyNightBackground extends StatelessWidget {
             child: _SoftPartyOrb(
               size: 310,
               color: PartyPalette.orange,
-              opacity: 0.055,
+              opacity: 0.11,
             ),
           ),
           Positioned(
@@ -6277,7 +6489,7 @@ class _PartyNightBackground extends StatelessWidget {
             child: _SoftPartyOrb(
               size: 360,
               color: PartyPalette.sage,
-              opacity: 0.075,
+              opacity: 0.12,
             ),
           ),
           Positioned.fill(
@@ -6774,10 +6986,10 @@ class _BetSlotSurface extends StatelessWidget {
 
   Widget _buildPartySurface(BorderRadius radius) {
     final colors = switch (spec.tone) {
-      _BetSlotTone.green => const [Color(0xFF31545A), Color(0xFF243E4B)],
-      _BetSlotTone.black => const [Color(0xFF20384A), Color(0xFF172C3D)],
-      _BetSlotTone.gold => const [Color(0xFFD08A55), Color(0xFFB76D43)],
-      _BetSlotTone.red => const [Color(0xFF744A57), Color(0xFF563744)],
+      _BetSlotTone.green => const [Color(0xFF6F9991), Color(0xFF4F7775)],
+      _BetSlotTone.black => const [Color(0xFF4A6680), Color(0xFF344F69)],
+      _BetSlotTone.gold => const [Color(0xFFF0A15F), Color(0xFFD77C58)],
+      _BetSlotTone.red => const [Color(0xFF9A6B7F), Color(0xFF745569)],
     };
     final borderColor = spec.isSweetSpot
         ? PartyPalette.cream.withValues(alpha: 0.62)
