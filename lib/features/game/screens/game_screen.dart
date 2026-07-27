@@ -24,6 +24,8 @@ import '../../../features/game/services/game_sync_policy.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/party/models/party_snapshot.dart';
 import '../../../features/party/providers/party_session_provider.dart';
+import '../../../features/party/theme/party_palette.dart';
+import '../../../features/party/widgets/party_single_scene_layer.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../models/game_state.dart';
@@ -71,7 +73,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final List<_PendingBetEvent> _pendingBetEvents = [];
   PartySnapshot? _partySnapshot;
   bool _isPartyCommandInFlight = false;
-  bool _partyRouteScheduled = false;
+  Timer? _partySnapshotPollTimer;
   bool _isActive = true;
   bool _isDisposed = false;
   late final AudioService _audioService;
@@ -136,6 +138,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _stopTimer();
     _realtimeRetryTimer?.cancel();
     _roomSyncDebounceTimer?.cancel();
+    _partySnapshotPollTimer?.cancel();
     _roundAdvanceTimer?.cancel();
     _questionStartTimer?.cancel();
     _cancelRevealEffects();
@@ -914,6 +917,23 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  void _startPartySnapshotPolling() {
+    if (_partySnapshotPollTimer != null) return;
+    _partySnapshotPollTimer = Timer.periodic(
+      const Duration(milliseconds: 1200),
+      (_) {
+        if (_canUseRef) {
+          unawaited(_resyncPartySnapshot(synchronizeClock: false));
+        }
+      },
+    );
+  }
+
+  void _stopPartySnapshotPolling() {
+    _partySnapshotPollTimer?.cancel();
+    _partySnapshotPollTimer = null;
+  }
+
   void _applyPartySnapshot(PartySnapshot snapshot) {
     if (!_canUseRef) return;
     final previous = _partySnapshot;
@@ -1011,7 +1031,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         );
     _partySnapshot = snapshot;
     ref.read(partySessionProvider.notifier).setSnapshot(snapshot);
-
     if (previous?.round.number != round.number) {
       _guessInput = '';
       _selectedChipValue = null;
@@ -1073,31 +1092,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _stopTimer();
         break;
     }
-    _routeToPartyPerformanceWhenNeeded(round.phase);
+    final needsFastPartySync =
+        round.phase == PartyRoundPhase.ready ||
+        round.phase == PartyRoundPhase.action ||
+        round.phase == PartyRoundPhase.resultEntry ||
+        round.phase == PartyRoundPhase.resultConfirm;
+    if (needsFastPartySync) {
+      _startPartySnapshotPolling();
+    } else {
+      _stopPartySnapshotPolling();
+    }
     if (currentPlayer?.id == round.performer.id &&
         round.phase != PartyRoundPhase.betting) {
       _selectedChipValue = null;
       _selectedBetId = null;
     }
     if (_canUseRef) setState(() {});
-  }
-
-  void _routeToPartyPerformanceWhenNeeded(PartyRoundPhase phase) {
-    final shouldOpenPerformance =
-        phase == PartyRoundPhase.ready ||
-        phase == PartyRoundPhase.action ||
-        phase == PartyRoundPhase.resultEntry ||
-        phase == PartyRoundPhase.resultConfirm;
-    if (!shouldOpenPerformance || _partyRouteScheduled || !_canUseRef) return;
-    _partyRouteScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _partyRouteScheduled = false;
-      if (!_canUseRef) return;
-      context.goNamed(
-        'party-performance',
-        pathParameters: {'roomCode': widget.roomCode},
-      );
-    });
   }
 
   Future<void> _broadcastPartyState(PartySnapshot snapshot) async {
@@ -1206,7 +1216,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _revealGuesses();
       } else if (gameState.phase == RoundPhase.betting) {
         _revealAnswer();
-      } else if (gameState.phase == RoundPhase.partyAction) {
+      } else if (gameState.phase == RoundPhase.partyAction &&
+          ref.read(isHostProvider)) {
         _runPartyCommand(
           () => ref.read(partyGameServiceProvider).openResultEntry(room!.id),
         );
@@ -2240,12 +2251,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildRoundTimer(GameState gameState) {
     final isReveal = _isRevealPhase(gameState);
+    final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
     return Row(
       children: [
         Expanded(
           child: _InfoPill(
             icon: Icons.groups_rounded,
             label: 'Round ${gameState.currentRound}/${gameState.maxRounds}',
+            isParty: isParty,
           ),
         ),
         const SizedBox(width: 10),
@@ -2262,6 +2275,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     : timerSeconds > 0
                     ? '0:${timerSeconds.toString().padLeft(2, '0')}'
                     : '--:--',
+                isParty: isParty,
               );
             },
           ),
@@ -2273,6 +2287,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildQuestionCard(BuildContext context, GameState gameState) {
     if (_isRevealPhase(gameState)) {
       return _buildAnswerRevealCard(gameState);
+    }
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+      return _buildPartyQuestionCard(gameState);
     }
 
     return Container(
@@ -2366,6 +2383,78 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPartyQuestionCard(GameState gameState) {
+    final round = _partySnapshot?.round;
+    final card = AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      decoration: BoxDecoration(
+        color: PartyPalette.surface.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: PartyPalette.orangeSoft.withValues(alpha: 0.32),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.24),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                  color: PartyPalette.orange,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  round == null
+                      ? 'PARTY CHALLENGE'
+                      : '${round.performer.name.toUpperCase()} IS UP',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.orangeSoft,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: gameState.currentQuestion == null
+                ? const _QuestionLoadingText(color: PartyPalette.blueMuted)
+                : _AdaptiveQuestionText(
+                    text: gameState.currentQuestion!.getText(locale: 'en'),
+                    color: PartyPalette.cream,
+                    minFontSize: 20,
+                    maxFontSize: 33,
+                  ),
+          ),
+        ],
+      ),
+    );
+    return _PartyAttentionFrame(
+      key: ValueKey('party-question-${round?.number ?? 0}'),
+      borderRadius: 20,
+      child: card,
     );
   }
 
@@ -2581,22 +2670,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildChipPicker(Player? currentPlayer, GameState gameState) {
     final partyRound = _partySnapshot?.round;
-    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party &&
+    final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
+    if (isParty &&
         gameState.phase == RoundPhase.betting &&
         currentPlayer?.id == partyRound?.performer.id) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              AppColors.feltDark.withValues(alpha: 0.92),
-              AppColors.mahoganyDark.withValues(alpha: 0.78),
-            ],
-          ),
+          color: PartyPalette.surface.withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: AppColors.brassLight.withValues(alpha: 0.58),
+            color: PartyPalette.orangeSoft.withValues(alpha: 0.26),
           ),
         ),
         child: Column(
@@ -2604,7 +2689,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           children: [
             const Icon(
               Icons.sports_gymnastics_rounded,
-              color: AppColors.brassLight,
+              color: PartyPalette.orangeSoft,
               size: 23,
             ),
             const SizedBox(height: 3),
@@ -2678,11 +2763,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
           padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            color: selectedBet != null
+            color: isParty
+                ? PartyPalette.surface.withValues(alpha: 0.88)
+                : selectedBet != null
                 ? AppColors.feltDark.withValues(alpha: 0.24)
                 : Colors.transparent,
             border: Border.all(
-              color: selectedBet != null
+              color: isParty
+                  ? (selectedBet != null
+                        ? PartyPalette.orangeSoft.withValues(alpha: 0.58)
+                        : Colors.white.withValues(alpha: 0.07))
+                  : selectedBet != null
                   ? AppColors.brassLight
                   : Colors.transparent,
               width: 1.2,
@@ -2690,7 +2781,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
             boxShadow: [
               if (selectedBet != null)
                 BoxShadow(
-                  color: AppColors.brassLight.withValues(alpha: 0.22),
+                  color: (isParty ? PartyPalette.orange : AppColors.brassLight)
+                      .withValues(alpha: 0.18),
                   blurRadius: 12,
                   spreadRadius: 1,
                 ),
@@ -4159,6 +4251,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildPlayersStrip(GameState gameState) {
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+      return _buildPartyPlayersStrip(gameState);
+    }
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
@@ -4259,6 +4354,114 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ],
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartyPlayersStrip(GameState gameState) {
+    final sortedPlayers = [..._players]
+      ..sort((a, b) {
+        final scoreA = gameState.scores[a.id] ?? a.score;
+        final scoreB = gameState.scores[b.id] ?? b.score;
+        return scoreB.compareTo(scoreA);
+      });
+    final visiblePlayers = sortedPlayers.take(3).toList();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: PartyPalette.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: PartyPalette.cream.withValues(alpha: 0.09)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(
+                'THE ROOM',
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.creamMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'CHIPS',
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.orangeSoft,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Expanded(
+            child: Column(
+              children: [
+                for (var index = 0; index < visiblePlayers.length; index++)
+                  Expanded(
+                    child: Container(
+                      margin: EdgeInsets.only(
+                        bottom: index == visiblePlayers.length - 1 ? 0 : 5,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: index == 0
+                            ? PartyPalette.orange.withValues(alpha: 0.12)
+                            : Colors.white.withValues(alpha: 0.035),
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: index == 0
+                              ? PartyPalette.orangeSoft.withValues(alpha: 0.24)
+                              : Colors.white.withValues(alpha: 0.05),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            '${index + 1}',
+                            style: GoogleFonts.outfit(
+                              color: index == 0
+                                  ? PartyPalette.orangeSoft
+                                  : PartyPalette.blueMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              visiblePlayers[index].name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.outfit(
+                                color: PartyPalette.cream,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${gameState.scores[visiblePlayers[index].id] ?? visiblePlayers[index].score}',
+                            style: GoogleFonts.outfit(
+                              color: PartyPalette.orangeSoft,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -4393,6 +4596,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Color _getChipColor(int value) {
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+      return switch (value) {
+        1 => PartyPalette.plum,
+        5 => PartyPalette.sage,
+        10 => const Color(0xFF48657A),
+        25 => PartyPalette.terracotta,
+        50 => const Color(0xFF81516A),
+        100 => const Color(0xFFB06F43),
+        500 => PartyPalette.orange,
+        1000 => PartyPalette.orangeSoft,
+        _ => PartyPalette.orange,
+      };
+    }
     switch (value) {
       case 1:
         return AppColors.neonPink;
@@ -4549,6 +4765,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
               spec: spec,
               isHovering: false,
               isWinningReveal: isWinningReveal,
+              isPartyMode:
+                  ref.read(currentRoomProvider)?.gameMode == GameMode.party,
             ),
           ),
           _buildBetSlotLabel(spec, boundaries),
@@ -4759,6 +4977,32 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildBoundaryNumber(int value) {
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+      return Center(
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 82),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+          decoration: BoxDecoration(
+            color: PartyPalette.nightDeep.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: PartyPalette.orangeSoft.withValues(alpha: 0.42),
+            ),
+          ),
+          child: Text(
+            _formatGuessValue(value),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'RehnCondensed',
+              color: PartyPalette.cream,
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              height: 0.9,
+            ),
+          ),
+        ),
+      );
+    }
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -4895,7 +5139,61 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
+  Widget _buildPartySlotTitle(_BetSlotSpec slot, List<int> boundaries) {
+    String range = '';
+    if (boundaries.length >= 4) {
+      range = switch (slot.index) {
+        4 => '${boundaries[3]}+',
+        3 => '${boundaries[2]} – ${boundaries[3]}',
+        2 => '${boundaries[1]} – ${boundaries[2]}',
+        1 => '${boundaries[0]} – ${boundaries[1]}',
+        _ => 'UNDER ${boundaries[0]}',
+      };
+    }
+    final mainText = slot.title.isNotEmpty ? slot.title : range;
+    final detail = slot.title.isNotEmpty && range.isNotEmpty ? range : null;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 8, 42, 8),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                mainText,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream,
+                  fontSize: slot.isSweetSpot ? 24 : 27,
+                  fontWeight: FontWeight.w900,
+                  height: 0.95,
+                  letterSpacing: slot.title.length <= 3 ? 1.3 : 0.2,
+                ),
+              ),
+              if (detail != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.cream.withValues(alpha: 0.68),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCasinoSlotTitle(_BetSlotSpec slot, List<int> boundaries) {
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+      return _buildPartySlotTitle(slot, boundaries);
+    }
     final isSweetSpot = slot.isSweetSpot;
     final textColor = isSweetSpot ? AppColors.mahoganyDark : Colors.white;
     final strokeColor = isSweetSpot ? AppColors.brassLight : AppColors.feltDark;
@@ -5526,6 +5824,45 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return null;
   }
 
+  Widget _buildPartyModeMark() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'BETS & GUESSES',
+          maxLines: 1,
+          style: GoogleFonts.outfit(
+            color: PartyPalette.creamMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2.2,
+          ),
+        ),
+        const SizedBox(height: 3),
+        const Text(
+          'PARTY MODE',
+          maxLines: 1,
+          style: TextStyle(
+            fontFamily: 'RehnCondensed',
+            color: PartyPalette.cream,
+            fontSize: 35,
+            fontWeight: FontWeight.w900,
+            height: 0.88,
+          ),
+        ),
+        Container(
+          width: 44,
+          height: 3,
+          margin: const EdgeInsets.only(top: 8),
+          decoration: BoxDecoration(
+            color: PartyPalette.orange,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildPhaseSurfaceTransition({
     required String surfaceKey,
     required Widget child,
@@ -5560,390 +5897,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
-  Future<void> _showPartyResultEntryDialog() async {
-    final snapshot = _partySnapshot;
-    if (snapshot == null || !ref.read(isHostProvider)) return;
-    final controller = TextEditingController();
-    final result = await showDialog<int>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.feltDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: AppColors.brassLight, width: 1.5),
-        ),
-        title: Text(
-          'ENTER THE RESULT',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.outfit(
-            color: AppColors.brassLight,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${snapshot.round.performer.name} · ${snapshot.round.challenge.answerUnit}',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                color: AppColors.ivory,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                color: AppColors.ivory,
-                fontSize: 34,
-                fontWeight: FontWeight.w900,
-              ),
-              decoration: InputDecoration(
-                hintText: '0–${snapshot.round.challenge.maxResult}',
-                hintStyle: TextStyle(
-                  color: AppColors.ivory.withValues(alpha: 0.35),
-                ),
-                filled: true,
-                fillColor: Colors.black.withValues(alpha: 0.25),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                    color: AppColors.brass.withValues(alpha: 0.55),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(
-                    color: AppColors.brassLight,
-                    width: 2,
-                  ),
-                ),
-              ),
-              onSubmitted: (value) {
-                final parsed = int.tryParse(value);
-                if (parsed != null &&
-                    parsed >= 0 &&
-                    parsed <= snapshot.round.challenge.maxResult) {
-                  Navigator.of(dialogContext).pop(parsed);
-                }
-              },
-            ),
-          ],
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          FilledButton(
-            onPressed: () {
-              final parsed = int.tryParse(controller.text);
-              if (parsed == null ||
-                  parsed < 0 ||
-                  parsed > snapshot.round.challenge.maxResult) {
-                return;
-              }
-              Navigator.of(dialogContext).pop(parsed);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.brassLight,
-              foregroundColor: AppColors.ink,
-            ),
-            child: const Text('SEND FOR CONFIRMATION'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (result == null || !mounted) return;
-    await _runPartyCommand(
-      () => ref
-          .read(partyGameServiceProvider)
-          .submitResult(roomId: snapshot.room.id, result: result),
-    );
-  }
-
-  // Kept temporarily for migration-safe rollback; Party phases now route to
-  // PartyPerformanceScreen and this overlay is never mounted.
-  // ignore: unused_element
-  Widget _buildPartyPhaseOverlay(GameState gameState) {
-    final snapshot = _partySnapshot;
-    if (snapshot == null) return const SizedBox.shrink();
-    final round = snapshot.round;
-    if (round.phase == PartyRoundPhase.guessing ||
-        round.phase == PartyRoundPhase.betting ||
-        round.phase == PartyRoundPhase.reveal) {
-      return const SizedBox.shrink();
-    }
-
-    final currentPlayer = ref.read(currentPlayerProvider);
-    final isHost = currentPlayer?.isHost == true;
-    final isPerformer = currentPlayer?.id == round.performer.id;
-    final hostId = _players.where((player) => player.isHost).firstOrNull?.id;
-    final requiredConfirmerId = round.performer.id == hostId
-        ? round.witness?.id
-        : round.performer.id;
-    final isRequiredConfirmer = currentPlayer?.id == requiredConfirmerId;
-
-    String eyebrow;
-    String title;
-    String detail;
-    late final String statusText;
-    List<Widget> actions = const [];
-    switch (round.phase) {
-      case PartyRoundPhase.ready:
-        eyebrow = 'GET READY';
-        title = '${round.performer.name}, YOU’RE UP';
-        detail = round.challenge.rules;
-        statusText = round.performerReady
-            ? (isHost
-                  ? 'READY — START THE 60-SECOND TIMER'
-                  : 'PERFORMER READY — WAITING FOR THE HOST')
-            : (isPerformer
-                  ? 'TAP I’M READY WHEN YOU ARE IN POSITION'
-                  : 'WAITING FOR ${round.performer.name.toUpperCase()} TO TAP I’M READY');
-        actions = [
-          if (isPerformer && !round.performerReady)
-            _partyActionButton(
-              label: 'I’M READY',
-              icon: Icons.check_circle_rounded,
-              onPressed: () => _runPartyCommand(
-                () => ref
-                    .read(partyGameServiceProvider)
-                    .markPerformerReady(snapshot.room.id),
-              ),
-            ),
-          if (isHost && round.performerReady)
-            _partyActionButton(
-              label: 'START ${round.challenge.durationSeconds} SECONDS',
-              icon: Icons.timer_rounded,
-              onPressed: () => _runPartyCommand(
-                () => ref
-                    .read(partyGameServiceProvider)
-                    .startAction(snapshot.room.id),
-              ),
-            ),
-        ];
-        break;
-      case PartyRoundPhase.action:
-        eyebrow = 'LIVE CHALLENGE';
-        title = '${round.performer.name.toUpperCase()} — GO!';
-        detail = round.challenge.rules;
-        statusText =
-            'COUNT ONLY VALID ${round.challenge.answerUnit.toUpperCase()}';
-        break;
-      case PartyRoundPhase.resultEntry:
-        eyebrow = 'TIME’S UP';
-        title = 'WHAT WAS THE RESULT?';
-        detail = isHost
-            ? 'Enter the observed result. It must be confirmed before points are awarded.'
-            : 'Waiting for the host to enter the result.';
-        statusText = isHost ? 'HOST INPUT REQUIRED' : 'WAITING FOR HOST';
-        actions = [
-          if (isHost)
-            _partyActionButton(
-              label: 'ENTER RESULT',
-              icon: Icons.dialpad_rounded,
-              onPressed: _showPartyResultEntryDialog,
-            ),
-        ];
-        break;
-      case PartyRoundPhase.resultConfirm:
-        eyebrow = 'CONFIRM RESULT';
-        title =
-            '${round.proposedResult ?? '—'} ${round.challenge.answerUnit.toUpperCase()}';
-        final confirmerName = round.performer.id == hostId
-            ? round.witness?.name ?? 'the witness'
-            : round.performer.name;
-        detail = isRequiredConfirmer
-            ? 'Does this match what happened?'
-            : 'Waiting for $confirmerName to confirm the host’s result.';
-        statusText = isRequiredConfirmer
-            ? 'YOUR CONFIRMATION IS REQUIRED'
-            : 'WAITING FOR ${confirmerName.toUpperCase()}';
-        actions = [
-          if (isRequiredConfirmer) ...[
-            _partyActionButton(
-              label: 'CONFIRM',
-              icon: Icons.verified_rounded,
-              onPressed: () => _runPartyCommand(
-                () => ref
-                    .read(partyGameServiceProvider)
-                    .confirmResult(snapshot.room.id),
-              ),
-            ),
-            const SizedBox(width: 10),
-            _partyActionButton(
-              label: 'CORRECT IT',
-              icon: Icons.edit_rounded,
-              isSecondary: true,
-              onPressed: () => _runPartyCommand(
-                () => ref
-                    .read(partyGameServiceProvider)
-                    .disputeResult(snapshot.room.id),
-              ),
-            ),
-          ],
-        ];
-        break;
-      case PartyRoundPhase.guessing:
-      case PartyRoundPhase.betting:
-      case PartyRoundPhase.reveal:
-        return const SizedBox.shrink();
-    }
-
-    return Positioned.fill(
-      child: ColoredBox(
-        color: AppColors.ink.withValues(alpha: 0.58),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Container(
-                margin: const EdgeInsets.all(24),
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF092E28),
-                      Color(0xFF0E4A3E),
-                      Color(0xFF24101B),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: AppColors.brassLight, width: 1.5),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black54,
-                      blurRadius: 30,
-                      offset: Offset(0, 14),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      eyebrow,
-                      style: GoogleFonts.outfit(
-                        color: AppColors.brassLight,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.8,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.outfit(
-                        color: AppColors.ivory,
-                        fontSize: 30,
-                        fontWeight: FontWeight.w900,
-                        height: 1.05,
-                      ),
-                    ),
-                    if (round.phase == PartyRoundPhase.action) ...[
-                      const SizedBox(height: 14),
-                      Consumer(
-                        builder: (context, ref, _) {
-                          final seconds = ref.watch(gameTimerProvider);
-                          return Text(
-                            '$seconds',
-                            style: const TextStyle(
-                              fontFamily: 'RehnCondensed',
-                              color: AppColors.brassLight,
-                              fontSize: 96,
-                              fontWeight: FontWeight.w900,
-                              height: 0.85,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                    const SizedBox(height: 14),
-                    Text(
-                      detail,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.outfit(
-                        color: AppColors.ivory.withValues(alpha: 0.78),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.24),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: AppColors.brassLight.withValues(alpha: 0.42),
-                        ),
-                      ),
-                      child: Text(
-                        statusText,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.outfit(
-                          color: AppColors.brassLight,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.55,
-                          height: 1.1,
-                        ),
-                      ),
-                    ),
-                    if (actions.isNotEmpty) ...[
-                      const SizedBox(height: 22),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: actions,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _partyActionButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-    bool isSecondary = false,
-  }) {
-    return Flexible(
-      child: FilledButton.icon(
-        onPressed: _isPartyCommandInFlight ? null : onPressed,
-        icon: Icon(icon, size: 20),
-        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-        style: FilledButton.styleFrom(
-          backgroundColor: isSecondary
-              ? AppColors.mahogany
-              : AppColors.brassLight,
-          foregroundColor: isSecondary ? AppColors.ivory : AppColors.ink,
-          minimumSize: const Size(150, 52),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final routeState = ref.watch(
@@ -5952,8 +5905,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ),
     );
     final phase = routeState.$1;
+    final isPartyMode = ref.watch(
+      currentRoomProvider.select((room) => room?.gameMode == GameMode.party),
+    );
+    final partySnapshot = _partySnapshot;
     final isGameOver =
-        routeState.$2 >= routeState.$3 && phase == RoundPhase.idle;
+        !isPartyMode &&
+        routeState.$2 >= routeState.$3 &&
+        phase == RoundPhase.idle;
     if (isGameOver) {
       return Consumer(
         builder: (context, ref, _) {
@@ -5963,9 +5922,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
       );
     }
 
-    if (phase == RoundPhase.idle ||
-        phase == RoundPhase.question ||
-        phase == RoundPhase.guessing) {
+    if (!isPartyMode &&
+        (phase == RoundPhase.idle ||
+            phase == RoundPhase.question ||
+            phase == RoundPhase.guessing)) {
       return _buildPhaseSurfaceTransition(
         surfaceKey: 'guessing-surface',
         child: Consumer(
@@ -5985,10 +5945,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           body: Stack(
             children: [
               Positioned.fill(
-                child: CachedAssetImage(
-                  AppAssetPaths.background,
-                  fit: BoxFit.cover,
-                ),
+                child: isPartyMode
+                    ? const _PartyNightBackground()
+                    : CachedAssetImage(
+                        AppAssetPaths.background,
+                        fit: BoxFit.cover,
+                      ),
               ),
               Positioned.fill(
                 child: SafeArea(
@@ -6012,7 +5974,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   children: [
                                     Expanded(
                                       flex: isCompact ? 18 : 20,
-                                      child: _buildPortraitLogo(),
+                                      child: isPartyMode
+                                          ? _buildPartyModeMark()
+                                          : _buildPortraitLogo(),
                                     ),
                                     SizedBox(height: gapTight),
                                     SizedBox(
@@ -6136,12 +6100,238 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
               ),
+              if (isPartyMode && partySnapshot != null)
+                Positioned.fill(
+                  child: PartySingleSceneLayer(
+                    key: const ValueKey('party-single-scene'),
+                    snapshot: partySnapshot,
+                    currentPlayer: ref.watch(currentPlayerProvider),
+                    secondsRemaining: ref.watch(gameTimerProvider),
+                    commandInFlight: _isPartyCommandInFlight,
+                    onMarkReady: () => _runPartyCommand(
+                      () => ref
+                          .read(partyGameServiceProvider)
+                          .markPerformerReady(partySnapshot.room.id),
+                    ),
+                    onStartAction: () => _runPartyCommand(
+                      () => ref
+                          .read(partyGameServiceProvider)
+                          .startAction(partySnapshot.room.id),
+                    ),
+                    onOpenResultEntry: () => _runPartyCommand(
+                      () => ref
+                          .read(partyGameServiceProvider)
+                          .openResultEntry(partySnapshot.room.id),
+                    ),
+                    onSubmitResult: (result) => _runPartyCommand(
+                      () => ref
+                          .read(partyGameServiceProvider)
+                          .submitResult(
+                            roomId: partySnapshot.room.id,
+                            result: result,
+                          ),
+                    ),
+                    onConfirmResult: () => _runPartyCommand(
+                      () => ref
+                          .read(partyGameServiceProvider)
+                          .confirmResult(partySnapshot.room.id),
+                    ),
+                    onDisputeResult: () => _runPartyCommand(
+                      () => ref
+                          .read(partyGameServiceProvider)
+                          .disputeResult(partySnapshot.room.id),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _PartyAttentionFrame extends StatefulWidget {
+  final Widget child;
+  final double borderRadius;
+
+  const _PartyAttentionFrame({
+    super.key,
+    required this.child,
+    required this.borderRadius,
+  });
+
+  @override
+  State<_PartyAttentionFrame> createState() => _PartyAttentionFrameState();
+}
+
+class _PartyAttentionFrameState extends State<_PartyAttentionFrame>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return CustomPaint(
+          foregroundPainter: _PartyAttentionPainter(
+            progress: _controller.value,
+            radius: widget.borderRadius,
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _PartyAttentionPainter extends CustomPainter {
+  final double progress;
+  final double radius;
+
+  const _PartyAttentionPainter({required this.progress, required this.radius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fade = progress < 0.72
+        ? 1.0
+        : ((1 - progress) / 0.28).clamp(0.0, 1.0);
+    if (fade <= 0) return;
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect.deflate(1.5),
+      Radius.circular(radius),
+    );
+    final shader = SweepGradient(
+      transform: GradientRotation(progress * pi * 2),
+      colors: [
+        Colors.transparent,
+        Colors.transparent,
+        PartyPalette.orangeSoft.withValues(alpha: 0.18 * fade),
+        PartyPalette.cream.withValues(alpha: 0.88 * fade),
+        PartyPalette.orange.withValues(alpha: 0.42 * fade),
+        Colors.transparent,
+        Colors.transparent,
+      ],
+      stops: const [0, 0.38, 0.47, 0.52, 0.59, 0.69, 1],
+    ).createShader(rect);
+    final glow = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..shader = shader
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+    final edge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..shader = shader;
+    canvas.drawRRect(rrect, glow);
+    canvas.drawRRect(rrect, edge);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PartyAttentionPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.radius != radius;
+  }
+}
+
+class _PartyNightBackground extends StatelessWidget {
+  const _PartyNightBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: PartyPalette.backgroundGradient,
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -120,
+            left: -80,
+            child: _SoftPartyOrb(
+              size: 310,
+              color: PartyPalette.orange,
+              opacity: 0.055,
+            ),
+          ),
+          Positioned(
+            right: -90,
+            bottom: -130,
+            child: _SoftPartyOrb(
+              size: 360,
+              color: PartyPalette.sage,
+              opacity: 0.075,
+            ),
+          ),
+          Positioned.fill(
+            child: CustomPaint(painter: _PartyBackgroundGrainPainter()),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SoftPartyOrb extends StatelessWidget {
+  final double size;
+  final Color color;
+  final double opacity;
+
+  const _SoftPartyOrb({
+    required this.size,
+    required this.color,
+    required this.opacity,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            color.withValues(alpha: opacity),
+            Colors.transparent,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PartyBackgroundGrainPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white.withValues(alpha: 0.018);
+    const spacing = 26.0;
+    for (double y = 8; y < size.height; y += spacing) {
+      for (double x = 8; x < size.width; x += spacing) {
+        canvas.drawCircle(Offset(x, y), 0.65, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 const List<_BetSlotSpec> _betSlots = [
@@ -6473,16 +6663,19 @@ class _BetSlotSurface extends StatelessWidget {
   final _BetSlotSpec spec;
   final bool isHovering;
   final bool isWinningReveal;
+  final bool isPartyMode;
 
   const _BetSlotSurface({
     required this.spec,
     required this.isHovering,
     required this.isWinningReveal,
+    required this.isPartyMode,
   });
 
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(spec.isSweetSpot ? 18 : 10);
+    if (isPartyMode) return _buildPartySurface(radius);
 
     Widget surface = DecoratedBox(
       decoration: BoxDecoration(
@@ -6579,6 +6772,61 @@ class _BetSlotSurface extends StatelessWidget {
         );
   }
 
+  Widget _buildPartySurface(BorderRadius radius) {
+    final colors = switch (spec.tone) {
+      _BetSlotTone.green => const [Color(0xFF31545A), Color(0xFF243E4B)],
+      _BetSlotTone.black => const [Color(0xFF20384A), Color(0xFF172C3D)],
+      _BetSlotTone.gold => const [Color(0xFFD08A55), Color(0xFFB76D43)],
+      _BetSlotTone.red => const [Color(0xFF744A57), Color(0xFF563744)],
+    };
+    final borderColor = spec.isSweetSpot
+        ? PartyPalette.cream.withValues(alpha: 0.62)
+        : PartyPalette.cream.withValues(alpha: 0.17);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 210),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+        borderRadius: radius,
+        border: Border.all(
+          color: isWinningReveal ? PartyPalette.orangeSoft : borderColor,
+          width: isWinningReveal ? 2.2 : 1.1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 12,
+            offset: const Offset(0, 7),
+          ),
+          if (isWinningReveal)
+            BoxShadow(
+              color: PartyPalette.orange.withValues(alpha: 0.24),
+              blurRadius: 24,
+              spreadRadius: 2,
+            ),
+        ],
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white.withValues(alpha: 0.055),
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.08),
+            ],
+          ),
+        ),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
   static const LinearGradient _outerRailGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -6607,8 +6855,13 @@ class _BetSlotSurface extends StatelessWidget {
 class _InfoPill extends StatelessWidget {
   final IconData icon;
   final String label;
+  final bool isParty;
 
-  const _InfoPill({required this.icon, required this.label});
+  const _InfoPill({
+    required this.icon,
+    required this.label,
+    this.isParty = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -6616,23 +6869,28 @@ class _InfoPill extends StatelessWidget {
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.feltDark.withValues(alpha: 0.96),
-            AppColors.felt.withValues(alpha: 0.88),
-          ],
-        ),
+        gradient: isParty
+            ? null
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.feltDark.withValues(alpha: 0.96),
+                  AppColors.felt.withValues(alpha: 0.88),
+                ],
+              ),
+        color: isParty ? PartyPalette.surface.withValues(alpha: 0.88) : null,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: AppColors.brassLight.withValues(alpha: 0.22),
+          color: isParty
+              ? Colors.white.withValues(alpha: 0.08)
+              : AppColors.brassLight.withValues(alpha: 0.22),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 14,
+            color: Colors.black.withValues(alpha: isParty ? 0.18 : 0.28),
+            blurRadius: isParty ? 10 : 14,
             offset: const Offset(0, 6),
           ),
         ],
@@ -6640,7 +6898,11 @@ class _InfoPill extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 21, color: Colors.white),
+          Icon(
+            icon,
+            size: 21,
+            color: isParty ? PartyPalette.orangeSoft : Colors.white,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: FittedBox(

@@ -5,7 +5,6 @@ import '../../features/room/screens/lobby_screen.dart';
 import '../../features/game/screens/game_screen.dart';
 import '../../features/game/screens/results_screen.dart';
 import '../../features/game/screens/debug_scene_editor_screen.dart';
-import '../../features/party/screens/party_performance_screen.dart';
 import '../../features/onboarding/screens/onboarding_screen.dart';
 import '../../features/paywall/screens/paywall_screen.dart';
 
@@ -60,14 +59,6 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final roomCode = state.pathParameters['roomCode']!;
         return GameScreen(roomCode: roomCode);
-      },
-    ),
-    GoRoute(
-      path: '/party/performance/:roomCode',
-      name: 'party-performance',
-      builder: (context, state) {
-        final roomCode = state.pathParameters['roomCode']!;
-        return PartyPerformanceScreen(roomCode: roomCode);
       },
     ),
     GoRoute(

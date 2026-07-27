@@ -15,6 +15,7 @@ import '../../../core/widgets/web_promo_banner.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/party/models/party_snapshot.dart';
+import '../../../features/party/providers/party_session_provider.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
@@ -229,6 +230,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               roomId: room.id,
               bettingDurationSeconds: GameConstants.partyBetTimerSeconds,
             );
+        ref.read(partySessionProvider.notifier).setSnapshot(snapshot);
         ref.read(currentRoomProvider.notifier).set(snapshot.room);
         unawaited(
           ref
