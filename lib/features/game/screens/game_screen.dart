@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -73,13 +74,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final List<_PendingBetEvent> _pendingBetEvents = [];
   PartySnapshot? _partySnapshot;
   bool _isPartyCommandInFlight = false;
-  Timer? _partySnapshotPollTimer;
+  Timer? _partySnapshotWatchdogTimer;
+  Timer? _partyTransitionFallbackTimer;
+  String? _partySnapshotWatchdogKey;
+  int _partySnapshotWatchdogAttempt = 0;
+  bool _isRefreshingPartyPlayers = false;
+  bool _isAppInForeground = true;
   bool _isActive = true;
   bool _isDisposed = false;
   late final AudioService _audioService;
   late final RealtimeService _realtimeService;
 
-  bool get _canUseRef => mounted && _isActive && !_isDisposed;
+  bool get _canUseRef =>
+      mounted && _isActive && _isAppInForeground && !_isDisposed;
 
   @override
   void initState() {
@@ -127,6 +134,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _isActive = false;
     _timer?.cancel();
     _timer = null;
+    _stopPartySnapshotWatchdog();
+    _partyTransitionFallbackTimer?.cancel();
+    _partyTransitionFallbackTimer = null;
     super.deactivate();
   }
 
@@ -138,7 +148,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _stopTimer();
     _realtimeRetryTimer?.cancel();
     _roomSyncDebounceTimer?.cancel();
-    _partySnapshotPollTimer?.cancel();
+    _partySnapshotWatchdogTimer?.cancel();
+    _partyTransitionFallbackTimer?.cancel();
     _roundAdvanceTimer?.cancel();
     _questionStartTimer?.cancel();
     _cancelRevealEffects();
@@ -150,11 +161,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _isAppInForeground = true;
       if (_canUseRef) {
         unawaited(_resyncFromServer(refreshRealtime: true));
       }
     } else {
+      _isAppInForeground = false;
       _stopTimer(clearDeadline: false);
+      _stopPartySnapshotWatchdog();
+      _partyTransitionFallbackTimer?.cancel();
+      _partyTransitionFallbackTimer = null;
     }
   }
 
@@ -295,7 +311,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           try {
             if (!_canUseRef) return;
             if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
-              unawaited(_resyncPartySnapshot());
+              _schedulePartyRealtimeResync();
               return;
             }
             final phase = RoundPhase.fromString(
@@ -388,6 +404,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           }
         },
         onRoomRowChanged: _applyRoomDatabaseChange,
+        onPlayerJoined: (_) => unawaited(_refreshPartyPlayers()),
+        onPlayerLeft: (_) => unawaited(_refreshPartyPlayers()),
         onScoreUpdate: (payload) {
           if (!_canUseRef) return;
           if (!_payloadMatchesCurrentRound(payload)) return;
@@ -587,14 +605,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
 
       if (room.gameMode == GameMode.party) {
-        _roomSyncDebounceTimer?.cancel();
-        _roomSyncDebounceTimer = Timer(const Duration(milliseconds: 80), () {
-          if (_canUseRef) {
-            unawaited(
-              _resyncPartySnapshot(roomOverride: room, synchronizeClock: false),
-            );
-          }
-        });
+        _schedulePartyRealtimeResync(roomOverride: room);
         return;
       }
 
@@ -892,7 +903,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (!_canUseRef) return;
       final roomService = ref.read(roomServiceProvider);
       final partyService = ref.read(partyGameServiceProvider);
-      final playerService = ref.read(playerServiceProvider);
       if (synchronizeClock) {
         try {
           await roomService.synchronizeServerClock(force: refreshRealtime);
@@ -900,10 +910,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
 
       final snapshot = await partyService.getSnapshot(currentRoom.id);
-      final players = await playerService.getPlayers(currentRoom.id);
       if (!_canUseRef) return;
-      _players = players;
-      _restoreCurrentPlayer(currentRoom.id);
       _applyPartySnapshot(snapshot);
     } catch (error, stackTrace) {
       debugPrint('Party snapshot sync failed: $error\n$stackTrace');
@@ -917,21 +924,75 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
-  void _startPartySnapshotPolling() {
-    if (_partySnapshotPollTimer != null) return;
-    _partySnapshotPollTimer = Timer.periodic(
-      const Duration(milliseconds: 1200),
-      (_) {
-        if (_canUseRef) {
-          unawaited(_resyncPartySnapshot(synchronizeClock: false));
-        }
-      },
-    );
+  void _schedulePartyRealtimeResync({Room? roomOverride}) {
+    _roomSyncDebounceTimer?.cancel();
+    _roomSyncDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+      if (!_canUseRef) return;
+      unawaited(
+        _resyncPartySnapshot(
+          roomOverride: roomOverride,
+          synchronizeClock: false,
+        ),
+      );
+    });
   }
 
-  void _stopPartySnapshotPolling() {
-    _partySnapshotPollTimer?.cancel();
-    _partySnapshotPollTimer = null;
+  Future<void> _refreshPartyPlayers() async {
+    if (!_canUseRef || _isRefreshingPartyPlayers) return;
+    final room = ref.read(currentRoomProvider);
+    if (room == null || room.gameMode != GameMode.party) return;
+    _isRefreshingPartyPlayers = true;
+    try {
+      final players = await ref.read(playerServiceProvider).getPlayers(room.id);
+      if (!_canUseRef) return;
+      _players = players;
+      _restoreCurrentPlayer(room.id);
+      setState(() {});
+    } catch (error, stackTrace) {
+      debugPrint('Party player refresh failed: $error\n$stackTrace');
+    } finally {
+      _isRefreshingPartyPlayers = false;
+    }
+  }
+
+  void _schedulePartySnapshotWatchdog(PartySnapshot snapshot) {
+    final phase = snapshot.round.phase;
+    final needsWatchdog =
+        phase == PartyRoundPhase.ready ||
+        phase == PartyRoundPhase.action ||
+        phase == PartyRoundPhase.resultEntry ||
+        phase == PartyRoundPhase.resultConfirm;
+    if (!needsWatchdog) {
+      _stopPartySnapshotWatchdog();
+      return;
+    }
+
+    final key =
+        '${snapshot.round.number}:${phase.name}:${snapshot.stateVersion}';
+    if (_partySnapshotWatchdogKey != key) {
+      _partySnapshotWatchdogTimer?.cancel();
+      _partySnapshotWatchdogTimer = null;
+      _partySnapshotWatchdogKey = key;
+      _partySnapshotWatchdogAttempt = 0;
+    }
+    if (_partySnapshotWatchdogTimer != null) return;
+
+    final delay = GameSyncPolicy.partyWatchdogDelay(
+      _partySnapshotWatchdogAttempt,
+    );
+    _partySnapshotWatchdogTimer = Timer(delay, () {
+      _partySnapshotWatchdogTimer = null;
+      if (!_canUseRef || _partySnapshotWatchdogKey != key) return;
+      _partySnapshotWatchdogAttempt++;
+      unawaited(_resyncPartySnapshot(synchronizeClock: false));
+    });
+  }
+
+  void _stopPartySnapshotWatchdog() {
+    _partySnapshotWatchdogTimer?.cancel();
+    _partySnapshotWatchdogTimer = null;
+    _partySnapshotWatchdogKey = null;
+    _partySnapshotWatchdogAttempt = 0;
   }
 
   void _applyPartySnapshot(PartySnapshot snapshot) {
@@ -944,6 +1005,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     final round = snapshot.round;
+    if (previous == null ||
+        previous.round.number != round.number ||
+        previous.round.phase != round.phase) {
+      _partyTransitionFallbackTimer?.cancel();
+      _partyTransitionFallbackTimer = null;
+    }
     final question = Question(
       id: round.challenge.id,
       textTr: round.challenge.text,
@@ -1092,16 +1159,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _stopTimer();
         break;
     }
-    final needsFastPartySync =
-        round.phase == PartyRoundPhase.ready ||
-        round.phase == PartyRoundPhase.action ||
-        round.phase == PartyRoundPhase.resultEntry ||
-        round.phase == PartyRoundPhase.resultConfirm;
-    if (needsFastPartySync) {
-      _startPartySnapshotPolling();
-    } else {
-      _stopPartySnapshotPolling();
-    }
+    _schedulePartySnapshotWatchdog(snapshot);
     if (currentPlayer?.id == round.performer.id &&
         round.phase != PartyRoundPhase.betting) {
       _selectedChipValue = null;
@@ -1207,20 +1265,88 @@ class _GameScreenState extends ConsumerState<GameScreen>
     unawaited(_audioService.stopTicking());
   }
 
+  void _schedulePartyTransitionFallback({
+    required String roomId,
+    required PartyRoundPhase expectedPhase,
+  }) {
+    _partyTransitionFallbackTimer?.cancel();
+    final playerId = ref.read(currentPlayerProvider)?.id ?? '';
+    final staggerMs = playerId.hashCode.abs() % 1500;
+    _partyTransitionFallbackTimer = Timer(
+      Duration(milliseconds: 2000 + staggerMs),
+      () async {
+        _partyTransitionFallbackTimer = null;
+        if (!_canUseRef) return;
+        await _resyncPartySnapshot(synchronizeClock: false);
+        if (!_canUseRef) return;
+        final round = _partySnapshot?.round;
+        if (round == null || round.phase != expectedPhase) return;
+        final deadline = round.phaseEndsAt;
+        if (GameSyncPolicy.isInteractionWindowOpen(
+          deadline: deadline,
+          now: ref.read(roomServiceProvider).serverNow,
+          networkSafetyMargin: Duration.zero,
+        )) {
+          return;
+        }
+        switch (expectedPhase) {
+          case PartyRoundPhase.guessing:
+            await _revealGuesses();
+            break;
+          case PartyRoundPhase.betting:
+            await _revealAnswer();
+            break;
+          case PartyRoundPhase.action:
+            await _runPartyCommand(
+              () => ref.read(partyGameServiceProvider).openResultEntry(roomId),
+            );
+            break;
+          case PartyRoundPhase.ready:
+          case PartyRoundPhase.resultEntry:
+          case PartyRoundPhase.resultConfirm:
+          case PartyRoundPhase.reveal:
+            break;
+        }
+      },
+    );
+  }
+
   void _handleTimerFinished() {
     if (!_canUseRef) return;
     final gameState = ref.read(gameStateProvider);
     final room = ref.read(currentRoomProvider);
     if (room?.gameMode == GameMode.party) {
+      final isHost = ref.read(isHostProvider);
       if (gameState.phase == RoundPhase.guessing) {
-        _revealGuesses();
+        if (isHost) {
+          _revealGuesses();
+        } else {
+          _schedulePartyTransitionFallback(
+            roomId: room!.id,
+            expectedPhase: PartyRoundPhase.guessing,
+          );
+        }
       } else if (gameState.phase == RoundPhase.betting) {
-        _revealAnswer();
-      } else if (gameState.phase == RoundPhase.partyAction &&
-          ref.read(isHostProvider)) {
-        _runPartyCommand(
-          () => ref.read(partyGameServiceProvider).openResultEntry(room!.id),
-        );
+        _lockBettingWindow();
+        if (isHost) {
+          _revealAnswer();
+        } else {
+          _schedulePartyTransitionFallback(
+            roomId: room!.id,
+            expectedPhase: PartyRoundPhase.betting,
+          );
+        }
+      } else if (gameState.phase == RoundPhase.partyAction) {
+        if (isHost) {
+          _runPartyCommand(
+            () => ref.read(partyGameServiceProvider).openResultEntry(room!.id),
+          );
+        } else {
+          _schedulePartyTransitionFallback(
+            roomId: room!.id,
+            expectedPhase: PartyRoundPhase.action,
+          );
+        }
       }
       return;
     }
@@ -1594,9 +1720,38 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _canCurrentPlayerEditBets(GameState gameState) {
     if (gameState.phase != RoundPhase.betting) return false;
     final room = ref.read(currentRoomProvider);
+    if (room == null) return false;
+    final deadline = room.gameMode == GameMode.party
+        ? _partySnapshot?.round.phaseEndsAt ?? room?.phaseEndsAt
+        : room?.phaseEndsAt;
+    if (!GameSyncPolicy.isInteractionWindowOpen(
+      deadline: deadline,
+      now: ref.read(roomServiceProvider).serverNow,
+    )) {
+      return false;
+    }
     final player = ref.read(currentPlayerProvider);
     if (room?.gameMode != GameMode.party) return true;
     return player != null && _partySnapshot?.round.performer.id != player.id;
+  }
+
+  void _lockBettingWindow() {
+    _selectedChipValue = null;
+    _selectedBetId = null;
+    if (_canUseRef) setState(() {});
+  }
+
+  bool _isBettingClosedError(Object error) {
+    return error is PostgrestException &&
+        error.code == '40001' &&
+        error.message.toLowerCase().contains('betting');
+  }
+
+  void _recoverFromClosedBettingWindow() {
+    _lockBettingWindow();
+    if (_canUseRef) {
+      unawaited(_resyncFromServer(synchronizeClock: false));
+    }
   }
 
   Future<void> _nextRound() async {
@@ -1846,6 +2001,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (room == null || player == null || _isBetOperationInFlight) {
       return;
     }
+    if (!_canCurrentPlayerEditBets(gameState)) {
+      _lockBettingWindow();
+      return;
+    }
     if (room.gameMode == GameMode.party &&
         _partySnapshot?.round.performer.id == player.id) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1955,11 +2114,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
             }),
       );
     } catch (error, stackTrace) {
-      debugPrint('Bet placement failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
       gameNotifier.removeBetById(optimisticId);
-      if (_canUseRef) {
-        unawaited(_resyncFromServer(synchronizeClock: false));
+      if (_isBettingClosedError(error)) {
+        _recoverFromClosedBettingWindow();
+      } else {
+        debugPrint('Bet placement failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (_canUseRef) {
+          unawaited(_resyncFromServer(synchronizeClock: false));
+        }
       }
     } finally {
       _isBetOperationInFlight = false;
@@ -1980,6 +2143,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (room == null ||
         sourceBet.id.startsWith('local-') ||
         _isBetOperationInFlight) {
+      return;
+    }
+    if (!_canCurrentPlayerEditBets(gameState)) {
+      _lockBettingWindow();
       return;
     }
 
@@ -2058,10 +2225,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
             }),
       );
     } catch (error, stackTrace) {
-      debugPrint('Bet move failed: $error\n$stackTrace');
       gameNotifier.addBet(oldBet);
-      if (_canUseRef) {
-        unawaited(_resyncFromServer(synchronizeClock: false));
+      if (_isBettingClosedError(error)) {
+        _recoverFromClosedBettingWindow();
+      } else {
+        debugPrint('Bet move failed: $error\n$stackTrace');
+        if (_canUseRef) {
+          unawaited(_resyncFromServer(synchronizeClock: false));
+        }
       }
     } finally {
       _isBetOperationInFlight = false;
@@ -2078,6 +2249,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Future<void> _removeBetById(Bet bet) async {
     if (_isBetOperationInFlight || !_canUseRef) return;
+    if (!_canCurrentPlayerEditBets(ref.read(gameStateProvider))) {
+      _lockBettingWindow();
+      return;
+    }
 
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
@@ -2118,10 +2293,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
         );
       }
     } catch (error, stackTrace) {
-      debugPrint('Bet removal failed: $error\n$stackTrace');
       gameNotifier.addBet(bet);
-      if (_canUseRef) {
-        unawaited(_resyncFromServer(synchronizeClock: false));
+      if (_isBettingClosedError(error)) {
+        _recoverFromClosedBettingWindow();
+      } else {
+        debugPrint('Bet removal failed: $error\n$stackTrace');
+        if (_canUseRef) {
+          unawaited(_resyncFromServer(synchronizeClock: false));
+        }
       }
     } finally {
       _isBetOperationInFlight = false;

@@ -83,5 +83,41 @@ void main() {
         0,
       );
     });
+
+    test('locks interactions before the server deadline safety margin', () {
+      final now = DateTime.utc(2026, 7, 15, 12);
+
+      expect(
+        GameSyncPolicy.isInteractionWindowOpen(
+          deadline: now.add(const Duration(milliseconds: 401)),
+          now: now,
+        ),
+        isTrue,
+      );
+      expect(
+        GameSyncPolicy.isInteractionWindowOpen(
+          deadline: now.add(const Duration(milliseconds: 400)),
+          now: now,
+        ),
+        isFalse,
+      );
+      expect(
+        GameSyncPolicy.isInteractionWindowOpen(deadline: null, now: now),
+        isTrue,
+      );
+    });
+  });
+
+  group('party snapshot watchdog', () {
+    test('backs off and caps at thirty seconds', () {
+      expect(GameSyncPolicy.partyWatchdogDelay(0), const Duration(seconds: 5));
+      expect(GameSyncPolicy.partyWatchdogDelay(1), const Duration(seconds: 10));
+      expect(GameSyncPolicy.partyWatchdogDelay(2), const Duration(seconds: 20));
+      expect(GameSyncPolicy.partyWatchdogDelay(3), const Duration(seconds: 30));
+      expect(
+        GameSyncPolicy.partyWatchdogDelay(99),
+        const Duration(seconds: 30),
+      );
+    });
   });
 }

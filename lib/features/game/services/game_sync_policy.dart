@@ -29,4 +29,23 @@ class GameSyncPolicy {
     if (milliseconds <= 0) return 0;
     return (milliseconds / Duration.millisecondsPerSecond).ceil();
   }
+
+  static bool isInteractionWindowOpen({
+    required DateTime? deadline,
+    required DateTime now,
+    Duration networkSafetyMargin = const Duration(milliseconds: 400),
+  }) {
+    if (deadline == null) return true;
+    return now.isBefore(deadline.subtract(networkSafetyMargin));
+  }
+
+  static Duration partyWatchdogDelay(int attempt) {
+    const delays = <Duration>[
+      Duration(seconds: 5),
+      Duration(seconds: 10),
+      Duration(seconds: 20),
+      Duration(seconds: 30),
+    ];
+    return delays[attempt.clamp(0, delays.length - 1)];
+  }
 }
