@@ -1043,14 +1043,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ..sort((a, b) => a.value.compareTo(b.value));
     final winningPartySlot =
         round.phase == PartyRoundPhase.reveal && round.proposedResult != null
-        ? round.challenge.isBinary
-              ? round.proposedResult
-              : ref
-                    .read(gameServiceProvider)
-                    .determineWinningBetSlotIndex(
-                      sortedPartyGuesses,
-                      round.proposedResult!,
-                    )
+        ? round.challenge.betSlotForResult(round.proposedResult!) ??
+              ref
+                  .read(gameServiceProvider)
+                  .determineWinningBetSlotIndex(
+                    sortedPartyGuesses,
+                    round.proposedResult!,
+                  )
         : null;
     final bets = round.bets
         .map((bet) {
@@ -1594,13 +1593,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     final resolvedPayouts =
         payouts ??
-        ref
-            .read(gameServiceProvider)
-            .calculatePayouts(
-              guesses: gameState.sortedGuesses,
-              bets: gameState.bets,
-              correctAnswer: correctAnswer,
-            );
+        (_partySnapshot?.round.phase == PartyRoundPhase.reveal
+            ? _partyRoundPayouts(gameState.bets)
+            : ref
+                  .read(gameServiceProvider)
+                  .calculatePayouts(
+                    guesses: gameState.sortedGuesses,
+                    bets: gameState.bets,
+                    correctAnswer: correctAnswer,
+                  ));
     final winners = resolvedPayouts.entries
         .where((entry) => entry.value > 0)
         .map((entry) => entry.key)
@@ -1675,9 +1676,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   int? _winningBetSlotIndex(GameState gameState) {
     final correctAnswer = gameState.correctAnswer;
     if (correctAnswer == null) return null;
-    if (_partySnapshot?.round.challenge.isBinary == true) {
-      return correctAnswer == 1 ? 1 : 0;
-    }
+    final partySlot = _partySnapshot?.round.challenge.betSlotForResult(
+      correctAnswer,
+    );
+    if (partySlot != null) return partySlot;
     return ref
         .read(gameServiceProvider)
         .determineWinningBetSlotIndex(gameState.sortedGuesses, correctAnswer);
@@ -1709,6 +1711,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return round.performerBonus;
   }
 
+  Map<String, int> _partyRoundPayouts(List<Bet> bets) {
+    final payouts = <String, int>{};
+    for (final bet in bets.where((bet) => bet.won)) {
+      payouts.update(
+        bet.playerId,
+        (value) => value + bet.chips * bet.payoutMultiplier,
+        ifAbsent: () => bet.chips * bet.payoutMultiplier,
+      );
+    }
+    return payouts;
+  }
+
   int _currentPlayerTotalBets(GameState gameState) {
     final currentPlayer = ref.read(currentPlayerProvider);
     if (currentPlayer == null) return 0;
@@ -1722,8 +1736,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final room = ref.read(currentRoomProvider);
     if (room == null) return false;
     final deadline = room.gameMode == GameMode.party
-        ? _partySnapshot?.round.phaseEndsAt ?? room?.phaseEndsAt
-        : room?.phaseEndsAt;
+        ? _partySnapshot?.round.phaseEndsAt ?? room.phaseEndsAt
+        : room.phaseEndsAt;
     if (!GameSyncPolicy.isInteractionWindowOpen(
       deadline: deadline,
       now: ref.read(roomServiceProvider).serverNow,
@@ -1731,7 +1745,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return false;
     }
     final player = ref.read(currentPlayerProvider);
-    if (room?.gameMode != GameMode.party) return true;
+    if (room.gameMode != GameMode.party) return true;
     return player != null && _partySnapshot?.round.performer.id != player.id;
   }
 
@@ -2567,6 +2581,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildPartyQuestionCard(GameState gameState) {
     final round = _partySnapshot?.round;
+    final requiredItems = round?.challenge.requiredItems ?? const <String>[];
+    final canReroll =
+        round?.phase == PartyRoundPhase.betting &&
+        ref.read(currentPlayerProvider)?.isHost == true;
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 260),
       width: double.infinity,
@@ -2614,8 +2632,39 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
               ),
+              if (canReroll)
+                Tooltip(
+                  message: 'Different challenge',
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: PartyPalette.creamMuted,
+                    onPressed: _isPartyCommandInFlight || round == null
+                        ? null
+                        : () => _runPartyCommand(
+                            () => ref
+                                .read(partyGameServiceProvider)
+                                .rerollChallenge(_partySnapshot!.room.id),
+                          ),
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                ),
             ],
           ),
+          if (requiredItems.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              'NEEDS  ·  ${requiredItems.join('  +  ')}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.outfit(
+                color: PartyPalette.blueMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.7,
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Expanded(
             child: gameState.currentQuestion == null
@@ -2646,11 +2695,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final answer = resultSettled
         ? gameState.correctAnswer ?? gameState.currentQuestion?.answer
         : null;
-    final isBinary = _partySnapshot?.round.challenge.isBinary == true;
+    final challenge = _partySnapshot?.round.challenge;
+    final isBinary = challenge?.isBinary == true;
+    final isAttempt = challenge?.isAttempt == true;
     final answerText = answer == null
         ? '--'
         : isBinary
         ? (answer == 1 ? 'SUCCESS' : 'FAILED')
+        : isAttempt
+        ? (answer == 0 ? "DOESN'T LAND" : 'ATTEMPT $answer')
         : _formatGuessValue(answer);
     final accent = didWin && resultSettled
         ? AppColors.chipGold
@@ -2722,7 +2775,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           child: Column(
             children: [
               Text(
-                isBinary ? 'RESULT' : 'ANSWER',
+                isBinary || isAttempt ? 'RESULT' : 'ANSWER',
                 maxLines: 1,
                 style: GoogleFonts.outfit(
                   color: didWin && resultSettled
@@ -2768,7 +2821,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               style: TextStyle(
                                 fontFamily: 'RehnCondensed',
                                 color: headlineColor,
-                                fontSize: isBinary ? 54 : 76,
+                                fontSize: isBinary || isAttempt ? 54 : 76,
                                 fontWeight: FontWeight.w900,
                                 height: 0.86,
                                 letterSpacing: 0,
@@ -4817,12 +4870,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final boundaryValues = _boardBoundaryValues(gameState);
-        final isBinary = _partySnapshot?.round.challenge.isBinary == true;
+        final challenge = _partySnapshot?.round.challenge;
+        final isBinary = challenge?.isBinary == true;
+        final isAttempt = challenge?.isAttempt == true;
         final isReveal = _isRevealPhase(gameState);
         final winningSlotIndex = isReveal
             ? _winningBetSlotIndex(gameState)
             : null;
-        final activeSlots = isBinary ? _binaryBetSlots : _betSlots;
+        final activeSlots = isBinary
+            ? _binaryBetSlots
+            : isAttempt
+            ? _attemptBetSlots
+            : _betSlots;
         final orderedSlots = [
           ...activeSlots.where((slot) => !slot.isSweetSpot),
           ...activeSlots.where((slot) => slot.isSweetSpot),
@@ -4861,13 +4920,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         child: _buildCodedBetSlot(
                           spec: spec,
                           isWinningReveal: activeRevealSlotIndex == spec.index,
-                          boundaries: isBinary ? const <int>[] : boundaryValues,
+                          boundaries: isBinary || isAttempt
+                              ? const <int>[]
+                              : boundaryValues,
                         ),
                       ),
                     ),
                   if (_showWinnerBadge && winningSlotIndex != null)
                     ..._buildWinParticles(size, winningSlotIndex),
-                  if (!isBinary) ..._buildBoundaryLabels(boundaryValues, size),
+                  if (!isBinary && !isAttempt)
+                    ..._buildBoundaryLabels(boundaryValues, size),
                   if (!(_showWinnerBadge && winningSlotIndex != null))
                     _buildAllPlacedChips(
                       gameState.bets,
@@ -5994,8 +6056,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   _BetSlotSpec? _betSlotSpecFor(int slotIndex) {
-    final slots = _partySnapshot?.round.challenge.isBinary == true
+    final challenge = _partySnapshot?.round.challenge;
+    final slots = challenge?.isBinary == true
         ? _binaryBetSlots
+        : challenge?.isAttempt == true
+        ? _attemptBetSlots
         : _betSlots;
     for (final spec in slots) {
       if (spec.index == slotIndex) return spec;
@@ -6238,11 +6303,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             secondsRemaining: secondsRemaining,
                             commandInFlight: _isPartyCommandInFlight,
                             stageTop: stageTop,
-                            onMarkReady: () => _runPartyCommand(
-                              () => ref
-                                  .read(partyGameServiceProvider)
-                                  .markPerformerReady(snapshot.room.id),
-                            ),
+
                             onStartAction: () => _runPartyCommand(
                               () => ref
                                   .read(partyGameServiceProvider)
@@ -6499,11 +6560,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     currentPlayer: ref.watch(currentPlayerProvider),
                     secondsRemaining: ref.watch(gameTimerProvider),
                     commandInFlight: _isPartyCommandInFlight,
-                    onMarkReady: () => _runPartyCommand(
-                      () => ref
-                          .read(partyGameServiceProvider)
-                          .markPerformerReady(partySnapshot.room.id),
-                    ),
                     onStartAction: () => _runPartyCommand(
                       () => ref
                           .read(partyGameServiceProvider)
@@ -6757,6 +6813,44 @@ const List<_BetSlotSpec> _betSlots = [
   _BetSlotSpec(
     0,
     'SMALLER',
+    4,
+    _BetSlotTone.green,
+    Rect.fromLTWH(0.055, 0.798, 0.890, 0.182),
+  ),
+];
+
+const List<_BetSlotSpec> _attemptBetSlots = [
+  _BetSlotSpec(
+    4,
+    "DOESN'T LAND",
+    4,
+    _BetSlotTone.red,
+    Rect.fromLTWH(0.055, 0.020, 0.890, 0.182),
+  ),
+  _BetSlotSpec(
+    3,
+    '4–5 TRIES',
+    3,
+    _BetSlotTone.black,
+    Rect.fromLTWH(0.055, 0.217, 0.890, 0.174),
+  ),
+  _BetSlotSpec(
+    2,
+    'THIRD TRY',
+    2,
+    _BetSlotTone.gold,
+    Rect.fromLTWH(-0.010, 0.409, 1.020, 0.180),
+  ),
+  _BetSlotSpec(
+    1,
+    'SECOND TRY',
+    3,
+    _BetSlotTone.black,
+    Rect.fromLTWH(0.055, 0.609, 0.890, 0.174),
+  ),
+  _BetSlotSpec(
+    0,
+    'FIRST TRY',
     4,
     _BetSlotTone.green,
     Rect.fromLTWH(0.055, 0.798, 0.890, 0.182),

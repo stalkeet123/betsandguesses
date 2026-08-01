@@ -34,6 +34,8 @@ void main() {
         'rules': 'Only complete reps count.',
         'answer_unit': 'push-ups',
         'duration_seconds': 60,
+        'category': 'verbal',
+        'result_direction': 'higher',
         'max_result': 150,
       },
       'submitted_guess_count': 4,
@@ -62,12 +64,41 @@ void main() {
     expect(snapshot.round.phase, PartyRoundPhase.betting);
     expect(snapshot.round.phase.gamePhase, RoundPhase.betting);
     expect(snapshot.round.challenge.durationSeconds, 60);
+    expect(snapshot.round.challenge.category, PartyChallengeCategory.verbal);
+    expect(
+      snapshot.round.challenge.resultDirection,
+      PartyResultDirection.higher,
+    );
     expect(snapshot.round.performerReady, isTrue);
     expect(snapshot.round.guesses.single.playerId, isNull);
     expect(snapshot.round.bets.single.playerId, 'me');
     expect(snapshot.scores['john-id'], 15);
   });
 
+  test(
+    'parses fewer-attempts challenges independently from their category',
+    () {
+      final json = snapshotJson();
+      final round = Map<String, dynamic>.from(json['round'] as Map);
+      final challenge = Map<String, dynamic>.from(round['challenge'] as Map)
+        ..['category'] = 'precision'
+        ..['result_direction'] = 'lower';
+      round['challenge'] = challenge;
+      json['round'] = round;
+
+      final snapshot = PartySnapshot.fromJson(json);
+
+      expect(
+        snapshot.round.challenge.category,
+        PartyChallengeCategory.precision,
+      );
+      expect(
+        snapshot.round.challenge.resultDirection,
+        PartyResultDirection.lower,
+      );
+      expect(snapshot.round.challenge.type, PartyChallengeType.count);
+    },
+  );
   test('maps every authoritative Party phase to the shared game surface', () {
     expect(PartyRoundPhase.guessing.gamePhase, RoundPhase.guessing);
     expect(PartyRoundPhase.betting.gamePhase, RoundPhase.betting);

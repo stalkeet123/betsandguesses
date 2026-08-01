@@ -76,6 +76,36 @@ void main() {
     expect(challenge.performerSuccessBonus, 3);
   });
 
+  test(
+    'Party attempt challenge maps success and failure to fixed bet slots',
+    () {
+      final challenge = PartyChallenge.fromJson({
+        'id': 'attempt-1',
+        'text': 'On which attempt will Alex land a bottle flip?',
+        'rules': 'Five attempts. The bottle must remain upright.',
+        'answer_unit': 'attempt',
+        'duration_seconds': 60,
+        'max_result': 5,
+        'bet_boundaries': [],
+        'challenge_type': 'attempt',
+        'category': 'precision',
+        'result_direction': 'lower',
+        'performer_success_bonus': 5,
+      });
+
+      expect(challenge.isAttempt, isTrue);
+      expect(challenge.isBinary, isFalse);
+      expect(challenge.betBoundaries, isEmpty);
+      expect(challenge.resultDirection, PartyResultDirection.lower);
+      expect(challenge.betSlotForResult(1), 0);
+      expect(challenge.betSlotForResult(2), 1);
+      expect(challenge.betSlotForResult(3), 2);
+      expect(challenge.betSlotForResult(4), 3);
+      expect(challenge.betSlotForResult(5), 3);
+      expect(challenge.betSlotForResult(0), 4);
+      expect(challenge.betSlotForResult(6), isNull);
+    },
+  );
   test('local Party media remains inside its provider container', () {
     final firstDevice = ProviderContainer();
     final secondDevice = ProviderContainer();

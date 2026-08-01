@@ -20,12 +20,42 @@ enum PartyRoundPhase {
 
 enum PartyChallengeType {
   count,
-  binary;
+  binary,
+  attempt;
 
   static PartyChallengeType fromString(String? value) {
     return PartyChallengeType.values.firstWhere(
       (type) => type.name == value,
       orElse: () => PartyChallengeType.count,
+    );
+  }
+}
+
+enum PartyChallengeCategory {
+  general,
+  verbal,
+  precision,
+  physical,
+  dare,
+  skill;
+
+  static PartyChallengeCategory fromString(String? value) {
+    return PartyChallengeCategory.values.firstWhere(
+      (category) => category.name == value,
+      orElse: () => PartyChallengeCategory.general,
+    );
+  }
+}
+
+enum PartyResultDirection {
+  higher,
+  lower,
+  binary;
+
+  static PartyResultDirection fromString(String? value) {
+    return PartyResultDirection.values.firstWhere(
+      (direction) => direction.name == value,
+      orElse: () => PartyResultDirection.higher,
     );
   }
 }
@@ -59,6 +89,9 @@ class PartyChallenge {
   final int maxResult;
   final List<int> betBoundaries;
   final PartyChallengeType type;
+  final PartyChallengeCategory category;
+  final PartyResultDirection resultDirection;
+  final List<String> requiredItems;
   final int performerSuccessBonus;
 
   const PartyChallenge({
@@ -70,10 +103,27 @@ class PartyChallenge {
     required this.maxResult,
     required this.betBoundaries,
     required this.type,
+    this.category = PartyChallengeCategory.general,
+    this.resultDirection = PartyResultDirection.higher,
+    this.requiredItems = const [],
     required this.performerSuccessBonus,
   });
 
   bool get isBinary => type == PartyChallengeType.binary;
+  bool get isAttempt => type == PartyChallengeType.attempt;
+
+  int? betSlotForResult(int result) {
+    if (isBinary) return result == 0 || result == 1 ? result : null;
+    if (!isAttempt) return null;
+    return switch (result) {
+      0 => 4,
+      1 => 0,
+      2 => 1,
+      3 => 2,
+      4 || 5 => 3,
+      _ => null,
+    };
+  }
 
   factory PartyChallenge.fromJson(Map<String, dynamic> json) {
     final type = PartyChallengeType.fromString(
@@ -89,12 +139,24 @@ class PartyChallenge {
       maxResult: (json['max_result'] as num).toInt(),
       betBoundaries:
           (rawBoundaries ??
-                  (type == PartyChallengeType.binary
-                      ? const []
-                      : const [25, 50, 75, 100]))
+                  (type == PartyChallengeType.count
+                      ? const [25, 50, 75, 100]
+                      : const []))
               .map((value) => (value as num).toInt())
               .toList(growable: false),
       type: type,
+      category: PartyChallengeCategory.fromString(json['category'] as String?),
+      resultDirection: PartyResultDirection.fromString(
+        json['result_direction'] as String? ??
+            switch (type) {
+              PartyChallengeType.binary => 'binary',
+              PartyChallengeType.attempt => 'lower',
+              PartyChallengeType.count => 'higher',
+            },
+      ),
+      requiredItems: (json['required_items'] as List? ?? const [])
+          .map((item) => item.toString())
+          .toList(growable: false),
       performerSuccessBonus:
           (json['performer_success_bonus'] as num?)?.toInt() ?? 3,
     );

@@ -95,17 +95,17 @@ class PartyGameService {
     return getSnapshot(roomId);
   }
 
-  Future<PartySnapshot> beginReady(String roomId) async {
+  Future<PartySnapshot> rerollChallenge(String roomId) async {
     final response = await _client.rpc(
-      'begin_party_ready_v1',
+      'reroll_party_challenge_v1',
       params: {'p_room_id': roomId},
     );
     return _snapshot(response);
   }
 
-  Future<PartySnapshot> markPerformerReady(String roomId) async {
+  Future<PartySnapshot> beginReady(String roomId) async {
     final response = await _client.rpc(
-      'mark_party_performer_ready_v1',
+      'begin_party_ready_v1',
       params: {'p_room_id': roomId},
     );
     return _snapshot(response);

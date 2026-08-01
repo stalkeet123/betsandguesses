@@ -28,7 +28,6 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
   final int secondsRemaining;
   final bool commandInFlight;
   final double stageTop;
-  final PartySceneAction onMarkReady;
   final PartySceneAction onStartAction;
   final PartySceneAction onOpenResultEntry;
   final PartySceneResultAction onSubmitResult;
@@ -42,7 +41,6 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
     required this.secondsRemaining,
     required this.commandInFlight,
     this.stageTop = 0,
-    required this.onMarkReady,
     required this.onStartAction,
     required this.onOpenResultEntry,
     required this.onSubmitResult,
@@ -63,7 +61,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
   List<CameraDescription> _availableCameras = const [];
   Timer? _consensusTimer;
   int? _consensusStateVersion;
-  int _consensusSeconds = 6;
+  int _consensusSeconds = 5;
   int _cameraIndex = 0;
   bool _showCamera = false;
   bool _isOpeningCamera = false;
@@ -148,7 +146,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       _consensusTimer?.cancel();
       _consensusTimer = null;
       _consensusStateVersion = null;
-      _consensusSeconds = 6;
+      _consensusSeconds = 5;
       _autoConfirmInFlight = false;
       return;
     }
@@ -162,7 +160,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     _autoConfirmInFlight = false;
     final serverNow = ref.read(roomServiceProvider).serverNow;
     final deadline =
-        snapshot.round.phaseEndsAt ?? serverNow.add(const Duration(seconds: 6));
+        snapshot.round.phaseEndsAt ?? serverNow.add(const Duration(seconds: 5));
 
     void tick() {
       if (!mounted) return;
@@ -180,7 +178,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       unawaited(widget.onConfirmResult());
     }
 
-    _consensusSeconds = 6;
+    _consensusSeconds = 5;
     _consensusTimer = Timer.periodic(
       const Duration(milliseconds: 250),
       (_) => tick(),
@@ -525,24 +523,19 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     String message;
     Widget? action;
 
-    if (_isPerformer && !round.performerReady) {
-      message = 'Take your position. Start only when you are actually ready.';
-      action = _primaryButton(
-        label: 'I AM READY',
-        icon: Icons.check_rounded,
-        onPressed: widget.onMarkReady,
-      );
-    } else if (_isHost && round.performerReady) {
-      message = '$performerName is ready. Start the shared timer.';
+    if (_isHost) {
+      message =
+          'Make sure $performerName is in position, then start the timer.';
       action = _primaryButton(
         label: 'START ${round.challenge.durationSeconds} SECONDS',
         icon: Icons.play_arrow_rounded,
         onPressed: widget.onStartAction,
       );
+    } else if (_isPerformer) {
+      message = 'Get in position. The host will start the timer.';
     } else {
-      message = round.performerReady
-          ? 'Waiting for the host to start.'
-          : 'Waiting for $performerName to get ready.';
+      message =
+          'Keep the attempt in view. The host starts when $performerName is ready.';
     }
 
     return _centeredStage(
@@ -620,10 +613,13 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
             height: 1.3,
           ),
         ),
-        if (_isHost && widget.secondsRemaining == 0) ...[
+        if (_isHost &&
+            (round.challenge.isAttempt || widget.secondsRemaining == 0)) ...[
           const SizedBox(height: 16),
           _secondaryButton(
-            label: 'CONTINUE TO RESULT',
+            label: round.challenge.isAttempt
+                ? 'RECORD ATTEMPT'
+                : 'CONTINUE TO RESULT',
             icon: Icons.arrow_forward_rounded,
             onPressed: widget.onOpenResultEntry,
           ),
@@ -677,6 +673,9 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       );
     }
 
+    if (round.challenge.isAttempt) {
+      return _buildAttemptResultEntry();
+    }
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -751,6 +750,69 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     );
   }
 
+  Widget _buildAttemptResultEntry() {
+    const attempts = [
+      (value: 1, label: '1ST TRY'),
+      (value: 2, label: '2ND TRY'),
+      (value: 3, label: '3RD TRY'),
+      (value: 4, label: '4TH TRY'),
+      (value: 5, label: '5TH TRY'),
+      (value: 0, label: 'FAILED'),
+    ];
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const _StageKicker('WHAT HAPPENED?'),
+        const SizedBox(height: 12),
+        Text(
+          'When did it land?',
+          textAlign: TextAlign.center,
+          style: _stageTitleStyle(fontSize: 34),
+        ),
+        const SizedBox(height: 22),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final attempt in attempts)
+                SizedBox(
+                  width: 133,
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: widget.commandInFlight
+                        ? null
+                        : () => unawaited(widget.onSubmitResult(attempt.value)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: attempt.value == 0
+                          ? PartyPalette.creamMuted
+                          : PartyPalette.cream,
+                      side: BorderSide(
+                        color: attempt.value == 0
+                            ? PartyPalette.terracotta
+                            : PartyPalette.orange.withValues(alpha: 0.58),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      textStyle: GoogleFonts.outfit(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.45,
+                      ),
+                    ),
+                    child: Text(attempt.label),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   void _submitTypedResult() {
     final value = int.tryParse(_resultController.text);
     final max = widget.snapshot.round.challenge.maxResult;
@@ -766,6 +828,10 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     final round = widget.snapshot.round;
     final result = round.challenge.isBinary
         ? (round.proposedResult == 1 ? 'SUCCESS' : 'FAILED')
+        : round.challenge.isAttempt
+        ? (round.proposedResult == 0
+              ? 'DOESN’T LAND'
+              : 'ATTEMPT ${round.proposedResult ?? '—'}')
         : '${round.proposedResult ?? '—'} ${round.challenge.answerUnit}';
 
     return Column(

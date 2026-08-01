@@ -10,7 +10,7 @@ import 'package:witsgame/features/room/models/room_model.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('performer gets the ready action in the fixed betting scene', (
+  testWidgets('performer waits without an extra ready confirmation', (
     tester,
   ) async {
     final player = _player(id: 'performer');
@@ -20,18 +20,22 @@ void main() {
       player: player,
     );
 
-    expect(find.text('I AM READY'), findsOneWidget);
+    expect(find.text('I AM READY'), findsNothing);
     expect(find.text('GET READY'), findsOneWidget);
+    expect(
+      find.text('Get in position. The host will start the timer.'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('host gets start action after performer is ready', (
+  testWidgets('host can start without waiting for a performer tap', (
     tester,
   ) async {
     final host = _player(id: 'host', isHost: true);
     await _pumpScene(
       tester,
-      snapshot: _snapshot(phase: PartyRoundPhase.ready, performerReady: true),
+      snapshot: _snapshot(phase: PartyRoundPhase.ready),
       player: host,
     );
 
@@ -56,6 +60,43 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('host can finish an attempt before the timer expires', (
+    tester,
+  ) async {
+    final host = _player(id: 'host', isHost: true);
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.action,
+        challengeType: PartyChallengeType.attempt,
+      ),
+      player: host,
+      secondsRemaining: 47,
+    );
+
+    expect(find.text('RECORD ATTEMPT'), findsOneWidget);
+    expect(find.text('00:47'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('attempt result offers tries and failure without typing', (
+    tester,
+  ) async {
+    final host = _player(id: 'host', isHost: true);
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.resultEntry,
+        challengeType: PartyChallengeType.attempt,
+      ),
+      player: host,
+    );
+
+    expect(find.text('1ST TRY'), findsOneWidget);
+    expect(find.text('5TH TRY'), findsOneWidget);
+    expect(find.text('FAILED'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('binary result is entered inline without a dialog', (
     tester,
   ) async {
@@ -100,7 +141,6 @@ Future<void> _pumpScene(
             secondsRemaining: secondsRemaining,
             commandInFlight: false,
             stageTop: 235,
-            onMarkReady: noAction,
             onStartAction: noAction,
             onOpenResultEntry: noAction,
             onSubmitResult: noResult,
@@ -162,18 +202,23 @@ PartySnapshot _snapshot({
       witness: const PartyParticipant(id: 'host', name: 'Host'),
       challenge: PartyChallenge(
         id: 'challenge',
-        text: challengeType == PartyChallengeType.binary
-            ? 'Can Alex land the shot?'
-            : 'How many push-ups can Alex do?',
+        text: switch (challengeType) {
+          PartyChallengeType.binary => 'Can Alex land the shot?',
+          PartyChallengeType.attempt =>
+            'On which attempt will Alex land the shot?',
+          PartyChallengeType.count => 'How many push-ups can Alex do?',
+        },
         rules: 'One clean attempt.',
-        answerUnit: challengeType == PartyChallengeType.binary
-            ? 'result'
-            : 'push-ups',
+        answerUnit: switch (challengeType) {
+          PartyChallengeType.binary => 'result',
+          PartyChallengeType.attempt => 'attempt',
+          PartyChallengeType.count => 'push-ups',
+        },
         durationSeconds: 60,
-        maxResult: 100,
-        betBoundaries: challengeType == PartyChallengeType.binary
-            ? const []
-            : const [10, 20, 30, 40],
+        maxResult: challengeType == PartyChallengeType.attempt ? 5 : 100,
+        betBoundaries: challengeType == PartyChallengeType.count
+            ? const [10, 20, 30, 40]
+            : const [],
         type: challengeType,
         performerSuccessBonus: 3,
       ),
