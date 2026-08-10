@@ -78,6 +78,25 @@ void main() {
     expect(find.text('00:47'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('host can finish a quick binary dare before time expires', (
+    tester,
+  ) async {
+    final host = _player(id: 'host', isHost: true);
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.action,
+        challengeType: PartyChallengeType.binary,
+        durationSeconds: 10,
+      ),
+      player: host,
+      secondsRemaining: 7,
+    );
+
+    expect(find.text('RECORD RESULT'), findsOneWidget);
+    expect(find.text('00:07'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('attempt result offers tries and failure without typing', (
     tester,
   ) async {
@@ -169,6 +188,7 @@ PartySnapshot _snapshot({
   required PartyRoundPhase phase,
   bool performerReady = false,
   PartyChallengeType challengeType = PartyChallengeType.count,
+  int durationSeconds = 60,
 }) {
   final now = DateTime.utc(2026);
   return PartySnapshot(
@@ -184,7 +204,7 @@ PartySnapshot _snapshot({
       stateVersion: 4,
       phaseStartedAt: now,
       phaseEndsAt: phase == PartyRoundPhase.action
-          ? now.add(const Duration(seconds: 60))
+          ? now.add(Duration(seconds: durationSeconds))
           : null,
       createdAt: now,
     ),
@@ -196,7 +216,7 @@ PartySnapshot _snapshot({
       phase: phase,
       phaseStartedAt: now,
       phaseEndsAt: phase == PartyRoundPhase.action
-          ? now.add(const Duration(seconds: 60))
+          ? now.add(Duration(seconds: durationSeconds))
           : null,
       performer: const PartyParticipant(id: 'performer', name: 'Alex'),
       witness: const PartyParticipant(id: 'host', name: 'Host'),
@@ -214,7 +234,7 @@ PartySnapshot _snapshot({
           PartyChallengeType.attempt => 'attempt',
           PartyChallengeType.count => 'push-ups',
         },
-        durationSeconds: 60,
+        durationSeconds: durationSeconds,
         maxResult: challengeType == PartyChallengeType.attempt ? 5 : 100,
         betBoundaries: challengeType == PartyChallengeType.count
             ? const [10, 20, 30, 40]

@@ -614,11 +614,15 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
           ),
         ),
         if (_isHost &&
-            (round.challenge.isAttempt || widget.secondsRemaining == 0)) ...[
+            (round.challenge.isAttempt ||
+                round.challenge.isBinary ||
+                widget.secondsRemaining == 0)) ...[
           const SizedBox(height: 16),
           _secondaryButton(
             label: round.challenge.isAttempt
                 ? 'RECORD ATTEMPT'
+                : round.challenge.isBinary
+                ? 'RECORD RESULT'
                 : 'CONTINUE TO RESULT',
             icon: Icons.arrow_forward_rounded,
             onPressed: widget.onOpenResultEntry,

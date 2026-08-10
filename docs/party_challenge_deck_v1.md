@@ -1,5 +1,7 @@
 # Party Challenge Deck v1
 
+> Superseded by [Party Challenge Deck v2](party_challenge_deck_v2.md).
+
 Production catalog generated from the authoritative seed migration.
 
 ## Final deck
