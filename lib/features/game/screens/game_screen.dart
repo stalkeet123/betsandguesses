@@ -572,6 +572,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final player = playerId == null ? null : _playerById(playerId);
     data['player_name'] = player?.name;
     data['player_color'] = player?.avatarColor;
+
+    // The database row can beat the RPC response on a slow connection.
+    // Reconcile it against the local chip immediately so the bank never counts
+    // the same bet twice while waiting for that response.
+    final currentPlayer = ref.read(currentPlayerProvider);
+    final clientActionId = data['client_action_id'] as String?;
+    if (playerId == currentPlayer?.id &&
+        clientActionId != null &&
+        clientActionId.isNotEmpty) {
+      ref
+          .read(gameStateProvider.notifier)
+          .replaceBet('local-$clientActionId', Bet.fromJson(data));
+      return;
+    }
     _applyBetPlacedPayload({'bet': data}, ignoreCurrentPlayer: false);
   }
 
@@ -1735,9 +1749,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (gameState.phase != RoundPhase.betting) return false;
     final room = ref.read(currentRoomProvider);
     if (room == null) return false;
-    final deadline = room.gameMode == GameMode.party
-        ? _partySnapshot?.round.phaseEndsAt ?? room.phaseEndsAt
-        : room.phaseEndsAt;
+
+    // Classic can receive the phase broadcast before the rooms-row update.
+    // Until that row arrives, its deadline still belongs to the previous phase
+    // and would incorrectly lock a live betting board. The Classic RPC remains
+    // the authority for rejecting genuinely late writes.
+    if (room.gameMode != GameMode.party) return true;
+
+    final deadline = _partySnapshot?.round.phaseEndsAt ?? room.phaseEndsAt;
     if (!GameSyncPolicy.isInteractionWindowOpen(
       deadline: deadline,
       now: ref.read(roomServiceProvider).serverNow,
@@ -1745,7 +1764,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return false;
     }
     final player = ref.read(currentPlayerProvider);
-    if (room.gameMode != GameMode.party) return true;
     return player != null && _partySnapshot?.round.performer.id != player.id;
   }
 
@@ -1756,9 +1774,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   bool _isBettingClosedError(Object error) {
-    return error is PostgrestException &&
-        error.code == '40001' &&
-        error.message.toLowerCase().contains('betting');
+    return error is BettingWindowClosedException ||
+        (error is PostgrestException &&
+            error.code == '40001' &&
+            error.message.toLowerCase().contains('betting'));
   }
 
   void _recoverFromClosedBettingWindow() {
@@ -1822,14 +1841,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
         await _resyncFromServer();
         return;
       }
-      await realtimeService.broadcast(widget.roomCode, 'game_ended', {});
-
-      if (mounted) {
-        context.goNamed(
-          'results',
-          pathParameters: {'roomCode': widget.roomCode},
-        );
-      }
+      // Finishing the row is authoritative. Navigate immediately instead of
+      // waiting for an optional broadcast that may arrive late or fail.
+      ref
+          .read(currentRoomProvider.notifier)
+          .set(
+            room.copyWith(
+              status: RoomStatus.finished,
+              roundPhase: RoundPhase.idle,
+            ),
+          );
+      unawaited(
+        realtimeService.broadcast(widget.roomCode, 'game_ended', {}).catchError(
+          (Object error, StackTrace stackTrace) {
+            debugPrint('Game-ended broadcast failed: $error\n$stackTrace');
+          },
+        ),
+      );
+      if (!mounted || !_canUseRef) return;
+      context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
     } else {
       final nextRound = gameState.currentRound + 1;
       final claimedRoom = await roomService.claimPhaseTransition(

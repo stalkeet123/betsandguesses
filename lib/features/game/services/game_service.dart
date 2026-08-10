@@ -290,6 +290,7 @@ class GameService {
         'p_position_y': positionY,
       },
     );
+    if (response == null) throw const BettingWindowClosedException();
     return Bet.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
@@ -310,6 +311,7 @@ class GameService {
         'p_position_y': positionY,
       },
     );
+    if (response == null) throw const BettingWindowClosedException();
     return Bet.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
@@ -356,6 +358,13 @@ class GameService {
   }
 
   // ── Used Questions ──
+}
+
+/// A late write is a normal client/server timer race, not a malformed bet.
+/// The RPC returns null in that case so callers can recover without leaving an
+/// optimistic chip stranded in local state.
+class BettingWindowClosedException implements Exception {
+  const BettingWindowClosedException();
 }
 
 class SecureGameStart {
