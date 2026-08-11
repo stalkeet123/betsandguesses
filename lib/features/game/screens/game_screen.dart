@@ -6099,35 +6099,49 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildPartyModeMark() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const SizedBox(
-          width: 142,
-          height: 68,
-          child: CachedAssetImage(
-            AppAssetPaths.partyLogo,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-            cacheHeight: 210,
-          ),
-        ),
-        Container(
-          width: 56,
-          height: 2,
-          margin: const EdgeInsets.only(top: 3),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                Colors.transparent,
-                PartyPalette.orangeSoft,
-                Colors.transparent,
-              ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Keep the supplied 3:2 Party artwork whole. The header can become
+        // narrow on web, so size its canvas from the available space instead
+        // of forcing a fixed-width image that can feel squeezed.
+        final logoWidth = min(156.0, constraints.maxWidth).clamp(0.0, 156.0);
+        final logoHeight = min(
+          76.0,
+          (constraints.maxHeight - 5).clamp(0.0, 76.0),
+        );
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: logoWidth,
+              height: logoHeight,
+              child: const CachedAssetImage(
+                AppAssetPaths.partyLogo,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                cacheHeight: 210,
+              ),
             ),
-            borderRadius: BorderRadius.circular(99),
-          ),
-        ),
-      ],
+            Container(
+              width: min(56.0, logoWidth * 0.42),
+              height: 2,
+              margin: const EdgeInsets.only(top: 3),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    PartyPalette.orangeSoft,
+                    Colors.transparent,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
