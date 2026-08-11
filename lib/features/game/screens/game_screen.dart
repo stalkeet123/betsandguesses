@@ -6102,34 +6102,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          'BETS & GUESSES',
-          maxLines: 1,
-          style: GoogleFonts.outfit(
-            color: PartyPalette.creamMuted,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2.2,
-          ),
-        ),
-        const SizedBox(height: 3),
-        const Text(
-          'PARTY MODE',
-          maxLines: 1,
-          style: TextStyle(
-            fontFamily: 'RehnCondensed',
-            color: PartyPalette.cream,
-            fontSize: 35,
-            fontWeight: FontWeight.w900,
-            height: 0.88,
+        const SizedBox(
+          width: 142,
+          height: 68,
+          child: CachedAssetImage(
+            AppAssetPaths.partyLogo,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            cacheHeight: 210,
           ),
         ),
         Container(
-          width: 44,
-          height: 3,
-          margin: const EdgeInsets.only(top: 8),
+          width: 56,
+          height: 2,
+          margin: const EdgeInsets.only(top: 3),
           decoration: BoxDecoration(
-            color: PartyPalette.orange,
+            gradient: const LinearGradient(
+              colors: [
+                Colors.transparent,
+                PartyPalette.orangeSoft,
+                Colors.transparent,
+              ],
+            ),
             borderRadius: BorderRadius.circular(99),
           ),
         ),
@@ -6190,7 +6184,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         body: Stack(
           fit: StackFit.expand,
           children: [
-            const _PartyNightBackground(),
+            const _PartyTableBackground(),
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(4),
@@ -6428,7 +6422,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             children: [
               Positioned.fill(
                 child: isPartyMode
-                    ? const _PartyNightBackground()
+                    ? const _PartyTableBackground()
                     : CachedAssetImage(
                         AppAssetPaths.background,
                         fit: BoxFit.cover,
@@ -6728,8 +6722,8 @@ class _PartyAttentionPainter extends CustomPainter {
   }
 }
 
-class _PartyNightBackground extends StatelessWidget {
-  const _PartyNightBackground();
+class _PartyTableBackground extends StatelessWidget {
+  const _PartyTableBackground();
 
   @override
   Widget build(BuildContext context) {
@@ -7289,10 +7283,10 @@ class _BetSlotSurface extends StatelessWidget {
 
   Widget _buildPartySurface(BorderRadius radius) {
     final colors = switch (spec.tone) {
-      _BetSlotTone.green => const [Color(0xFF6F9991), Color(0xFF4F7775)],
-      _BetSlotTone.black => const [Color(0xFF4A6680), Color(0xFF344F69)],
-      _BetSlotTone.gold => const [Color(0xFFF0A15F), Color(0xFFD77C58)],
-      _BetSlotTone.red => const [Color(0xFF9A6B7F), Color(0xFF745569)],
+      _BetSlotTone.green => const [Color(0xFF638B63), Color(0xFF355F46)],
+      _BetSlotTone.black => const [Color(0xFF254C3C), Color(0xFF14362D)],
+      _BetSlotTone.gold => const [Color(0xFFC89455), Color(0xFFA86C3D)],
+      _BetSlotTone.red => const [Color(0xFF91584C), Color(0xFF693E37)],
     };
     final borderColor = spec.isSweetSpot
         ? PartyPalette.cream.withValues(alpha: 0.62)
