@@ -5,7 +5,6 @@ class AppAssetPaths {
 
   static const background = 'assets/background.webp';
   static const logo = 'assets/logo.webp';
-  static const partyLogo = 'assets/logoparty.webp';
   static const boardRed = 'assets/1.webp';
   static const boardBlack = 'assets/2.webp';
   static const boardGreen = 'assets/3.webp';
@@ -17,7 +16,6 @@ class AppAssetPaths {
   };
 
   static const _deferredWarmupAssets = <String, int>{
-    partyLogo: 480,
     boardRed: 720,
     boardBlack: 720,
     boardGreen: 720,

@@ -6098,52 +6098,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return null;
   }
 
-  Widget _buildPartyModeMark() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Keep the supplied 3:2 Party artwork whole. The header can become
-        // narrow on web, so size its canvas from the available space instead
-        // of forcing a fixed-width image that can feel squeezed.
-        final logoWidth = min(156.0, constraints.maxWidth).clamp(0.0, 156.0);
-        final logoHeight = min(
-          76.0,
-          (constraints.maxHeight - 5).clamp(0.0, 76.0),
-        );
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: logoWidth,
-              height: logoHeight,
-              child: const CachedAssetImage(
-                AppAssetPaths.partyLogo,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
-                cacheHeight: 210,
-              ),
-            ),
-            Container(
-              width: min(56.0, logoWidth * 0.42),
-              height: 2,
-              margin: const EdgeInsets.only(top: 3),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    PartyPalette.orangeSoft,
-                    Colors.transparent,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  /// Party shares the Classic mark; the mode is communicated by the room and
+  /// surface treatment, not a competing logo.
+  Widget _buildPartyModeMark() => _buildPortraitLogo();
 
   Widget _buildPhaseSurfaceTransition({
     required String surfaceKey,
