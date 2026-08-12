@@ -5344,13 +5344,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
       child: Stack(
         children: [
           Positioned.fill(child: _buildCasinoSlotTitle(slot, boundaries)),
-          Positioned(
-            top: 0,
-            right: slot.isSweetSpot ? 6 : 4,
-            bottom: 0,
-            width: slot.isSweetSpot ? 36 : 30,
-            child: _buildOddsTicket(slot),
-          ),
+          if (ref.read(currentRoomProvider)?.gameMode == GameMode.party)
+            Positioned(top: 7, right: 7, child: _buildOddsTicket(slot))
+          else
+            Positioned(
+              top: 0,
+              right: slot.isSweetSpot ? 6 : 4,
+              bottom: 0,
+              width: slot.isSweetSpot ? 36 : 30,
+              child: _buildOddsTicket(slot),
+            ),
         ],
       ),
     );
@@ -5368,63 +5371,35 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
 
     if (isParty) {
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          return Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              width: slot.isSweetSpot ? 38 : 32,
-              margin: const EdgeInsets.only(right: 5),
-              padding: const EdgeInsets.symmetric(vertical: 7),
-              decoration: BoxDecoration(
-                color: PartyPalette.nightDeep.withValues(alpha: 0.36),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color:
-                      (isSweetSpot
-                              ? PartyPalette.cream
-                              : PartyPalette.orangeSoft)
-                          .withValues(alpha: isSweetSpot ? 0.5 : 0.30),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'PAYS',
-                    style: GoogleFonts.outfit(
-                      color: PartyPalette.cream.withValues(alpha: 0.65),
-                      fontSize: 7,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.8,
-                      height: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${slot.odds}×',
-                    style: TextStyle(
-                      fontFamily: 'RehnCondensed',
-                      color: isSweetSpot
-                          ? PartyPalette.cream
-                          : PartyPalette.orangeSoft,
-                      fontSize: slot.isSweetSpot ? 23 : 20,
-                      fontWeight: FontWeight.w900,
-                      height: 0.82,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black.withValues(alpha: 0.44),
-                          blurRadius: 3,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+      final accent = isSweetSpot ? PartyPalette.cream : PartyPalette.orangeSoft;
+      return Container(
+        height: 24,
+        constraints: const BoxConstraints(minWidth: 34),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 7),
+        decoration: BoxDecoration(
+          color: PartyPalette.nightDeep.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: accent.withValues(alpha: 0.48)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.24),
+              blurRadius: 5,
+              offset: const Offset(0, 2),
             ),
-          );
-        },
+          ],
+        ),
+        child: Text(
+          '${slot.odds}X',
+          maxLines: 1,
+          style: TextStyle(
+            fontFamily: 'RehnCondensed',
+            color: accent,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+            height: 0.86,
+          ),
+        ),
       );
     }
 
@@ -5477,49 +5452,31 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ? switch (slot.index) {
             4 => '${_formatGuessValue(boundaries[3])}+',
             3 =>
-              '${_formatGuessValue(boundaries[2])} – ${_formatGuessValue(boundaries[3])}',
+              '${_formatGuessValue(boundaries[2])} - ${_formatGuessValue(boundaries[3])}',
             2 =>
-              '${_formatGuessValue(boundaries[1])} – ${_formatGuessValue(boundaries[2])}',
+              '${_formatGuessValue(boundaries[1])} - ${_formatGuessValue(boundaries[2])}',
             1 =>
-              '${_formatGuessValue(boundaries[0])} – ${_formatGuessValue(boundaries[1])}',
+              '${_formatGuessValue(boundaries[0])} - ${_formatGuessValue(boundaries[1])}',
             _ => 'UNDER ${_formatGuessValue(boundaries[0])}',
           }
         : null;
     final isRangeBoard = range != null;
-    final isBinary = slot.title == 'YES' || slot.title == 'NO';
     final isAttempt =
         slot.title.contains('TRY') || slot.title == "DOESN'T LAND";
-    final headline = switch (slot.index) {
-      4 when isRangeBoard => 'OVER',
-      0 when isRangeBoard => 'UNDER',
-      _ when slot.title.isNotEmpty => slot.title,
-      _ => range ?? 'BET HERE',
-    };
-    final detail = switch (slot.index) {
-      4 when isRangeBoard => range,
-      0 when isRangeBoard => _formatGuessValue(boundaries[0]),
-      _ when slot.title.isEmpty => range,
-      _ when isRangeBoard => range,
-      _ when isBinary => slot.title == 'YES' ? 'IT HAPPENS' : 'NOT A CHANCE',
-      _ when isAttempt => 'GETS IT DONE',
-      _ => null,
-    };
-    final kicker = slot.isSweetSpot
-        ? 'BEST VALUE'
-        : isBinary
-        ? 'YOUR CALL'
+    final headline = slot.title.isNotEmpty ? slot.title : range ?? 'BET HERE';
+    final detail = slot.title.isNotEmpty && isRangeBoard ? range : null;
+    final kicker = isRangeBoard
+        ? 'BET RANGE'
         : isAttempt
-        ? 'NUMBER OF TRIES'
-        : slot.title.isEmpty
-        ? 'BET THIS RANGE'
-        : 'TAKE A SIDE';
+        ? 'ATTEMPTS'
+        : 'OUTCOME';
     final accent = slot.isSweetSpot
         ? PartyPalette.cream
         : PartyPalette.orangeSoft;
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 7, 47, 7),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Column(
@@ -5536,14 +5493,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   height: 1,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 headline,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'RehnCondensed',
                   color: PartyPalette.cream,
-                  fontSize: slot.isSweetSpot ? 31 : 34,
+                  fontSize: slot.isSweetSpot ? 30 : 32,
                   fontWeight: FontWeight.w900,
                   height: 0.84,
                   letterSpacing: headline.length <= 3 ? 1.2 : 0,
@@ -5557,7 +5514,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
               ),
               if (detail != null) ...[
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 9,
