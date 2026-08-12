@@ -1,6 +1,7 @@
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, ValueNotifier, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,6 +13,7 @@ import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
 import '../../../core/router/app_router.dart';
 import '../../../features/game/screens/debug_scene_editor_screen.dart';
+import '../../../features/party/theme/party_palette.dart';
 import '../../../features/room/providers/room_providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -31,6 +33,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isLoading = false;
   String? _prefilledRoomCode;
   bool _showQrJoinGuide = false;
+  GameMode _selectedHomeMode = GameMode.classic;
 
   @override
   void initState() {
@@ -129,7 +132,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : GameConstants.freeMaxRounds;
     var selectedMaxPlayers = GameConstants.freeMaxPlayers;
     var selectedCategory = GameConstants.defaultCategory;
-    var selectedMode = GameMode.classic;
+    var selectedMode = _selectedHomeMode;
+    final setupThemeMode = ValueNotifier<GameMode>(selectedMode);
 
     _showHomeSheet(
       title: 'SETUP',
@@ -149,10 +153,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: AppColors.ink.withValues(alpha: 0.72),
+                  color:
+                      (selectedMode == GameMode.party
+                              ? PartyPalette.nightDeep
+                              : AppColors.ink)
+                          .withValues(alpha: 0.72),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: AppColors.brass.withValues(alpha: 0.5),
+                    color:
+                        (selectedMode == GameMode.party
+                                ? PartyPalette.orangeSoft
+                                : AppColors.brass)
+                            .withValues(alpha: 0.5),
                   ),
                 ),
                 child: Row(
@@ -163,8 +175,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           mode: mode,
                           selected: selectedMode == mode,
                           onTap: () {
+                            setState(() => _selectedHomeMode = mode);
                             setModalState(() {
                               selectedMode = mode;
+                              setupThemeMode.value = mode;
                               if (mode == GameMode.party &&
                                   selectedMaxPlayers < 3) {
                                 selectedMaxPlayers = 3;
@@ -209,6 +223,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 isPremiumLocked:
                     !isPremium &&
                     selectedMaxPlayers > GameConstants.freeMaxPlayers,
+                partyTheme: selectedMode == GameMode.party,
                 onChanged: (value) {
                   setModalState(() => selectedMaxPlayers = value);
                 },
@@ -266,10 +281,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: usesPremiumSetup
                         ? AppColors.brassLight
+                        : selectedMode == GameMode.party
+                        ? PartyPalette.orangeSoft
                         : AppColors.brass,
                     foregroundColor: AppColors.ink,
                     elevation: 10,
-                    shadowColor: AppColors.brass.withValues(alpha: 0.38),
+                    shadowColor:
+                        (selectedMode == GameMode.party
+                                ? PartyPalette.orange
+                                : AppColors.brass)
+                            .withValues(alpha: 0.38),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(18),
                     ),
@@ -280,6 +301,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           );
         },
       ),
+      themeMode: setupThemeMode,
     );
   }
 
@@ -537,94 +559,121 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required String title,
     required IconData icon,
     required Widget child,
+    ValueListenable<GameMode>? themeMode,
   }) {
-    showModalBottomSheet<void>(
+    final sheet = showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.58),
       isScrollControlled: true,
       builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              18,
-              0,
-              18,
-              18 + MediaQuery.of(context).viewInsets.bottom,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.97,
+        Widget buildSurface(GameMode mode) {
+          final isParty = mode == GameMode.party;
+          final accent = isParty
+              ? PartyPalette.orangeSoft
+              : AppColors.brassLight;
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                0,
+                18,
+                18 + MediaQuery.of(context).viewInsets.bottom,
               ),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF0E4C34),
-                      Color(0xFF062C1B),
-                      Color(0xFF1A0E09),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.97,
+                ),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 260),
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                  decoration: BoxDecoration(
+                    gradient: isParty
+                        ? PartyPalette.backgroundGradient
+                        : const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF0E4C34),
+                              Color(0xFF062C1B),
+                              Color(0xFF1A0E09),
+                            ],
+                          ),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: accent.withValues(alpha: isParty ? 0.56 : 0.46),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        blurRadius: 28,
+                        offset: const Offset(0, 16),
+                      ),
+                      if (isParty)
+                        BoxShadow(
+                          color: PartyPalette.orange.withValues(alpha: 0.12),
+                          blurRadius: 34,
+                          spreadRadius: -8,
+                        ),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: AppColors.brassLight.withValues(alpha: 0.46),
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      blurRadius: 28,
-                      offset: const Offset(0, 16),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        _roundIcon(icon, size: 52, iconSize: 29),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: _homeTextStyle(
-                              color: AppColors.ivory,
-                              size: 34,
-                              letterSpacing: 1.2,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          _roundIcon(icon, size: 52, iconSize: 29),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              isParty && title == 'SETUP'
+                                  ? 'PARTY SETUP'
+                                  : title,
+                              style: _homeTextStyle(
+                                color: AppColors.ivory,
+                                size: 34,
+                                letterSpacing: 1.2,
+                              ),
                             ),
                           ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                          color: AppColors.ivory,
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.1,
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                            color: AppColors.ivory,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.1,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        child: child,
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 14),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: child,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+          );
+        }
+
+        if (themeMode == null) return buildSurface(GameMode.classic);
+        return ValueListenableBuilder<GameMode>(
+          valueListenable: themeMode,
+          builder: (context, mode, _) => buildSurface(mode),
         );
       },
     );
+    if (themeMode is ValueNotifier<GameMode>) {
+      sheet.whenComplete(themeMode.dispose);
+    }
   }
 
   Widget _modeSetupButton({
@@ -633,8 +682,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required VoidCallback onTap,
   }) {
     final isParty = mode == GameMode.party;
+    final accent = isParty ? PartyPalette.orangeSoft : AppColors.brassLight;
     return Material(
-      color: selected ? AppColors.brassLight : Colors.transparent,
+      color: selected ? accent : Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -647,7 +697,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               Icon(
                 isParty ? Icons.celebration_rounded : Icons.casino_rounded,
                 size: 19,
-                color: selected ? AppColors.ink : AppColors.ivory,
+                color: selected ? AppColors.ink : accent,
               ),
               const SizedBox(width: 7),
               Text(
@@ -671,15 +721,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: AppColors.feltDark.withValues(alpha: 0.44),
+        color: PartyPalette.nightDeep.withValues(alpha: 0.58),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: AppColors.brass.withValues(alpha: 0.32)),
+        border: Border.all(
+          color: PartyPalette.orangeSoft.withValues(alpha: 0.32),
+        ),
       ),
       child: Row(
         children: [
           const Icon(
             Icons.timer_rounded,
-            color: AppColors.brassLight,
+            color: PartyPalette.orangeSoft,
             size: 22,
           ),
           const SizedBox(width: 10),
@@ -687,7 +739,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             child: Text(
               'Everyone performs once. Every challenge lasts exactly 60 seconds.',
               style: GoogleFonts.outfit(
-                color: AppColors.ivory.withValues(alpha: 0.82),
+                color: PartyPalette.cream.withValues(alpha: 0.86),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 height: 1.25,
@@ -700,6 +752,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _setupSlider({
+    bool partyTheme = false,
     required IconData icon,
     required String label,
     required int value,
@@ -723,12 +776,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           end: Alignment.bottomRight,
           colors: isPremiumLocked
               ? const [Color(0xFF5B3917), Color(0xFF2B170C)]
+              : partyTheme
+              ? const [Color(0xFF2B614C), Color(0xFF12352C)]
               : const [Color(0xFF083D28), Color(0xFF052416)],
         ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: (isPremiumLocked ? AppColors.brassLight : AppColors.feltLight)
-              .withValues(alpha: 0.48),
+          color:
+              (isPremiumLocked
+                      ? AppColors.brassLight
+                      : partyTheme
+                      ? PartyPalette.orangeSoft
+                      : AppColors.feltLight)
+                  .withValues(alpha: 0.48),
         ),
         boxShadow: [
           BoxShadow(
@@ -742,7 +802,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           Row(
             children: [
-              Icon(icon, color: AppColors.brassLight, size: 24),
+              Icon(
+                icon,
+                color: partyTheme
+                    ? PartyPalette.orangeSoft
+                    : AppColors.brassLight,
+                size: 24,
+              ),
               const SizedBox(width: 10),
               Text(
                 label,
@@ -798,10 +864,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: AppColors.brassLight,
+              activeTrackColor: partyTheme
+                  ? PartyPalette.orangeSoft
+                  : AppColors.brassLight,
               inactiveTrackColor: AppColors.ivory.withValues(alpha: 0.18),
-              thumbColor: AppColors.brassLight,
-              overlayColor: AppColors.brassLight.withValues(alpha: 0.18),
+              thumbColor: partyTheme
+                  ? PartyPalette.orangeSoft
+                  : AppColors.brassLight,
+              overlayColor:
+                  (partyTheme ? PartyPalette.orangeSoft : AppColors.brassLight)
+                      .withValues(alpha: 0.18),
               trackHeight: 6,
               tickMarkShape: SliderTickMarkShape.noTickMark,
             ),
@@ -1073,16 +1145,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
           Positioned.fill(
-            child: DecoratedBox(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeOutCubic,
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   center: Alignment.topCenter,
                   radius: 1.18,
-                  colors: [
-                    const Color(0xFF17844E).withValues(alpha: 0.28),
-                    const Color(0xFF052719).withValues(alpha: 0.1),
-                    Colors.black.withValues(alpha: 0.36),
-                  ],
+                  colors: _selectedHomeMode == GameMode.party
+                      ? [
+                          PartyPalette.orange.withValues(alpha: 0.18),
+                          PartyPalette.night.withValues(alpha: 0.24),
+                          Colors.black.withValues(alpha: 0.44),
+                        ]
+                      : [
+                          const Color(0xFF17844E).withValues(alpha: 0.28),
+                          const Color(0xFF052719).withValues(alpha: 0.1),
+                          Colors.black.withValues(alpha: 0.36),
+                        ],
                 ),
               ),
             ),
@@ -1113,12 +1193,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 const SizedBox(height: 10),
                               ],
                               _buildNamePanel(),
+                              if (!kIsWeb) ...[
+                                const SizedBox(height: 10),
+                                _dimIfGuide(child: _buildHomeModePicker()),
+                              ],
                               const SizedBox(height: 10),
                               if (!kIsWeb) ...[
                                 _dimIfGuide(
                                   child: _buildHeroActionButton(
-                                    label: 'CREATE LOBBY',
-                                    icon: Icons.groups_rounded,
+                                    label: _selectedHomeMode == GameMode.party
+                                        ? 'CREATE PARTY LOBBY'
+                                        : 'CREATE LOBBY',
+                                    icon: _selectedHomeMode == GameMode.party
+                                        ? Icons.celebration_rounded
+                                        : Icons.groups_rounded,
+                                    partyTheme:
+                                        _selectedHomeMode == GameMode.party,
                                     isLoading: _isLoading,
                                     onPressed: _isLoading
                                         ? null
@@ -1232,21 +1322,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _buildSubtitleWithLines() {
+    final isParty = _selectedHomeMode == GameMode.party;
+    final accent = isParty ? PartyPalette.orangeSoft : AppColors.brassLight;
     return Row(
       children: [
-        Expanded(child: _goldRule()),
+        Expanded(child: _goldRule(color: accent)),
         const SizedBox(width: 16),
         Text(
-          'PARTY QUIZ & BETTING GAME',
-          style: _homeTextStyle(
-            color: AppColors.brassLight,
-            size: 17,
-            letterSpacing: 2.2,
-          ),
+          isParty ? 'LIVE CHALLENGES & BETTING' : 'PARTY QUIZ & BETTING GAME',
+          style: _homeTextStyle(color: accent, size: 17, letterSpacing: 2.2),
         ),
         const SizedBox(width: 16),
-        Expanded(child: _goldRule()),
+        Expanded(child: _goldRule(color: accent)),
       ],
+    );
+  }
+
+  Widget _buildHomeModePicker() {
+    final isParty = _selectedHomeMode == GameMode.party;
+    final accent = isParty ? PartyPalette.orangeSoft : AppColors.brassLight;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: (isParty ? PartyPalette.nightDeep : AppColors.ink).withValues(
+          alpha: 0.76,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.54)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.24),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (final mode in GameMode.values)
+            Expanded(
+              child: _modeSetupButton(
+                mode: mode,
+                selected: _selectedHomeMode == mode,
+                onTap: () {
+                  if (_selectedHomeMode == mode) return;
+                  ref.read(audioServiceProvider).playClick();
+                  setState(() => _selectedHomeMode = mode);
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1418,12 +1545,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required String label,
     required IconData icon,
     required VoidCallback? onPressed,
+    bool partyTheme = false,
     bool isLoading = false,
   }) {
     return SizedBox(
       height: 76,
       child: DecoratedBox(
-        decoration: _goldButtonDecoration(radius: 22),
+        decoration: partyTheme
+            ? BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [PartyPalette.orangeSoft, PartyPalette.orange],
+                ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: PartyPalette.cream.withValues(alpha: 0.72),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: PartyPalette.orange.withValues(alpha: 0.34),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              )
+            : _goldButtonDecoration(radius: 22),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -1837,15 +1984,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _goldRule() {
+  Widget _goldRule({Color color = AppColors.brassLight}) {
     return Container(
       height: 1.5,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            Colors.transparent,
-            AppColors.brassLight.withValues(alpha: 0.75),
-          ],
+          colors: [Colors.transparent, color.withValues(alpha: 0.75)],
         ),
       ),
     );
