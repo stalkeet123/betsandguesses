@@ -2511,9 +2511,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (_isRevealPhase(gameState)) {
       return _buildAnswerRevealCard(gameState);
     }
-    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
-      return _buildPartyQuestionCard(gameState);
-    }
 
     return Container(
       width: double.infinity,
@@ -2606,113 +2603,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildPartyQuestionCard(GameState gameState) {
-    final round = _partySnapshot?.round;
-    final requiredItems = round?.challenge.requiredItems ?? const <String>[];
-    final canReroll =
-        round?.phase == PartyRoundPhase.betting &&
-        ref.read(currentPlayerProvider)?.isHost == true;
-    final card = AnimatedContainer(
-      duration: const Duration(milliseconds: 260),
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-      decoration: BoxDecoration(
-        color: PartyPalette.surface.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: PartyPalette.orangeSoft.withValues(alpha: 0.32),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.24),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: PartyPalette.orange,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  round == null
-                      ? 'PARTY CHALLENGE'
-                      : '${round.performer.name.toUpperCase()} IS UP',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(
-                    color: PartyPalette.orangeSoft,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.3,
-                  ),
-                ),
-              ),
-              if (canReroll)
-                Tooltip(
-                  message: 'Different challenge',
-                  child: IconButton(
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: PartyPalette.creamMuted,
-                    onPressed: _isPartyCommandInFlight || round == null
-                        ? null
-                        : () => _runPartyCommand(
-                            () => ref
-                                .read(partyGameServiceProvider)
-                                .rerollChallenge(_partySnapshot!.room.id),
-                          ),
-                    icon: const Icon(Icons.refresh_rounded),
-                  ),
-                ),
-            ],
-          ),
-          if (requiredItems.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(
-              'NEEDS  ·  ${requiredItems.join('  +  ')}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.outfit(
-                color: PartyPalette.blueMuted,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.7,
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Expanded(
-            child: gameState.currentQuestion == null
-                ? const _QuestionLoadingText(color: PartyPalette.blueMuted)
-                : _AdaptiveQuestionText(
-                    text: gameState.currentQuestion!.getText(locale: 'en'),
-                    color: PartyPalette.cream,
-                    minFontSize: 20,
-                    maxFontSize: 33,
-                  ),
-          ),
-        ],
-      ),
-    );
-    return _PartyAttentionFrame(
-      key: ValueKey('party-question-${round?.number ?? 0}'),
-      borderRadius: 20,
-      child: card,
     );
   }
 
@@ -3025,18 +2915,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            color: isParty
-                ? PartyPalette.surface.withValues(alpha: 0.88)
-                : selectedBet != null
+            color: selectedBet != null
                 ? AppColors.feltDark.withValues(alpha: 0.24)
                 : Colors.transparent,
             border: Border.all(
-              color: isParty
-                  ? (selectedBet != null
-                        ? PartyPalette.orangeSoft.withValues(alpha: 0.58)
-                        : Colors.white.withValues(alpha: 0.07))
-                  : selectedBet != null
-                  ? AppColors.brassLight
+              color: selectedBet != null
+                  ? (isParty ? PartyPalette.orangeSoft : AppColors.brassLight)
                   : Colors.transparent,
               width: 1.2,
             ),
@@ -4513,9 +4397,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildPlayersStrip(GameState gameState) {
-    if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
-      return _buildPartyPlayersStrip(gameState);
-    }
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
@@ -4616,114 +4497,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ],
                 );
               },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPartyPlayersStrip(GameState gameState) {
-    final sortedPlayers = [..._players]
-      ..sort((a, b) {
-        final scoreA = gameState.scores[a.id] ?? a.score;
-        final scoreB = gameState.scores[b.id] ?? b.score;
-        return scoreB.compareTo(scoreA);
-      });
-    final visiblePlayers = sortedPlayers.take(3).toList();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: PartyPalette.surface.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: PartyPalette.cream.withValues(alpha: 0.09)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Text(
-                'THE ROOM',
-                style: GoogleFonts.outfit(
-                  color: PartyPalette.creamMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                'CHIPS',
-                style: GoogleFonts.outfit(
-                  color: PartyPalette.orangeSoft,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Expanded(
-            child: Column(
-              children: [
-                for (var index = 0; index < visiblePlayers.length; index++)
-                  Expanded(
-                    child: Container(
-                      margin: EdgeInsets.only(
-                        bottom: index == visiblePlayers.length - 1 ? 0 : 5,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: index == 0
-                            ? PartyPalette.orange.withValues(alpha: 0.12)
-                            : Colors.white.withValues(alpha: 0.035),
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(
-                          color: index == 0
-                              ? PartyPalette.orangeSoft.withValues(alpha: 0.24)
-                              : Colors.white.withValues(alpha: 0.05),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            '${index + 1}',
-                            style: GoogleFonts.outfit(
-                              color: index == 0
-                                  ? PartyPalette.orangeSoft
-                                  : PartyPalette.blueMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              visiblePlayers[index].name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(
-                                color: PartyPalette.cream,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '${gameState.scores[visiblePlayers[index].id] ?? visiblePlayers[index].score}',
-                            style: GoogleFonts.outfit(
-                              color: PartyPalette.orangeSoft,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
             ),
           ),
         ],
@@ -6380,7 +6153,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
       );
     }
-    if (isPartyMode && partySnapshot != null) {
+    // Betting uses the exact Classic table layout. Party takes over only after
+    // bets lock, when the board naturally turns into the performance stage.
+    if (isPartyMode &&
+        partySnapshot != null &&
+        partySnapshot.round.phase != PartyRoundPhase.betting) {
       return _buildPartySingleSceneSurface(partySnapshot);
     }
 
@@ -6392,12 +6169,29 @@ class _GameScreenState extends ConsumerState<GameScreen>
           body: Stack(
             children: [
               Positioned.fill(
-                child: isPartyMode
-                    ? const _PartyTableBackground()
-                    : CachedAssetImage(
-                        AppAssetPaths.background,
-                        fit: BoxFit.cover,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const CachedAssetImage(
+                      AppAssetPaths.background,
+                      fit: BoxFit.cover,
+                    ),
+                    if (isPartyMode)
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              PartyPalette.sage.withValues(alpha: 0.08),
+                              Colors.transparent,
+                              PartyPalette.orange.withValues(alpha: 0.06),
+                            ],
+                          ),
+                        ),
                       ),
+                  ],
+                ),
               ),
               Positioned.fill(
                 child: SafeArea(
@@ -6590,106 +6384,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
       ),
     );
-  }
-}
-
-class _PartyAttentionFrame extends StatefulWidget {
-  final Widget child;
-  final double borderRadius;
-
-  const _PartyAttentionFrame({
-    super.key,
-    required this.child,
-    required this.borderRadius,
-  });
-
-  @override
-  State<_PartyAttentionFrame> createState() => _PartyAttentionFrameState();
-}
-
-class _PartyAttentionFrameState extends State<_PartyAttentionFrame>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return CustomPaint(
-          foregroundPainter: _PartyAttentionPainter(
-            progress: _controller.value,
-            radius: widget.borderRadius,
-          ),
-          child: child,
-        );
-      },
-      child: widget.child,
-    );
-  }
-}
-
-class _PartyAttentionPainter extends CustomPainter {
-  final double progress;
-  final double radius;
-
-  const _PartyAttentionPainter({required this.progress, required this.radius});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final fade = progress < 0.72
-        ? 1.0
-        : ((1 - progress) / 0.28).clamp(0.0, 1.0);
-    if (fade <= 0) return;
-    final rect = Offset.zero & size;
-    final rrect = RRect.fromRectAndRadius(
-      rect.deflate(1.5),
-      Radius.circular(radius),
-    );
-    final shader = SweepGradient(
-      transform: GradientRotation(progress * pi * 2),
-      colors: [
-        Colors.transparent,
-        Colors.transparent,
-        PartyPalette.orangeSoft.withValues(alpha: 0.18 * fade),
-        PartyPalette.cream.withValues(alpha: 0.88 * fade),
-        PartyPalette.orange.withValues(alpha: 0.42 * fade),
-        Colors.transparent,
-        Colors.transparent,
-      ],
-      stops: const [0, 0.38, 0.47, 0.52, 0.59, 0.69, 1],
-    ).createShader(rect);
-    final glow = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 7
-      ..shader = shader
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
-    final edge = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..shader = shader;
-    canvas.drawRRect(rrect, glow);
-    canvas.drawRRect(rrect, edge);
-  }
-
-  @override
-  bool shouldRepaint(covariant _PartyAttentionPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.radius != radius;
   }
 }
 
@@ -7155,7 +6849,9 @@ class _BetSlotSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(spec.isSweetSpot ? 18 : 10);
-    if (isPartyMode) return _buildPartySurface(radius);
+    final outerRailGradient = isPartyMode
+        ? _partyOuterRailGradient
+        : _outerRailGradient;
 
     Widget surface = DecoratedBox(
       decoration: BoxDecoration(
@@ -7186,7 +6882,7 @@ class _BetSlotSurface extends StatelessWidget {
         padding: EdgeInsets.all(spec.isSweetSpot ? 3 : 2.5),
         decoration: BoxDecoration(
           borderRadius: radius,
-          gradient: _outerRailGradient,
+          gradient: outerRailGradient,
         ),
         child: Container(
           padding: EdgeInsets.all(spec.isSweetSpot ? 3 : 2),
@@ -7252,60 +6948,17 @@ class _BetSlotSurface extends StatelessWidget {
         );
   }
 
-  Widget _buildPartySurface(BorderRadius radius) {
-    final colors = switch (spec.tone) {
-      _BetSlotTone.green => const [Color(0xFF638B63), Color(0xFF355F46)],
-      _BetSlotTone.black => const [Color(0xFF254C3C), Color(0xFF14362D)],
-      _BetSlotTone.gold => const [Color(0xFFC89455), Color(0xFFA86C3D)],
-      _BetSlotTone.red => const [Color(0xFF91584C), Color(0xFF693E37)],
-    };
-    final borderColor = spec.isSweetSpot
-        ? PartyPalette.cream.withValues(alpha: 0.62)
-        : PartyPalette.cream.withValues(alpha: 0.17);
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 210),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
-        ),
-        borderRadius: radius,
-        border: Border.all(
-          color: isWinningReveal ? PartyPalette.orangeSoft : borderColor,
-          width: isWinningReveal ? 2.2 : 1.1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.22),
-            blurRadius: 12,
-            offset: const Offset(0, 7),
-          ),
-          if (isWinningReveal)
-            BoxShadow(
-              color: PartyPalette.orange.withValues(alpha: 0.24),
-              blurRadius: 24,
-              spreadRadius: 2,
-            ),
-        ],
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.white.withValues(alpha: 0.055),
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.08),
-            ],
-          ),
-        ),
-        child: const SizedBox.expand(),
-      ),
-    );
-  }
+  // Same Classic rail and texture construction, with only a calmer party tint.
+  static const LinearGradient _partyOuterRailGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFFF6F0E3),
+      Color(0xFF53634C),
+      Color(0xFFFFFBF1),
+      Color(0xFF6A5949),
+    ],
+  );
 
   static const LinearGradient _outerRailGradient = LinearGradient(
     begin: Alignment.topLeft,
@@ -7349,28 +7002,30 @@ class _InfoPill extends StatelessWidget {
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
-        gradient: isParty
-            ? null
-            : LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isParty
+              ? [
+                  PartyPalette.nightDeep.withValues(alpha: 0.96),
+                  PartyPalette.midnight.withValues(alpha: 0.9),
+                ]
+              : [
                   AppColors.feltDark.withValues(alpha: 0.96),
                   AppColors.felt.withValues(alpha: 0.88),
                 ],
-              ),
-        color: isParty ? PartyPalette.surface.withValues(alpha: 0.88) : null,
+        ),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
           color: isParty
-              ? Colors.white.withValues(alpha: 0.08)
+              ? PartyPalette.orangeSoft.withValues(alpha: 0.26)
               : AppColors.brassLight.withValues(alpha: 0.22),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: isParty ? 0.18 : 0.28),
-            blurRadius: isParty ? 10 : 14,
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 14,
             offset: const Offset(0, 6),
           ),
         ],
