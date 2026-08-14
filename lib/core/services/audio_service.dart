@@ -25,9 +25,11 @@ class AudioService {
 
   SoundHandle? _bgmHandle;
   AudioSource? _currentBgmSource;
+  String? _currentBgmKey;
   SoundHandle? _tickingHandle;
-  SoundHandle? _payoutHandle;
-  Timer? _payoutStopTimer;
+  Future<void>? _tickingStartFuture;
+  int _tickingGeneration = 0;
+
   final Set<Timer> _fadeStopTimers = {};
   Future<void>? _initFuture;
   final Map<String, Future<AudioSource?>> _sourceLoadFutures = {};
@@ -37,6 +39,7 @@ class AudioService {
   bool _isAppActive = true;
   bool _disposed = false;
   bool _webEngineReady = false;
+  final Map<String, DateTime> _lastSfxPlayedAt = {};
 
   static const _backgroundMusic = 'assets/sound/arka plan.mp3';
   static const _elevatorMusic =
@@ -67,26 +70,25 @@ class AudioService {
   Future<void> _initPlayers() async {
     Object? lastError;
     final attempts = kIsWeb ? 20 : 1;
+    final bufferSize =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+        ? 4096
+        : 2048;
 
     for (var attempt = 0; attempt < attempts; attempt++) {
       try {
-        // Hot restart can preserve the native engine while losing Dart-side
-        // temporary-directory state. Recreate both sides together.
-        if (_engineReady) {
-          SoLoud.instance.deinit();
-          if (kIsWeb) _webEngineReady = false;
-        }
-        await SoLoud.instance.init();
+        // A larger Android buffer protects slower devices from audio
+        // underruns, which are heard as a repeating buzz or stutter.
+        await SoLoud.instance.init(sampleRate: 44100, bufferSize: bufferSize);
         if (kIsWeb) _webEngineReady = true;
+        SoLoud.instance.setMaxActiveVoiceCount(16);
         await _applyVolumes();
         return;
       } catch (error) {
         lastError = error;
         if (kIsWeb) _webEngineReady = false;
-        if (kIsWeb && attempt + 1 < attempts) {
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-          continue;
-        }
+        if (!kIsWeb || attempt + 1 >= attempts) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
       }
     }
 
@@ -205,31 +207,53 @@ class AudioService {
     Future<AudioSource?> Function() loadSource, {
     double volume = 0.15,
     String? bgmKey,
-    Duration fadeDuration = const Duration(seconds: 1),
+    Duration fadeDuration = const Duration(milliseconds: 300),
   }) async {
     if (bgmKey != null) {
       _desiredBgmKey = bgmKey;
-      _pendingBgmKey = bgmKey;
+      if (_currentBgmKey == bgmKey && _bgmHandle != null) {
+        _pendingBgmKey = null;
+        return;
+      }
     }
-    final requestId = ++_bgmRequestId;
     if (_isMuted || !_isAppActive || _disposed) return;
+    if (bgmKey != null && _pendingBgmKey == bgmKey) return;
 
+    if (bgmKey != null) _pendingBgmKey = bgmKey;
+    final requestId = ++_bgmRequestId;
     final source = await loadSource();
-    if (_isMuted || !_isAppActive || _disposed) return;
-    if (!_engineReady || source == null) return;
+    if (_isMuted ||
+        !_isAppActive ||
+        _disposed ||
+        !_engineReady ||
+        source == null) {
+      if (requestId == _bgmRequestId && _pendingBgmKey == bgmKey) {
+        _pendingBgmKey = null;
+      }
+      return;
+    }
     if (requestId != _bgmRequestId) return;
     if (bgmKey != null && _pendingBgmKey != bgmKey) return;
-    if (bgmKey != null) _pendingBgmKey = null;
+    _pendingBgmKey = null;
 
-    if (_currentBgmSource == source && _bgmHandle != null) return;
-
-    final oldHandle = _bgmHandle;
-    if (oldHandle != null) {
-      SoLoud.instance.fadeVolume(oldHandle, 0.0, fadeDuration);
-      _scheduleHandleStop(oldHandle, fadeDuration);
+    if (_currentBgmSource == source && _bgmHandle != null) {
+      _currentBgmKey = bgmKey;
+      return;
     }
 
-    _currentBgmSource = source;
+    final oldHandle = _bgmHandle;
+    _bgmHandle = null;
+    _currentBgmSource = null;
+    _currentBgmKey = null;
+    if (oldHandle != null) {
+      try {
+        SoLoud.instance.fadeVolume(oldHandle, 0.0, fadeDuration);
+        _scheduleHandleStop(oldHandle, fadeDuration);
+      } catch (error) {
+        await _safeStop(oldHandle);
+      }
+    }
+
     try {
       final newHandle = await SoLoud.instance.play(
         source,
@@ -240,13 +264,16 @@ class AudioService {
           _isMuted ||
           !_isAppActive ||
           requestId != _bgmRequestId) {
-        await SoLoud.instance.stop(newHandle);
+        await _safeStop(newHandle);
         return;
       }
       _bgmHandle = newHandle;
+      _currentBgmSource = source;
+      _currentBgmKey = bgmKey;
+      SoLoud.instance.setProtectVoice(newHandle, true);
       SoLoud.instance.fadeVolume(newHandle, volume, fadeDuration);
-    } catch (e) {
-      debugPrint('Fade to BGM failed: $e');
+    } catch (error) {
+      debugPrint('Fade to BGM failed: $error');
     }
   }
 
@@ -257,7 +284,7 @@ class AudioService {
     _loadQuestionSuspenseSource,
     volume: 0.12,
     bgmKey: 'question',
-    fadeDuration: const Duration(milliseconds: 350),
+    fadeDuration: const Duration(milliseconds: 220),
   );
 
   Future<void> startMainBgm() =>
@@ -275,32 +302,53 @@ class AudioService {
     if (!preserveDesired) _desiredBgmKey = null;
     _pendingBgmKey = null;
     _bgmRequestId++;
-    if (!_engineReady) return;
-    final handle = _bgmHandle;
+
+    final currentHandle = _bgmHandle;
+    final handles = <SoundHandle>{
+      if (currentHandle != null) currentHandle,
+      ...?_backgroundSource?.handles,
+      ...?_elevatorSource?.handles,
+      ...?_questionSuspenseSource?.handles,
+    };
     _bgmHandle = null;
     _currentBgmSource = null;
-    if (handle != null) {
-      if (immediate) {
-        await SoLoud.instance.stop(handle);
+    _currentBgmKey = null;
+    if (!_engineReady) return;
+
+    for (final handle in handles) {
+      if (!immediate && handle == currentHandle) {
+        try {
+          const fadeDuration = Duration(milliseconds: 250);
+          SoLoud.instance.fadeVolume(handle, 0.0, fadeDuration);
+          _scheduleHandleStop(handle, fadeDuration);
+        } catch (error) {
+          await _safeStop(handle);
+        }
       } else {
-        SoLoud.instance.fadeVolume(handle, 0.0, const Duration(seconds: 1));
-        _scheduleHandleStop(handle);
+        await _safeStop(handle);
       }
     }
   }
 
   void _scheduleHandleStop(
     SoundHandle handle, [
-    Duration delay = const Duration(seconds: 1),
+    Duration delay = const Duration(milliseconds: 250),
   ]) {
     late final Timer timer;
     timer = Timer(delay, () {
       _fadeStopTimers.remove(timer);
-      if (_engineReady) {
-        unawaited(SoLoud.instance.stop(handle));
-      }
+      unawaited(_safeStop(handle));
     });
     _fadeStopTimers.add(timer);
+  }
+
+  Future<void> _safeStop(SoundHandle handle) async {
+    if (!_engineReady) return;
+    try {
+      await SoLoud.instance.stop(handle);
+    } catch (error) {
+      debugPrint('Audio stop failed for $handle: $error');
+    }
   }
 
   /// Prepare only the assets needed at the first question transition.
@@ -317,23 +365,56 @@ class AudioService {
     ]);
   }
 
-  Future<void> startTicking() async {
-    if (_isMuted || !_isAppActive || _isTickingPlaying) return;
+  Future<void> startTicking() {
+    if (_isMuted || !_isAppActive || _isTickingPlaying || _disposed) {
+      return Future<void>.value();
+    }
+    final pendingStart = _tickingStartFuture;
+    if (pendingStart != null) return pendingStart;
+
+    final generation = _tickingGeneration;
+    late final Future<void> startFuture;
+    startFuture = _startTicking(generation).whenComplete(() {
+      if (identical(_tickingStartFuture, startFuture)) {
+        _tickingStartFuture = null;
+      }
+    });
+    _tickingStartFuture = startFuture;
+    return startFuture;
+  }
+
+  Future<void> _startTicking(int generation) async {
     final source = await _loadTickingClockSource();
     if (_isMuted ||
-        _isTickingPlaying ||
         !_isAppActive ||
         _disposed ||
+        generation != _tickingGeneration ||
         source == null ||
         !_engineReady) {
       return;
     }
+
+    // Clean up any loop left by an older race before starting the sole timer.
+    for (final handle in source.handles.toList(growable: false)) {
+      await _safeStop(handle);
+    }
+    if (generation != _tickingGeneration || !_isAppActive || _isMuted) return;
+
     try {
-      _tickingHandle = await SoLoud.instance.play(
+      final handle = await SoLoud.instance.play(
         source,
         volume: 0.15,
         looping: true,
       );
+      if (_disposed ||
+          _isMuted ||
+          !_isAppActive ||
+          generation != _tickingGeneration) {
+        await _safeStop(handle);
+        return;
+      }
+      SoLoud.instance.setProtectVoice(handle, true);
+      _tickingHandle = handle;
       _isTickingPlaying = true;
     } catch (error) {
       debugPrint('Audio ticking failed: $error');
@@ -341,14 +422,18 @@ class AudioService {
   }
 
   Future<void> stopTicking() async {
+    _tickingGeneration++;
+    _tickingStartFuture = null;
     _isTickingPlaying = false;
-    if (!_engineReady) {
-      _tickingHandle = null;
-      return;
-    }
-    if (_tickingHandle != null) {
-      await SoLoud.instance.stop(_tickingHandle!);
-      _tickingHandle = null;
+
+    final currentHandle = _tickingHandle;
+    final handles = <SoundHandle>{
+      if (currentHandle != null) currentHandle,
+      ...?_tickingClockSource?.handles,
+    };
+    _tickingHandle = null;
+    for (final handle in handles) {
+      await _safeStop(handle);
     }
   }
 
@@ -404,9 +489,20 @@ class AudioService {
 
   Future<void> _playSfx(
     Future<AudioSource?> Function() loadSource, {
+    required String key,
     double volume = 0.48,
+    Duration minInterval = const Duration(milliseconds: 45),
+    int maxInstances = 3,
   }) async {
-    if (_isMuted || !_isAppActive) return;
+    if (_isMuted || !_isAppActive || _disposed) return;
+
+    final requestedAt = DateTime.now();
+    final previousRequest = _lastSfxPlayedAt[key];
+    if (previousRequest != null &&
+        requestedAt.difference(previousRequest) < minInterval) {
+      return;
+    }
+
     final source = await loadSource();
     if (_isMuted ||
         _disposed ||
@@ -415,73 +511,118 @@ class AudioService {
         !_engineReady) {
       return;
     }
+
+    final playAt = DateTime.now();
+    final previousPlay = _lastSfxPlayedAt[key];
+    if (previousPlay != null && playAt.difference(previousPlay) < minInterval) {
+      return;
+    }
+    if (source.handles.length >= maxInstances) return;
+
+    _lastSfxPlayedAt[key] = playAt;
     try {
       await SoLoud.instance.play(source, volume: volume);
     } catch (error) {
-      debugPrint('Audio sfx failed: $error');
+      debugPrint('Audio sfx failed for $key: $error');
     }
   }
 
-  Future<void> playClick() => _playSfx(_loadChipSelectSource, volume: 0.9);
-  Future<void> playButtonTap() => _playSfx(_loadChipSelectSource, volume: 0.28);
-  Future<void> playChip() => _playSfx(_loadChipSelectSource, volume: 0.78);
-  Future<void> playDrop() => _playSfx(_loadChipDropSource, volume: 0.85);
-  Future<void> playClink() => _playSfx(_loadChipDropSource, volume: 0.85);
-  Future<void> playChipLoss() => _playSfx(_loadChipLossSource, volume: 0.65);
-  Future<void> playQuestionReveal() =>
-      _playSfx(_loadQuestionRevealSource, volume: 0.8);
-  Future<void> playTimeUp() => _playSfx(_loadTimeUpSource, volume: 0.7);
-  Future<void> playSuccess() => _playSfx(_loadEpicFanfareSource, volume: 0.85);
-  Future<void> playResultReveal() =>
-      _playSfx(_loadResultRevealSource, volume: 0.85);
+  Future<void> playClick() =>
+      _playSfx(_loadChipSelectSource, key: 'chip-select', volume: 0.72);
 
-  Future<void> playEpicFanfare() =>
-      _playSfx(_loadEpicFanfareSource, volume: 0.9);
+  Future<void> playButtonTap() =>
+      _playSfx(_loadChipSelectSource, key: 'chip-select', volume: 0.28);
 
-  Future<void> playPayout() async {
-    if (_isMuted || !_isAppActive) return;
-    final source = await _loadPayoutWinSource();
-    if (_isMuted ||
-        _disposed ||
-        !_isAppActive ||
-        source == null ||
-        !_engineReady) {
-      return;
-    }
-    try {
-      _payoutStopTimer?.cancel();
-      if (_payoutHandle != null) {
-        await SoLoud.instance.stop(_payoutHandle!);
-      }
-      _payoutHandle = await SoLoud.instance.play(source, volume: 0.8);
-      _payoutStopTimer = Timer(const Duration(seconds: 4), stopPayout);
-    } catch (error) {
-      debugPrint('Audio payout failed: $error');
-    }
-  }
+  Future<void> playChip() =>
+      _playSfx(_loadChipSelectSource, key: 'chip-select', volume: 0.68);
+
+  Future<void> playDrop() =>
+      _playSfx(_loadChipDropSource, key: 'chip-drop', volume: 0.75);
+
+  Future<void> playClink() => _playSfx(
+    _loadChipDropSource,
+    key: 'chip-drop',
+    volume: 0.72,
+    minInterval: const Duration(milliseconds: 90),
+  );
+
+  Future<void> playChipLoss() => _playSfx(
+    _loadChipLossSource,
+    key: 'chip-loss',
+    volume: 0.58,
+    minInterval: const Duration(milliseconds: 500),
+    maxInstances: 1,
+  );
+
+  Future<void> playQuestionReveal() => _playSfx(
+    _loadQuestionRevealSource,
+    key: 'question-reveal',
+    volume: 0.72,
+    minInterval: const Duration(milliseconds: 750),
+    maxInstances: 1,
+  );
+
+  Future<void> playTimeUp() => _playSfx(
+    _loadTimeUpSource,
+    key: 'time-up',
+    volume: 0.62,
+    minInterval: const Duration(milliseconds: 750),
+    maxInstances: 1,
+  );
+
+  Future<void> playSuccess() => _playSfx(
+    _loadEpicFanfareSource,
+    key: 'fanfare',
+    volume: 0.75,
+    minInterval: const Duration(seconds: 2),
+    maxInstances: 1,
+  );
+
+  Future<void> playResultReveal() => _playSfx(
+    _loadResultRevealSource,
+    key: 'result-reveal',
+    volume: 0.72,
+    minInterval: const Duration(seconds: 2),
+    maxInstances: 1,
+  );
+
+  Future<void> playEpicFanfare() => _playSfx(
+    _loadEpicFanfareSource,
+    key: 'fanfare',
+    volume: 0.78,
+    minInterval: const Duration(seconds: 2),
+    maxInstances: 1,
+  );
+
+  Future<void> playPayout() => _playSfx(
+    _loadPayoutWinSource,
+    key: 'payout',
+    volume: 0.72,
+    minInterval: const Duration(milliseconds: 300),
+    maxInstances: 1,
+  );
 
   Future<void> stopPayout() async {
-    _payoutStopTimer?.cancel();
-    _payoutStopTimer = null;
-    if (!_engineReady) {
-      _payoutHandle = null;
-      return;
-    }
-    if (_payoutHandle != null) {
-      await SoLoud.instance.stop(_payoutHandle!);
-      _payoutHandle = null;
+    final handles = _payoutWinSource?.handles.toList(growable: false);
+    if (handles == null) return;
+    for (final handle in handles) {
+      await _safeStop(handle);
     }
   }
 
   Future<void> playRandomChipSound() async {
     final roll = Random().nextInt(4);
-    await _playSfx(_loadChipSelectSource, volume: roll == 0 ? 0.72 : 0.78);
+    await _playSfx(
+      _loadChipSelectSource,
+      key: 'chip-select',
+      volume: roll == 0 ? 0.62 : 0.68,
+    );
   }
 
   void dispose() {
     _disposed = true;
     _bgmRequestId++;
-    _payoutStopTimer?.cancel();
+    _tickingGeneration++;
     for (final timer in _fadeStopTimers) {
       timer.cancel();
     }
@@ -491,13 +632,10 @@ class AudioService {
 
   Future<void> _disposeAudio() async {
     if (!_engineReady) return;
-    final handles = [_bgmHandle, _tickingHandle, _payoutHandle];
-    _bgmHandle = null;
-    _tickingHandle = null;
-    _payoutHandle = null;
-    for (final handle in handles.whereType<SoundHandle>()) {
-      await SoLoud.instance.stop(handle);
-    }
+    await _stopBackgroundMusic(preserveDesired: false, immediate: true);
+    await stopTicking();
+    await stopPayout();
+    if (!_engineReady) return;
     SoLoud.instance.deinit();
     if (kIsWeb) _webEngineReady = false;
   }

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'core/constants/supabase_constants.dart';
 import 'core/widgets/cached_asset_image.dart';
@@ -115,19 +118,43 @@ class _TahminAppState extends ConsumerState<TahminApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _setScreenAwake(true);
+  }
+
+  void _setScreenAwake(bool enabled) {
+    final operation = enabled ? WakelockPlus.enable() : WakelockPlus.disable();
+    unawaited(
+      operation.catchError((Object error, StackTrace stackTrace) {
+        debugPrint('Screen wakelock update failed: $error');
+      }),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _setScreenAwake(false);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    ref
-        .read(audioServiceProvider)
-        .setAppActive(state == AppLifecycleState.resumed);
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _setScreenAwake(true);
+        ref.read(audioServiceProvider).setAppActive(true);
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        _setScreenAwake(false);
+        ref.read(audioServiceProvider).setAppActive(false);
+        break;
+      case AppLifecycleState.inactive:
+        // Inactive is often a brief focus change. Restarting the native audio
+        // engine here causes audible cuts when a dialog or system UI appears.
+        break;
+    }
   }
 
   @override
