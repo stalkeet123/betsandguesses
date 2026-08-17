@@ -22,7 +22,9 @@ enum PartyChallengeType {
   count,
   binary, // Legacy-only: disabled for newly selected rounds.
   attempt,
-  choice;
+  choice,
+  versus,
+  showdown;
 
   static PartyChallengeType fromString(String? value) {
     return PartyChallengeType.values.firstWhere(
@@ -121,7 +123,10 @@ class PartyChallenge {
   bool get isBinary => type == PartyChallengeType.binary;
   bool get isAttempt => type == PartyChallengeType.attempt;
   bool get isChoice => type == PartyChallengeType.choice;
-  bool get usesTwoOptionBoard => isBinary || isChoice;
+  bool get isVersus => type == PartyChallengeType.versus;
+  bool get isShowdown => type == PartyChallengeType.showdown;
+  bool get isPlayerSlotType => isVersus || isShowdown;
+  bool get usesTwoOptionBoard => isBinary || isChoice || isVersus;
 
   String? choiceLabel(int value) => switch (value) {
     0 => optionA,
@@ -130,8 +135,11 @@ class PartyChallenge {
   };
 
   int? betSlotForResult(int result) {
-    if (isBinary || isChoice) {
-      return result == 0 || result == 1 ? result : null;
+    if (usesTwoOptionBoard) {
+      return (result == 0 || result == 1) ? result : null;
+    }
+    if (isShowdown) {
+      return (result >= 0 && result < 8) ? result : null;
     }
     if (!isAttempt) return null;
     return switch (result) {
@@ -169,9 +177,11 @@ class PartyChallenge {
         json['result_direction'] as String? ??
             switch (type) {
               PartyChallengeType.binary ||
-              PartyChallengeType.choice => 'binary',
+              PartyChallengeType.choice ||
+              PartyChallengeType.versus => 'binary',
               PartyChallengeType.attempt => 'lower',
-              PartyChallengeType.count => 'higher',
+              PartyChallengeType.count ||
+              PartyChallengeType.showdown => 'higher',
             },
       ),
       requiredItems: (json['required_items'] as List? ?? const [])

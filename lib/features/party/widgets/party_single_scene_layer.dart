@@ -25,6 +25,7 @@ typedef PartySceneResultAction = Future<void> Function(int result);
 class PartySingleSceneLayer extends ConsumerStatefulWidget {
   final PartySnapshot snapshot;
   final Player? currentPlayer;
+  final List<Player> players;
   final int secondsRemaining;
   final bool commandInFlight;
   final double stageTop;
@@ -39,6 +40,7 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
     super.key,
     required this.snapshot,
     required this.currentPlayer,
+    this.players = const [],
     required this.secondsRemaining,
     required this.commandInFlight,
     this.stageTop = 0,
@@ -506,57 +508,65 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       _ => 'PARTY STAGE',
     };
 
-    return Row(
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: PartyPalette.orange,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: PartyPalette.orange.withValues(alpha: 0.7),
-                blurRadius: 6,
-                spreadRadius: 1,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 190;
+        return Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: PartyPalette.orange,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: PartyPalette.orange.withValues(alpha: 0.7),
+                    blurRadius: 6,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.orangeSoft,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+            if (!compact) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: PartyPalette.nightDeep.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(
+                    color: PartyPalette.orangeSoft.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Text(
+                  'ROUND ${round.number}',
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.creamMuted,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.6,
+                  ),
+                ),
               ),
             ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.outfit(
-              color: PartyPalette.orangeSoft,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
-            color: PartyPalette.nightDeep.withValues(alpha: 0.45),
-            borderRadius: BorderRadius.circular(99),
-            border: Border.all(
-              color: PartyPalette.orangeSoft.withValues(alpha: 0.25),
-            ),
-          ),
-          child: Text(
-            'ROUND ${round.number}',
-            style: GoogleFonts.outfit(
-              color: PartyPalette.creamMuted,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.6,
-            ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -767,12 +777,16 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                               ),
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              challengeTypeLabel,
-                              style: GoogleFonts.outfit(
-                                color: PartyPalette.blueMuted,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
+                            Flexible(
+                              child: Text(
+                                challengeTypeLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  color: PartyPalette.blueMuted,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
                           ],
@@ -1176,11 +1190,23 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       if (!labels.contains(label)) labels.add(label);
     }
     final chips = bets.fold<int>(0, (total, bet) => total + bet.chips);
-    return '${labels.join(' + ')} · $chips CHIPS';
+    return 'YOUR BET - ${labels.join(' + ')} - $chips CHIPS';
   }
 
   String _betSlotLabel(int slotIndex) {
     final challenge = widget.snapshot.round.challenge;
+    if (challenge.isVersus) {
+      if (slotIndex == 0) {
+        return widget.snapshot.round.performer.name.toUpperCase();
+      }
+      return (widget.snapshot.round.witness?.name ?? 'CHALLENGER').toUpperCase();
+    }
+    if (challenge.isShowdown) {
+      if (slotIndex >= 0 && slotIndex < widget.players.length) {
+        return widget.players[slotIndex].name.toUpperCase();
+      }
+      return 'PLAYER ${slotIndex + 1}';
+    }
     if (challenge.isChoice) {
       return challenge.choiceLabel(slotIndex)?.toUpperCase() ?? 'OPTION ';
     }
@@ -1349,6 +1375,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
   Widget _buildResultEntry() {
     final round = widget.snapshot.round;
     if (round.challenge.isChoice) return _buildChoiceEntry();
+    if (round.challenge.isVersus) return _buildVersusResultEntry();
+    if (round.challenge.isShowdown) return _buildShowdownResultEntry();
     if (!_isHost) {
       return _centeredStage(
         kicker: 'CHALLENGE COMPLETE',
@@ -1396,6 +1424,259 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       return _buildAttemptResultEntry();
     }
     return _buildCountResultEntry();
+  }
+
+  Widget _buildVersusResultEntry() {
+    final round = widget.snapshot.round;
+    if (!_isHost) {
+      return _centeredStage(
+        kicker: 'DUEL COMPLETE',
+        title: 'RECORDING WINNER',
+        subtitle: 'The host is selecting who won the match!',
+      );
+    }
+
+    final performerName = round.performer.name.toUpperCase();
+    final opponentName = (round.witness?.name ?? 'CHALLENGER').toUpperCase();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 330;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const _StageKicker('WHO WON THE DUEL?'),
+            SizedBox(height: compact ? 4 : 8),
+            Text(
+              'Select the Victor',
+              textAlign: TextAlign.center,
+              style: _stageTitleStyle(fontSize: compact ? 26 : 30),
+            ),
+            SizedBox(height: compact ? 10 : 16),
+            _versusResultButton(index: 0, label: '$performerName WON'),
+            SizedBox(height: compact ? 8 : 12),
+            _versusResultButton(index: 1, label: '$opponentName WON'),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _versusResultButton({required int index, required String label}) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 440),
+      child: SizedBox(
+        width: double.infinity,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: ValueKey('party-choice-$index'),
+            onTap: widget.commandInFlight
+                ? null
+                : () {
+                    HapticFeedback.mediumImpact();
+                    unawaited(widget.onSubmitResult(index));
+                  },
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    PartyPalette.surfaceRaised.withValues(alpha: 0.85),
+                    PartyPalette.nightDeep.withValues(alpha: 0.9),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: index == 0
+                      ? PartyPalette.orange.withValues(alpha: 0.6)
+                      : PartyPalette.orangeSoft.withValues(alpha: 0.6),
+                  width: 1.4,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: PartyPalette.orange.withValues(alpha: 0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: PartyPalette.orange.withValues(alpha: 0.2),
+                      border: Border.all(
+                        color: PartyPalette.orangeSoft,
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Text(
+                      index == 0 ? 'A' : 'B',
+                      style: GoogleFonts.outfit(
+                        color: PartyPalette.orangeSoft,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        color: PartyPalette.cream,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: PartyPalette.orangeSoft,
+                    size: 19,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShowdownResultEntry() {
+    if (!_isHost) {
+      return _centeredStage(
+        kicker: 'SHOWDOWN COMPLETE',
+        title: 'SELECTING WINNER',
+        subtitle: 'The host is selecting the winning player with the best result!',
+      );
+    }
+
+    final players = widget.players;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 330;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const _StageKicker('WHO HAD THE WINNING STAT / RESULT?'),
+            SizedBox(height: compact ? 4 : 8),
+            Text(
+              'Select Winning Player',
+              textAlign: TextAlign.center,
+              style: _stageTitleStyle(fontSize: compact ? 24 : 28),
+            ),
+            SizedBox(height: compact ? 8 : 12),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (var i = 0; i < players.length; i++)
+                      _showdownPlayerButton(index: i, player: players[i]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _showdownPlayerButton({required int index, required Player player}) {
+    final initial = player.name.isNotEmpty
+        ? player.name.substring(0, 1).toUpperCase()
+        : '?';
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey('party-showdown-winner-$index'),
+        onTap: widget.commandInFlight
+            ? null
+            : () {
+                HapticFeedback.mediumImpact();
+                unawaited(widget.onSubmitResult(index));
+              },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                PartyPalette.surfaceRaised.withValues(alpha: 0.85),
+                PartyPalette.nightDeep.withValues(alpha: 0.9),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: PartyPalette.orangeSoft.withValues(alpha: 0.45),
+              width: 1.3,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: PartyPalette.surfaceRaised,
+                  border: Border.all(
+                    color: PartyPalette.orangeSoft,
+                    width: 1.2,
+                  ),
+                ),
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    fontFamily: 'RehnCondensed',
+                    color: PartyPalette.cream,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                player.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildCountResultEntry() {

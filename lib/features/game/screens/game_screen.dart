@@ -1090,8 +1090,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
             playerId: bet.playerId ?? 'hidden-${bet.id}',
             slotIndex: bet.slotIndex,
             chips: bet.chips,
-            payoutMultiplier: round.challenge.isBinary
+            payoutMultiplier: round.challenge.usesTwoOptionBoard
                 ? 2
+                : round.challenge.isShowdown
+                ? max(2, _players.length)
                 : GameConstants.boardOdds[bet.slotIndex],
             won: winningPartySlot == bet.slotIndex,
             playerName: player?.name,
@@ -1655,6 +1657,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final winningSlotIndex = _winningBetSlotIndex(gameState);
     final scanOrder = _partySnapshot?.round.challenge.usesTwoOptionBoard == true
         ? [0, 1, 0, 1, if (winningSlotIndex != null) winningSlotIndex]
+        : _partySnapshot?.round.challenge.isShowdown == true
+        ? [
+            for (var i = 0; i < max(2, _players.length); i++) i,
+            for (var i = 0; i < max(2, _players.length); i++) i,
+            if (winningSlotIndex != null) winningSlotIndex,
+          ]
         : [
             4,
             3,
@@ -1796,7 +1804,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return false;
     }
     final player = ref.read(currentPlayerProvider);
-    return player != null && _partySnapshot?.round.performer.id != player.id;
+    if (player == null) return false;
+    final challenge = _partySnapshot?.round.challenge;
+    if (challenge?.isShowdown == true || challenge?.isVersus == true) {
+      return true;
+    }
+    return _partySnapshot?.round.performer.id != player.id;
   }
 
   bool _canCurrentPerformerChoose(GameState gameState) {
@@ -3603,7 +3616,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final round = snapshot.round;
     final performerName = round.performer.name.toUpperCase();
     final initial = performerName.isEmpty ? '?' : performerName.substring(0, 1);
-    final challengeTypeLabel = round.challenge.isChoice
+    final challengeTypeLabel = round.challenge.isVersus
+        ? '🥊 1V1 DUEL SHOWDOWN'
+        : round.challenge.isShowdown
+        ? '👑 ALL-PLAY SHOWDOWN'
+        : round.challenge.isChoice
         ? '⚖️ CHOICE CHALLENGE'
         : round.challenge.isAttempt
         ? '🎯 5 TRIES CHALLENGE'
@@ -5307,11 +5324,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final challenge = _partySnapshot?.round.challenge;
         final usesTwoOptionBoard = challenge?.usesTwoOptionBoard == true;
         final isAttempt = challenge?.isAttempt == true;
+        final isVersus = challenge?.isVersus == true;
+        final isShowdown = challenge?.isShowdown == true;
         final isReveal = _isRevealPhase(gameState);
         final winningSlotIndex = isReveal
             ? _winningBetSlotIndex(gameState)
             : null;
-        final activeSlots = challenge?.isChoice == true
+        final activeSlots = isVersus
+            ? _versusBetSlotsFor(_partySnapshot?.round)
+            : isShowdown
+            ? _showdownBetSlotsFor(_players)
+            : challenge?.isChoice == true
             ? _choiceBetSlotsFor(challenge)
             : challenge?.isBinary == true
             ? _binaryBetSlots
@@ -5360,7 +5383,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               canChoose &&
                               _partySnapshot?.round.proposedResult ==
                                   spec.index,
-                          boundaries: usesTwoOptionBoard || isAttempt
+                          boundaries: usesTwoOptionBoard || isAttempt || isShowdown
                               ? const <int>[]
                               : boundaryValues,
                         ),
@@ -5368,7 +5391,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   if (_showWinnerBadge && winningSlotIndex != null)
                     ..._buildWinParticles(size, winningSlotIndex),
-                  if (!usesTwoOptionBoard && !isAttempt)
+                  if (!usesTwoOptionBoard && !isAttempt && !isShowdown)
                     ..._buildBoundaryLabels(boundaryValues, size),
                   if (!(_showWinnerBadge && winningSlotIndex != null))
                     Positioned.fill(
@@ -5920,6 +5943,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (_partySnapshot?.round.challenge.isChoice == true) {
       return _buildPartyChoiceSlotTitle(slot);
     }
+    if (_partySnapshot?.round.challenge.isPlayerSlotType == true) {
+      return _buildPartyPlayerSlotTitle(slot);
+    }
     final range = boundaries.length >= 4
         ? switch (slot.index) {
             4 => '${_formatGuessValue(boundaries[3])}+',
@@ -6002,10 +6028,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     textAlign: TextAlign.center,
                     style: GoogleFonts.outfit(
                       color: accent,
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w900,
-                      height: 1,
-                      letterSpacing: 0.35,
+                      letterSpacing: 0.8,
                     ),
                   ),
                 ),
@@ -6047,6 +6072,96 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPartyPlayerSlotTitle(_BetSlotSpec slot) {
+    final playerName = slot.title;
+    final initial = playerName.isNotEmpty ? playerName.substring(0, 1).toUpperCase() : '?';
+    final isVersus = _partySnapshot?.round.challenge.isVersus == true;
+    final kicker = isVersus
+        ? (slot.index == 0 ? 'PERFORMER' : 'CHALLENGER')
+        : 'CONTENDER';
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const RadialGradient(
+                    colors: [
+                      PartyPalette.surfaceRaised,
+                      PartyPalette.nightDeep,
+                    ],
+                  ),
+                  border: Border.all(
+                    color: PartyPalette.orangeSoft.withValues(alpha: 0.8),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: PartyPalette.orange.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    fontFamily: 'RehnCondensed',
+                    color: PartyPalette.cream,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                kicker,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream.withValues(alpha: 0.65),
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                playerName,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'RehnCondensed',
+                  color: PartyPalette.cream,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  height: 0.9,
+                  letterSpacing: 0,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black,
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -6918,6 +7033,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             key: const ValueKey('party-single-scene'),
                             snapshot: snapshot,
                             currentPlayer: currentPlayer,
+                            players: _players,
                             secondsRemaining: secondsRemaining,
                             commandInFlight: _isPartyCommandInFlight,
                             stageTop: stageTop,
@@ -7188,6 +7304,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     key: const ValueKey('party-single-scene'),
                     snapshot: partySnapshot,
                     currentPlayer: ref.watch(currentPlayerProvider),
+                    players: _players,
                     secondsRemaining: ref.watch(gameTimerProvider),
                     commandInFlight: _isPartyCommandInFlight,
                     onStartAction: () => _runPartyCommand(
@@ -7517,6 +7634,105 @@ const List<_BetSlotSpec> _binaryBetSlots = [
     Rect.fromLTWH(0.055, 0.520, 0.890, 0.445),
   ),
 ];
+
+List<_BetSlotSpec> _versusBetSlotsFor(PartyRoundSnapshot? round) {
+  final performerName = round?.performer.name.isNotEmpty == true
+      ? round!.performer.name
+      : 'PLAYER A';
+  final opponentName = round?.witness?.name.isNotEmpty == true
+      ? round!.witness!.name
+      : 'PLAYER B';
+  return [
+    _BetSlotSpec(
+      0,
+      performerName,
+      2,
+      _BetSlotTone.choiceA,
+      const Rect.fromLTWH(0.055, 0.035, 0.890, 0.445),
+    ),
+    _BetSlotSpec(
+      1,
+      opponentName,
+      2,
+      _BetSlotTone.choiceB,
+      const Rect.fromLTWH(0.055, 0.520, 0.890, 0.445),
+    ),
+  ];
+}
+
+List<_BetSlotSpec> _showdownBetSlotsFor(List<Player> players) {
+  final count = players.isEmpty ? 4 : players.length.clamp(2, 8);
+  final odds = count;
+  final tones = const [
+    _BetSlotTone.choiceA,
+    _BetSlotTone.choiceB,
+    _BetSlotTone.gold,
+    _BetSlotTone.green,
+    _BetSlotTone.red,
+    _BetSlotTone.black,
+    _BetSlotTone.choiceA,
+    _BetSlotTone.choiceB,
+  ];
+
+  if (count <= 4) {
+    const rects = [
+      Rect.fromLTWH(0.045, 0.035, 0.435, 0.445),
+      Rect.fromLTWH(0.520, 0.035, 0.435, 0.445),
+      Rect.fromLTWH(0.045, 0.520, 0.435, 0.445),
+      Rect.fromLTWH(0.520, 0.520, 0.435, 0.445),
+    ];
+    return List.generate(
+      count,
+      (i) => _BetSlotSpec(
+        i,
+        i < players.length ? players[i].name : 'PLAYER ${i + 1}',
+        odds,
+        tones[i % tones.length],
+        rects[i],
+      ),
+    );
+  } else if (count <= 6) {
+    const rects = [
+      Rect.fromLTWH(0.045, 0.020, 0.435, 0.295),
+      Rect.fromLTWH(0.520, 0.020, 0.435, 0.295),
+      Rect.fromLTWH(0.045, 0.350, 0.435, 0.295),
+      Rect.fromLTWH(0.520, 0.350, 0.435, 0.295),
+      Rect.fromLTWH(0.045, 0.680, 0.435, 0.295),
+      Rect.fromLTWH(0.520, 0.680, 0.435, 0.295),
+    ];
+    return List.generate(
+      count,
+      (i) => _BetSlotSpec(
+        i,
+        i < players.length ? players[i].name : 'PLAYER ${i + 1}',
+        odds,
+        tones[i % tones.length],
+        rects[i],
+      ),
+    );
+  } else {
+    const rects = [
+      Rect.fromLTWH(0.045, 0.015, 0.435, 0.220),
+      Rect.fromLTWH(0.520, 0.015, 0.435, 0.220),
+      Rect.fromLTWH(0.045, 0.260, 0.435, 0.220),
+      Rect.fromLTWH(0.520, 0.260, 0.435, 0.220),
+      Rect.fromLTWH(0.045, 0.505, 0.435, 0.220),
+      Rect.fromLTWH(0.520, 0.505, 0.435, 0.220),
+      Rect.fromLTWH(0.045, 0.750, 0.435, 0.220),
+      Rect.fromLTWH(0.520, 0.750, 0.435, 0.220),
+    ];
+    return List.generate(
+      count,
+      (i) => _BetSlotSpec(
+        i,
+        i < players.length ? players[i].name : 'PLAYER ${i + 1}',
+        odds,
+        tones[i % tones.length],
+        rects[i],
+      ),
+    );
+  }
+}
 
 enum _BetSlotTone { green, black, gold, red, choiceA, choiceB }
 

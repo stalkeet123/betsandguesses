@@ -23,7 +23,7 @@ void main() {
     expect(find.text('I AM READY'), findsNothing);
     expect(find.text('GET READY'), findsOneWidget);
     expect(
-      find.text('Get in position. The host will start the timer.'),
+      find.text('Get into position! The host will start your countdown.'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
@@ -39,7 +39,7 @@ void main() {
       player: host,
     );
 
-    expect(find.text('START 60 SECONDS'), findsOneWidget);
+    expect(find.text('START 60s TIMER'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -55,8 +55,8 @@ void main() {
     );
 
     expect(find.text('00:43'), findsOneWidget);
-    expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
-    expect(find.text('LIVE CHALLENGE'), findsOneWidget);
+    expect(find.byIcon(Icons.photo_camera_rounded), findsOneWidget);
+    expect(find.text('LIVE PERFORMANCE'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -89,7 +89,7 @@ void main() {
       secondsRemaining: 43,
     );
 
-    expect(find.text('END & RECORD'), findsOneWidget);
+    expect(find.text('FINISH & RECORD'), findsOneWidget);
     expect(find.text('00:43'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -141,31 +141,52 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-  testWidgets('only the performer can submit an unlocked Choice', (
-    tester,
-  ) async {
-    int? submittedChoice;
-    final performer = _player(id: 'performer');
+  testWidgets('host can select winner in Versus duel', (tester) async {
+    int? submittedResult;
+    final host = _player(id: 'host', isHost: true);
     await _pumpScene(
       tester,
       snapshot: _snapshot(
         phase: PartyRoundPhase.resultEntry,
-        challengeType: PartyChallengeType.choice,
+        challengeType: PartyChallengeType.versus,
       ),
-      player: performer,
-      onSubmitChoice: (choice) async => submittedChoice = choice,
+      player: host,
+      onSubmitResult: (result) async => submittedResult = result,
     );
 
-    expect(find.text('Music'), findsOneWidget);
-    expect(find.text('Movies and TV'), findsOneWidget);
-    expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
+    expect(find.text('ALEX WON'), findsOneWidget);
+    expect(find.text('HOST WON'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('party-choice-1')));
     await tester.pump();
-    expect(submittedChoice, 1);
+    expect(submittedResult, 1);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('friends wait while the performer makes a Choice', (
+  testWidgets('host can select winner in Showdown all-play', (tester) async {
+    int? submittedResult;
+    final host = _player(id: 'host', isHost: true);
+    final p1 = _player(id: 'p1', name: 'Alice');
+    final p2 = _player(id: 'p2', name: 'Bob');
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.resultEntry,
+        challengeType: PartyChallengeType.showdown,
+      ),
+      player: host,
+      players: [p1, p2],
+      onSubmitResult: (result) async => submittedResult = result,
+    );
+
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Bob'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('party-showdown-winner-1')));
+    await tester.pump();
+    expect(submittedResult, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('friends wait while the host enters Versus result', (
     tester,
   ) async {
     final spectator = _player(id: 'spectator');
@@ -173,16 +194,17 @@ void main() {
       tester,
       snapshot: _snapshot(
         phase: PartyRoundPhase.resultEntry,
-        challengeType: PartyChallengeType.choice,
+        challengeType: PartyChallengeType.versus,
       ),
       player: spectator,
     );
 
-    expect(find.text('ALEX IS CHOOSING'), findsOneWidget);
+    expect(find.text('RECORDING WINNER'), findsOneWidget);
     expect(find.byKey(const ValueKey('party-choice-0')), findsNothing);
     expect(find.byKey(const ValueKey('party-choice-1')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
   testWidgets('attempt stage uses five tries without a countdown', (
     tester,
   ) async {
@@ -215,16 +237,17 @@ void main() {
         durationSeconds: 10,
       ),
       player: host,
-      secondsRemaining: 7,
+      secondsRemaining: 18,
     );
 
     expect(find.text('RECORD RESULT'), findsOneWidget);
-    expect(find.text('00:07'), findsOneWidget);
+    expect(find.text('00:18'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets('attempt result offers tries and failure without typing', (
     tester,
   ) async {
+    int? submittedResult;
     final host = _player(id: 'host', isHost: true);
     await _pumpScene(
       tester,
@@ -233,17 +256,20 @@ void main() {
         challengeType: PartyChallengeType.attempt,
       ),
       player: host,
+      onSubmitResult: (result) async => submittedResult = result,
     );
 
-    expect(find.text('1ST TRY'), findsOneWidget);
-    expect(find.text('5TH TRY'), findsOneWidget);
-    expect(find.text('FAILED'), findsOneWidget);
-    expect(find.byType(TextField), findsNothing);
+    expect(find.text('3RD TRY'), findsOneWidget);
+    expect(find.text("FAILED"), findsOneWidget);
+    await tester.tap(find.text('3RD TRY'));
+    await tester.pump();
+    expect(submittedResult, 3);
     expect(tester.takeException(), isNull);
   });
   testWidgets('binary result is entered inline without a dialog', (
     tester,
   ) async {
+    int? submittedResult;
     final host = _player(id: 'host', isHost: true);
     await _pumpScene(
       tester,
@@ -252,11 +278,14 @@ void main() {
         challengeType: PartyChallengeType.binary,
       ),
       player: host,
+      onSubmitResult: (result) async => submittedResult = result,
     );
 
-    expect(find.text('FAILED'), findsOneWidget);
     expect(find.text('SUCCESS'), findsOneWidget);
-    expect(find.byType(Dialog), findsNothing);
+    expect(find.text('FAILED'), findsOneWidget);
+    await tester.tap(find.text('SUCCESS'));
+    await tester.pump();
+    expect(submittedResult, 1);
     expect(tester.takeException(), isNull);
   });
 }
@@ -265,8 +294,9 @@ Future<void> _pumpScene(
   WidgetTester tester, {
   required PartySnapshot snapshot,
   required Player player,
+  List<Player> players = const [],
   int secondsRemaining = 60,
-  Size surfaceSize = const Size(430, 760),
+  Size surfaceSize = const Size(430, 932),
   double stageTop = 235,
   Future<void> Function(int)? onSubmitResult,
   Future<void> Function(int)? onSubmitChoice,
@@ -286,6 +316,7 @@ Future<void> _pumpScene(
           body: PartySingleSceneLayer(
             snapshot: snapshot,
             currentPlayer: player,
+            players: players,
             secondsRemaining: secondsRemaining,
             commandInFlight: false,
             stageTop: stageTop,
@@ -303,12 +334,12 @@ Future<void> _pumpScene(
   await tester.pump(const Duration(milliseconds: 500));
 }
 
-Player _player({required String id, bool isHost = false}) {
+Player _player({required String id, String? name, bool isHost = false}) {
   return Player(
     id: id,
     roomId: 'room',
     deviceId: 'device-$id',
-    name: id,
+    name: name ?? id,
     isHost: isHost,
     joinedAt: DateTime.utc(2026),
   );
@@ -359,12 +390,17 @@ PartySnapshot _snapshot({
           PartyChallengeType.attempt =>
             'On which attempt will Alex land the shot?',
           PartyChallengeType.count => 'How many push-ups can Alex do?',
+          PartyChallengeType.versus => 'Who will win the duel?',
+          PartyChallengeType.showdown => 'Who has the highest screen time?',
         },
         rules: 'One clean attempt.',
         answerUnit: switch (challengeType) {
-          PartyChallengeType.binary || PartyChallengeType.choice => 'choice',
+          PartyChallengeType.binary ||
+          PartyChallengeType.choice ||
+          PartyChallengeType.versus => 'choice',
           PartyChallengeType.attempt => 'attempt',
           PartyChallengeType.count => 'push-ups',
+          PartyChallengeType.showdown => 'player',
         },
         durationSeconds: durationSeconds,
         maxResult: challengeType == PartyChallengeType.attempt ? 5 : 100,
