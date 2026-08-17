@@ -1,8 +1,9 @@
--- Complete fix for Party mode betting, chips, choice options, and snapshot:
--- 1. Support slot index up to 7 for all party modes (choice/versus: 0..1, count/attempt: 0..4, showdown: 0..7).
--- 2. place_party_bet_v1: copy Classic mode robustness (idempotency, bankroll fallback, clean return, NO is_connected check).
--- 3. move_party_bet_v1 & remove_party_bet_v1: robust phase and slot checks.
--- 4. get_party_snapshot_v1: full snapshot with all required Dart fields and visible bets with player_id.
+-- Complete fix for Party mode:
+-- 1. Bet RPCs: place_party_bet_v1, move_party_bet_v1, remove_party_bet_v1 (robust slot, bankroll fallback, NO is_connected checks).
+-- 2. Choice Mode: submit_party_choice_v1 & begin_party_choice_v1 (performer can submit choice anytime, auto-advances to reveal).
+-- 3. 1v1 / Versus: text replaces {witness}/{opponent} with real challenger name.
+-- 4. Result Confirmation: confirm_party_result_v1 & dispute_party_result_v1 for all challenge types.
+-- 5. get_party_snapshot_v1: returns all visible bets, full scores, and resolved challenge text.
 
 alter table public.party_bets drop constraint if exists party_bets_slot_valid;
 alter table public.party_bets add constraint party_bets_slot_valid check (slot_index between 0 and 7);
@@ -42,7 +43,6 @@ begin
     raise exception using errcode = 'P0002', message = 'Party room not found';
   end if;
 
-  -- Match player by room and auth UID without requiring is_connected (identical to Classic mode)
   select * into v_player
   from public.players
   where room_id = p_room_id
@@ -59,7 +59,7 @@ begin
   select * into v_challenge
   from public.party_challenges where id = v_round.challenge_id;
 
-  -- 1. Idempotency: If this client_action_id already succeeded, return the existing bet
+  -- 1. Idempotency: Return existing bet if already placed
   select * into v_bet
   from public.party_bets
   where room_id = p_room_id
@@ -71,24 +71,24 @@ begin
     return to_jsonb(v_bet);
   end if;
 
-  -- 2. Phase check: if betting closed, return null cleanly (with 10-sec network grace buffer)
+  -- 2. Phase check: with 10-second network grace buffer
   if v_round.phase <> 'betting'
      or (v_round.phase_ends_at is not null
          and v_round.phase_ends_at + interval '10 seconds' < statement_timestamp()) then
     return null;
   end if;
 
-  -- 3. Performer check: performers don't bet in standard performer-focused rounds
+  -- 3. Performer check
   if v_player.id = v_round.performer_id and v_challenge.challenge_type not in ('showdown', 'versus') then
     raise exception using errcode = '42501', message = 'Performer cannot bet';
   end if;
 
-  -- 4. Slot index validation: allow 0..7
+  -- 4. Slot index validation
   if p_slot_index not between 0 and 7 then
     raise exception using errcode = '22023', message = 'Invalid bet slot';
   end if;
 
-  -- 5. Score check: ensure at least 15 bankroll fallback (matching Classic mode)
+  -- 5. Score check with 15 bankroll fallback
   select score into v_score
   from public.party_scores
   where room_id = p_room_id and player_id = v_player.id
@@ -253,6 +253,339 @@ begin
 end;
 $$;
 
+-- Choice Mode Functions:
+create or replace function public.submit_party_choice_v1(
+  p_room_id uuid,
+  p_choice integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room public.rooms%rowtype;
+  v_round public.party_rounds%rowtype;
+  v_player public.players%rowtype;
+  v_challenge public.party_challenges%rowtype;
+  v_betting_closed boolean;
+begin
+  if p_choice not between 0 and 1 then
+    raise exception using errcode = '22023', message = 'Invalid choice';
+  end if;
+
+  select * into v_room from public.rooms where id = p_room_id for update;
+  select * into v_round
+  from public.party_rounds
+  where room_id = p_room_id and round_number = v_room.current_round
+  for update;
+
+  select * into v_player
+  from public.players
+  where room_id = p_room_id
+    and auth_user_id = (select auth.uid())
+  order by joined_at desc limit 1;
+
+  select * into v_challenge
+  from public.party_challenges where id = v_round.challenge_id;
+
+  if v_player.id is null or v_player.id <> v_round.performer_id then
+    raise exception using errcode = '42501', message = 'Performer access required';
+  end if;
+
+  if v_round.phase = 'reveal' and v_round.proposed_result = p_choice then
+    return public.get_party_snapshot_v1(p_room_id);
+  end if;
+
+  update public.party_rounds
+  set proposed_result = p_choice,
+      result_submitted_by = v_player.id
+  where id = v_round.id;
+
+  update public.party_matches
+  set state_version = state_version + 1
+  where room_id = p_room_id;
+
+  -- If betting timer has elapsed, settle immediately into reveal
+  v_betting_closed :=
+    v_round.phase_ends_at is not null
+    and v_round.phase_ends_at <= statement_timestamp();
+
+  if v_betting_closed then
+    return public.begin_party_choice_v1(p_room_id);
+  end if;
+
+  return public.get_party_snapshot_v1(p_room_id);
+end;
+$$;
+
+create or replace function public.begin_party_choice_v1(p_room_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room public.rooms%rowtype;
+  v_round public.party_rounds%rowtype;
+  v_challenge public.party_challenges%rowtype;
+  v_winning_slot integer;
+  v_performer_bonus integer := 30;
+begin
+  select * into v_room from public.rooms where id = p_room_id for update;
+  select * into v_round
+  from public.party_rounds
+  where room_id = p_room_id and round_number = v_room.current_round
+  for update;
+  select * into v_challenge from public.party_challenges where id = v_round.challenge_id;
+
+  if v_round.phase = 'reveal' then
+    return public.get_party_snapshot_v1(p_room_id);
+  end if;
+
+  -- Stay on betting phase if performer hasn't answered yet
+  if v_round.proposed_result is null then
+    return public.get_party_snapshot_v1(p_room_id);
+  end if;
+
+  v_winning_slot := v_round.proposed_result;
+
+  -- Settle bets directly:
+  update public.party_bets
+  set won = (slot_index = v_winning_slot)
+  where room_id = p_room_id and round_number = v_room.current_round;
+
+  -- Payouts for winners (2x for 2-option choice board)
+  update public.party_scores ps
+  set score = ps.score + (
+    coalesce((
+      select sum(bet.chips * 2)
+      from public.party_bets bet
+      where bet.room_id = p_room_id
+        and bet.round_number = v_room.current_round
+        and bet.player_id = ps.player_id
+        and bet.slot_index = v_winning_slot
+    ), 0)
+    -
+    coalesce((
+      select sum(bet.chips)
+      from public.party_bets bet
+      where bet.room_id = p_room_id
+        and bet.round_number = v_room.current_round
+        and bet.player_id = ps.player_id
+    ), 0)
+  ) + case when ps.player_id = v_round.performer_id then v_performer_bonus else 0 end
+  where ps.room_id = p_room_id;
+
+  update public.party_rounds
+  set phase = 'reveal',
+      performer_bonus = v_performer_bonus,
+      phase_started_at = statement_timestamp(),
+      phase_ends_at = statement_timestamp() + interval '8 seconds'
+  where id = v_round.id;
+
+  update public.rooms
+  set round_phase = 'partyReveal',
+      phase_started_at = statement_timestamp(),
+      phase_ends_at = statement_timestamp() + interval '8 seconds'
+  where id = p_room_id;
+
+  update public.party_matches
+  set state_version = state_version + 1
+  where room_id = p_room_id;
+
+  return public.get_party_snapshot_v1(p_room_id);
+end;
+$$;
+
+-- Result Confirmation & Dispute Functions:
+create or replace function public.dispute_party_result_v1(p_room_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room public.rooms%rowtype;
+  v_round public.party_rounds%rowtype;
+  v_player public.players%rowtype;
+  v_challenge public.party_challenges%rowtype;
+begin
+  select * into v_room from public.rooms where id = p_room_id for update;
+  select * into v_round
+  from public.party_rounds
+  where room_id = p_room_id and round_number = v_room.current_round
+  for update;
+
+  select * into v_player
+  from public.players
+  where room_id = p_room_id
+    and auth_user_id = (select auth.uid())
+  order by joined_at desc limit 1;
+
+  select * into v_challenge
+  from public.party_challenges where id = v_round.challenge_id;
+
+  if v_player.id is null then
+    raise exception using errcode = '42501', message = 'Room membership required';
+  end if;
+
+  if v_challenge.challenge_type = 'choice' then
+    raise exception using errcode = '42501', message = 'Performer choice cannot be disputed';
+  end if;
+
+  if v_round.phase = 'resultEntry' and v_round.proposed_result is null then
+    return public.get_party_snapshot_v1(p_room_id);
+  end if;
+
+  -- Revert to result entry so host can re-enter
+  update public.party_rounds
+  set phase = 'resultEntry',
+      proposed_result = null,
+      result_submitted_by = null,
+      phase_started_at = statement_timestamp(),
+      phase_ends_at = null
+  where id = v_round.id;
+
+  update public.rooms
+  set round_phase = 'partyResultEntry',
+      phase_started_at = statement_timestamp(),
+      phase_ends_at = null
+  where id = p_room_id;
+
+  update public.party_matches
+  set state_version = state_version + 1
+  where room_id = p_room_id;
+
+  return public.get_party_snapshot_v1(p_room_id);
+end;
+$$;
+
+create or replace function public.confirm_party_result_v1(p_room_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room public.rooms%rowtype;
+  v_round public.party_rounds%rowtype;
+  v_player public.players%rowtype;
+  v_challenge public.party_challenges%rowtype;
+  v_match public.party_matches%rowtype;
+  v_boundaries bigint[];
+  v_winning_slot integer;
+  v_performer_bonus integer := 0;
+begin
+  select * into v_room from public.rooms where id = p_room_id for update;
+  select * into v_round
+  from public.party_rounds
+  where room_id = p_room_id and round_number = v_room.current_round
+  for update;
+
+  select * into v_match from public.party_matches where room_id = p_room_id;
+  select * into v_challenge from public.party_challenges where id = v_round.challenge_id;
+
+  if v_round.phase = 'reveal' then
+    return public.get_party_snapshot_v1(p_room_id);
+  end if;
+
+  if v_round.proposed_result is null then
+    raise exception using errcode = '40001', message = 'No result entered yet';
+  end if;
+
+  -- Determine winning slot and performer bonus by challenge type
+  if v_challenge.challenge_type in ('choice', 'versus') then
+    v_winning_slot := v_round.proposed_result;
+    v_performer_bonus := 30;
+  elsif v_challenge.challenge_type = 'binary' then
+    v_winning_slot := v_round.proposed_result;
+    v_performer_bonus := case
+      when v_round.proposed_result = 1 then coalesce(v_challenge.performer_success_bonus, 30)
+      else 0
+    end;
+  elsif v_challenge.challenge_type = 'showdown' then
+    v_winning_slot := v_round.proposed_result;
+    v_performer_bonus := 30;
+  elsif v_challenge.challenge_type = 'attempt' then
+    v_winning_slot := case v_round.proposed_result
+      when 1 then 0 when 2 then 1 when 3 then 2
+      when 4 then 3 when 5 then 3 else 4
+    end;
+    v_performer_bonus := case v_round.proposed_result
+      when 1 then 60 when 2 then 45 when 3 then 30
+      when 4 then 15 when 5 then 15 else 0
+    end;
+  else
+    v_boundaries := public.party_board_boundaries_v1(p_room_id, v_room.current_round);
+    v_winning_slot := case
+      when v_round.proposed_result < v_boundaries[1] then 0
+      when v_round.proposed_result < v_boundaries[2] then 1
+      when v_round.proposed_result <= v_boundaries[3] then 2
+      when v_round.proposed_result <= v_boundaries[4] then 3
+      else 4
+    end;
+    v_performer_bonus := case
+      when v_challenge.result_direction = 'lower'
+        then (array[60, 45, 30, 15, 0])[v_winning_slot + 1]
+      else (array[0, 15, 30, 45, 60])[v_winning_slot + 1]
+    end;
+  end if;
+
+  -- Mark winning bets
+  update public.party_bets
+  set won = (slot_index = v_winning_slot)
+  where room_id = p_room_id and round_number = v_room.current_round;
+
+  -- Calculate payouts
+  update public.party_scores ps
+  set score = ps.score + (
+    coalesce((
+      select sum(
+        bet.chips * case
+          when v_challenge.challenge_type in ('binary', 'choice', 'versus') then 2
+          when v_challenge.challenge_type = 'showdown' then greatest(2, cardinality(v_match.turn_order))
+          else (array[4, 3, 2, 3, 4])[bet.slot_index + 1]
+        end
+      )
+      from public.party_bets bet
+      where bet.room_id = p_room_id
+        and bet.round_number = v_room.current_round
+        and bet.player_id = ps.player_id
+        and bet.slot_index = v_winning_slot
+    ), 0)
+    -
+    coalesce((
+      select sum(bet.chips)
+      from public.party_bets bet
+      where bet.room_id = p_room_id
+        and bet.round_number = v_room.current_round
+        and bet.player_id = ps.player_id
+    ), 0)
+  ) + case when ps.player_id = v_round.performer_id then v_performer_bonus else 0 end
+  where ps.room_id = p_room_id;
+
+  update public.party_rounds
+  set phase = 'reveal',
+      performer_bonus = v_performer_bonus,
+      phase_started_at = statement_timestamp(),
+      phase_ends_at = statement_timestamp() + interval '8 seconds'
+  where id = v_round.id;
+
+  update public.rooms
+  set round_phase = 'partyReveal',
+      phase_started_at = statement_timestamp(),
+      phase_ends_at = statement_timestamp() + interval '8 seconds'
+  where id = p_room_id;
+
+  update public.party_matches
+  set state_version = state_version + 1
+  where room_id = p_room_id;
+
+  return public.get_party_snapshot_v1(p_room_id);
+end;
+$$;
+
 create or replace function public.get_party_snapshot_v1(p_room_id uuid)
 returns jsonb
 language plpgsql
@@ -268,6 +601,7 @@ declare
   v_performer public.players%rowtype;
   v_witness public.players%rowtype;
   v_challenge public.party_challenges%rowtype;
+  v_prompt_text text;
   v_bets jsonb := '[]'::jsonb;
   v_scores jsonb := '{}'::jsonb;
   v_show_result boolean;
@@ -307,7 +641,16 @@ begin
       and v_round.phase = 'betting'
     );
 
-  -- All bets in the room and round are returned with player_id so all chips remain visible unconditionally
+  -- Replace {player} with performer name and {witness}/{opponent} with opponent name
+  v_prompt_text := replace(
+    replace(
+      replace(v_challenge.prompt_template, '{player}', coalesce(v_performer.name, 'Player')),
+      '{witness}', coalesce(v_witness.name, 'Opponent')
+    ),
+    '{opponent}', coalesce(v_witness.name, 'Opponent')
+  );
+
+  -- All bets in the room and round are returned with player_id unconditionally
   select coalesce(
     jsonb_agg(
       jsonb_build_object(
@@ -353,7 +696,7 @@ begin
       ) end,
       'challenge', jsonb_build_object(
         'id', v_challenge.id,
-        'text', replace(v_challenge.prompt_template, '{player}', v_performer.name),
+        'text', v_prompt_text,
         'rules', v_challenge.rules,
         'answer_unit', v_challenge.answer_unit,
         'duration_seconds', v_challenge.duration_seconds,

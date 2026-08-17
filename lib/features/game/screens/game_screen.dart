@@ -2785,9 +2785,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
     required PartyRoundSnapshot? round,
     required bool isPerformer,
   }) {
-    if (!isPerformer || round == null) return text;
+    var resolved = text;
+    if (round != null) {
+      final witnessName = round.witness?.name.trim() ?? 'Opponent';
+      resolved = resolved
+          .replaceAll('{witness}', witnessName)
+          .replaceAll('(witness)', witnessName)
+          .replaceAll('{opponent}', witnessName);
+    }
+    if (!isPerformer || round == null) return resolved;
     final performerName = round.performer.name.trim();
-    if (performerName.isEmpty) return text;
+    if (performerName.isEmpty) return resolved;
 
     final escapedName = RegExp.escape(performerName);
     final possessive = RegExp(
@@ -2795,7 +2803,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       caseSensitive: false,
     );
     final subject = RegExp('\\b$escapedName\\b', caseSensitive: false);
-    return text
+    return resolved
         .replaceAll(possessive, 'your')
         .replaceAll(subject, 'you');
   }

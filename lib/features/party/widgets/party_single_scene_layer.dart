@@ -73,6 +73,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
   bool _captureFlash = false;
   bool _autoConfirmInFlight = false;
   String? _cameraError;
+  int? _myReviewVote;
 
   bool get _isPerformancePhase {
     final round = widget.snapshot.round;
@@ -113,6 +114,10 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       _autoConfirmInFlight = false;
       _showCamera = false;
       unawaited(_disposeCamera());
+    }
+    if (oldWidget.snapshot.round.number != widget.snapshot.round.number ||
+        oldWidget.snapshot.round.phase != widget.snapshot.round.phase) {
+      _myReviewVote = null;
     }
     if (oldWidget.snapshot.round.phase != widget.snapshot.round.phase ||
         oldWidget.snapshot.stateVersion != widget.snapshot.stateVersion) {
@@ -1972,74 +1977,195 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
               : 'ATTEMPT ${round.proposedResult ?? '—'}')
         : '${round.proposedResult ?? '—'} ${round.challenge.answerUnit}';
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const _StageKicker('FINAL VERIFICATION'),
-        const SizedBox(height: 8),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            result.toUpperCase(),
-            textAlign: TextAlign.center,
-            style: _stageTitleStyle(fontSize: 46).copyWith(
-              color: PartyPalette.orangeSoft,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: PartyPalette.nightDeep.withValues(alpha: 0.45),
-            borderRadius: BorderRadius.circular(99),
-            border: Border.all(
-              color: PartyPalette.orangeSoft.withValues(alpha: 0.25),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 10,
-                height: 10,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 330;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const _StageKicker('RESULT CONFIRMATION · SONUÇ ONAYI'),
+            SizedBox(height: compact ? 4 : 8),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                result.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: _stageTitleStyle(fontSize: compact ? 36 : 44).copyWith(
                   color: PartyPalette.orangeSoft,
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                _consensusSeconds > 0
-                    ? 'AUTO-CONFIRMING IN ${_consensusSeconds}S'
-                    : 'LOCKING THE RESULT…',
-                style: GoogleFonts.outfit(
-                  color: PartyPalette.creamMuted,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.8,
+            ),
+            SizedBox(height: compact ? 4 : 8),
+            Text(
+              'Do you approve this result? / Sonucu onaylıyor musunuz?',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: PartyPalette.cream,
+                fontSize: compact ? 12 : 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: compact ? 8 : 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: PartyPalette.nightDeep.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(
+                  color: PartyPalette.orangeSoft.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 10,
+                    height: 10,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: PartyPalette.orangeSoft,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _consensusSeconds > 0
+                        ? 'AUTO-APPROVING IN ${_consensusSeconds}S'
+                        : 'LOCKING THE RESULT…',
+                    style: GoogleFonts.outfit(
+                      color: PartyPalette.orangeSoft,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!round.challenge.isChoice) ...[
+              SizedBox(height: compact ? 10 : 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _consensusSeconds > 0 && !widget.commandInFlight
+                              ? () async {
+                                  HapticFeedback.heavyImpact();
+                                  setState(() => _myReviewVote = 0);
+                                  await widget.onDisputeResult();
+                                }
+                              : null,
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            height: compact ? 44 : 50,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: _myReviewVote == 0
+                                    ? [
+                                        const Color(0xFFEF4444),
+                                        const Color(0xFF991B1B),
+                                      ]
+                                    : [
+                                        PartyPalette.terracotta.withValues(alpha: 0.3),
+                                        PartyPalette.nightDeep,
+                                      ],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFEF4444).withValues(alpha: 0.7),
+                                width: 1.4,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.close_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _myReviewVote == 0 ? 'OBJECTED' : 'NO / OBJECT',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _consensusSeconds > 0
+                              ? () {
+                                  HapticFeedback.lightImpact();
+                                  setState(() => _myReviewVote = 1);
+                                }
+                              : null,
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            height: compact ? 44 : 50,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: _myReviewVote == 1
+                                    ? [
+                                        const Color(0xFF22C55E),
+                                        const Color(0xFF15803D),
+                                      ]
+                                    : [
+                                        const Color(0xFF22C55E).withValues(alpha: 0.25),
+                                        PartyPalette.nightDeep,
+                                      ],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFF22C55E).withValues(alpha: 0.7),
+                                width: 1.4,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.check_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _myReviewVote == 1 ? 'APPROVED' : 'YES / APPROVE',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
-        ),
-        if (!round.challenge.isChoice) ...[
-          const SizedBox(height: 16),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: _secondaryButton(
-              label: 'OBJECT — RESULT IS WRONG',
-              icon: Icons.flag_outlined,
-              onPressed: _consensusSeconds > 0
-                  ? () async {
-                      HapticFeedback.heavyImpact();
-                      await widget.onDisputeResult();
-                    }
-                  : null,
-            ),
-          ),
-        ],
-      ],
+          ],
+        );
+      },
     );
   }
 
