@@ -3,10 +3,12 @@ name: Deploy Web to GitHub Pages
 on:
   push:
     branches: [main]
-  workflow_dispatch: # Manual trigger from GitHub UI
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build-and-deploy:
@@ -38,10 +40,23 @@ jobs:
       - name: Build web
         run: flutter build web --release --base-href "/"
 
-      - name: Deploy to GitHub Pages
+      - name: Ensure CNAME
+        run: echo "bets-and-guesses.com" > ./build/web/CNAME
+
+      - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
           cname: bets-and-guesses.com
           force_orphan: true
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./build/web
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
