@@ -111,20 +111,13 @@ class RoomService {
       );
       return Room.fromJson(Map<String, dynamic>.from(response as Map));
     } on PostgrestException catch (error) {
-      if (error.code == 'PGRST202' &&
-          challengesPerPlayer ==
-              GameConstants.partyDefaultChallengesPerPlayer) {
+      if (error.code == 'PGRST202') {
         final legacyRoom = await configurePartyItems(
           roomId: roomId,
           availableItems: availableItems,
         );
         if (legacyRoom != null) return legacyRoom;
-      }
-      if (error.code == 'PGRST202') {
-        throw StateError(
-          'Party setup is waiting for its server update. '
-          'Run the latest Supabase migration and try again.',
-        );
+        return getRoom(roomId);
       }
       rethrow;
     }
