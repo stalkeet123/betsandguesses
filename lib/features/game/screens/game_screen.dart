@@ -95,6 +95,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void initState() {
     super.initState();
+    final initialRoom = ref.read(currentRoomProvider);
+    if (initialRoom?.gameMode == GameMode.party) {
+      _showPartyRoundTransition = true;
+    }
     _audioService = ref.read(audioServiceProvider);
     _realtimeService = ref.read(realtimeServiceProvider);
     WidgetsBinding.instance.addObserver(this);
@@ -2643,7 +2647,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 label: isReveal
                     ? 'RESULT'
                     : isWaitingPerformer
-                    ? 'PERFORMER BEKLENİYOR'
+                    ? 'WAITING FOR PERFORMER'
                     : timerSeconds > 0
                     ? '0:${timerSeconds.toString().padLeft(2, '0')}'
                     : '--:--',
@@ -7255,8 +7259,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
       );
     }
-    if (isPartyMode && partySnapshot != null) {
-      return _buildPartySingleSceneSurface(partySnapshot);
+    if (isPartyMode) {
+      if (partySnapshot != null) {
+        return _buildPartySingleSceneSurface(partySnapshot);
+      }
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F1B14),
+        body: Stack(
+          children: [
+            Positioned.fill(child: _PartyTableBackground()),
+            Center(
+              child: SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFD54F)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     return _buildPhaseSurfaceTransition(
@@ -8511,16 +8535,17 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
   }
 
   Widget _buildLogo({required Key key}) {
-    return Container(
+    return SizedBox.expand(
       key: key,
-      alignment: Alignment.center,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: _launchStore,
-          child: const CachedAssetImage(
-            AppAssetPaths.logo,
-            fit: BoxFit.contain,
+      child: Center(
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: _launchStore,
+            child: const CachedAssetImage(
+              AppAssetPaths.logo,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       ),
@@ -8528,68 +8553,100 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
   }
 
   Widget _buildPromoCard({required Key key}) {
-    return Container(
+    return SizedBox.expand(
       key: key,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _launchStore,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF222222), Color(0xFF0F0F0F)],
-              ),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: AppColors.brassLight.withValues(alpha: 0.5),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.apple,
-                    color: AppColors.brassLight,
-                    size: 15,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isVeryCompact = constraints.maxHeight < 40 || constraints.maxWidth < 150;
+          final isNarrow = constraints.maxWidth < 210;
+
+          return Center(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _launchStore,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 52),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isNarrow ? 8 : 12,
+                    vertical: isVeryCompact ? 2 : 4,
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    'GET ON APP STORE',
-                    style: GoogleFonts.outfit(
-                      color: AppColors.ivory,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 10.5,
-                      letterSpacing: 0.8,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF222222), Color(0xFF0F0F0F)],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.brassLight.withValues(alpha: 0.6),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.apple,
+                          color: AppColors.brassLight,
+                          size: isVeryCompact ? 14 : 18,
+                        ),
+                        SizedBox(width: isNarrow ? 5 : 7),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'GET THE FULL GAME',
+                              style: GoogleFonts.outfit(
+                                color: AppColors.brassLight,
+                                fontWeight: FontWeight.w800,
+                                fontSize: isVeryCompact ? 8 : 9,
+                                letterSpacing: 0.6,
+                                height: 1.0,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'DOWNLOAD ON APP STORE',
+                              style: GoogleFonts.outfit(
+                                color: AppColors.ivory,
+                                fontWeight: FontWeight.w900,
+                                fontSize: isVeryCompact ? 10 : 12,
+                                letterSpacing: 0.8,
+                                height: 1.0,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(width: isNarrow ? 5 : 8),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          color: AppColors.brassLight,
+                          size: isVeryCompact ? 9 : 11,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: AppColors.brassLight,
-                    size: 8.5,
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
