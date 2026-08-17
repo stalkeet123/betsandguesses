@@ -1,6 +1,7 @@
--- Fix party betting chip visibility and performer choice display:
--- 1. Ensure all placed bets are always visible in party snapshot during betting.
--- 2. Ensure option_a and option_b are always returned to performer and friends.
+-- Fix party snapshot fields, chip visibility, and performer choice options:
+-- 1. Ensure all snapshot fields expected by the Dart model (submitted_guess_count, own_guess, guesses, performer_bonus) are present.
+-- 2. Ensure option_a and option_b are visible to performer so they can choose.
+-- 3. Ensure placed bets are visible during betting.
 
 create or replace function public.get_party_snapshot_v1(p_room_id uuid)
 returns jsonb
@@ -57,7 +58,7 @@ begin
       and v_round.phase = 'betting'
     );
 
-  -- All bets in the room and round are included so every player sees placed chips
+  -- All bets in the room and round are included so all players see placed chips
   select coalesce(
     jsonb_agg(
       jsonb_build_object(
@@ -108,19 +109,22 @@ begin
         'answer_unit', v_challenge.answer_unit,
         'duration_seconds', v_challenge.duration_seconds,
         'max_result', v_challenge.max_result,
-        'bet_boundaries', v_challenge.bet_boundaries,
+        'bet_boundaries', coalesce(to_jsonb(v_challenge.bet_boundaries), '[]'::jsonb),
         'challenge_type', v_challenge.challenge_type,
         'category', v_challenge.category,
         'result_direction', v_challenge.result_direction,
-        'required_items', coalesce(v_challenge.required_items, '{}'::text[]),
+        'required_items', coalesce(to_jsonb(v_challenge.required_items), '[]'::jsonb),
         'option_a', v_challenge.option_a,
         'option_b', v_challenge.option_b,
         'performer_success_bonus', v_challenge.performer_success_bonus
       ),
+      'submitted_guess_count', 0,
+      'performer_ready', v_round.performer_ready_at is not null,
+      'own_guess', null,
+      'guesses', '[]'::jsonb,
+      'bets', v_bets,
       'proposed_result', case when v_show_result then v_round.proposed_result else null end,
-      'result_confirmed', v_round.result_confirmed,
-      'performer_ready', v_round.performer_ready,
-      'bets', v_bets
+      'performer_bonus', case when v_round.phase = 'reveal' then v_round.performer_bonus else 0 end
     ),
     'scores', v_scores
   );
