@@ -1,7 +1,263 @@
--- Fix party snapshot fields, chip visibility, and performer choice options:
--- 1. Ensure all snapshot fields expected by the Dart model (submitted_guess_count, own_guess, guesses, performer_bonus) are present.
--- 2. Ensure option_a and option_b are visible to performer so they can choose.
--- 3. Ensure placed bets are visible during betting.
+-- Complete fix for Party mode betting, chips, choice options, and snapshot:
+-- 1. Support slot index up to 7 for all party modes (choice/versus: 0..1, count/attempt: 0..4, showdown: 0..7).
+-- 2. place_party_bet_v1: copy Classic mode robustness (idempotency, bankroll fallback, clean return).
+-- 3. move_party_bet_v1 & remove_party_bet_v1: robust phase and slot checks.
+-- 4. get_party_snapshot_v1: full snapshot with all required Dart fields and visible bets.
+
+alter table public.party_bets drop constraint if exists party_bets_slot_valid;
+alter table public.party_bets add constraint party_bets_slot_valid check (slot_index between 0 and 7);
+
+create or replace function public.place_party_bet_v1(
+  p_room_id uuid,
+  p_slot_index integer,
+  p_chips integer,
+  p_client_action_id uuid,
+  p_position_x double precision default null,
+  p_position_y double precision default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room public.rooms%rowtype;
+  v_round public.party_rounds%rowtype;
+  v_player public.players%rowtype;
+  v_challenge public.party_challenges%rowtype;
+  v_bet public.party_bets%rowtype;
+  v_total integer;
+  v_score integer;
+begin
+  if p_chips not between 1 and 1000 or p_client_action_id is null then
+    raise exception using errcode = '22023', message = 'Invalid bet';
+  end if;
+  if (p_position_x is not null and p_position_x not between 0 and 1)
+     or (p_position_y is not null and p_position_y not between 0 and 1) then
+    raise exception using errcode = '22023', message = 'Invalid bet position';
+  end if;
+
+  select * into v_room from public.rooms where id = p_room_id;
+  if not found or v_room.game_mode <> 'party' then
+    raise exception using errcode = 'P0002', message = 'Party room not found';
+  end if;
+
+  select * into v_player
+  from public.players
+  where room_id = p_room_id
+    and auth_user_id = (select auth.uid())
+    and is_connected
+  order by joined_at desc limit 1;
+
+  if v_player.id is null then
+    raise exception using errcode = '42501', message = 'Room membership required';
+  end if;
+
+  select * into v_round
+  from public.party_rounds
+  where room_id = p_room_id and round_number = v_room.current_round;
+  select * into v_challenge
+  from public.party_challenges where id = v_round.challenge_id;
+
+  -- 1. Idempotency: If this client_action_id already succeeded, return the existing bet
+  select * into v_bet
+  from public.party_bets
+  where room_id = p_room_id
+    and round_number = v_room.current_round
+    and player_id = v_player.id
+    and client_action_id = p_client_action_id;
+
+  if v_bet.id is not null then
+    return to_jsonb(v_bet);
+  end if;
+
+  -- 2. Phase check: if betting closed, return null cleanly (like classic mode)
+  if v_round.phase <> 'betting'
+     or (v_round.phase_ends_at is not null
+         and v_round.phase_ends_at < statement_timestamp()) then
+    return null;
+  end if;
+
+  -- 3. Performer check: performers don't bet in standard performer-focused rounds
+  if v_player.id = v_round.performer_id and v_challenge.challenge_type not in ('showdown') then
+    raise exception using errcode = '42501', message = 'Performer cannot bet';
+  end if;
+
+  -- 4. Slot index validation based on challenge type
+  if (v_challenge.challenge_type in ('binary', 'choice', 'versus') and p_slot_index not between 0 and 1)
+     or (v_challenge.challenge_type in ('count', 'attempt') and p_slot_index not between 0 and 4)
+     or (v_challenge.challenge_type = 'showdown' and p_slot_index not between 0 and 7) then
+    raise exception using errcode = '22023', message = 'Invalid bet slot';
+  end if;
+
+  -- 5. Score check: ensure at least 15 bankroll fallback (matching Classic mode)
+  select score into v_score
+  from public.party_scores
+  where room_id = p_room_id and player_id = v_player.id
+  for update;
+
+  v_score := greatest(15, coalesce(v_score, v_player.bank_score, 15));
+
+  select coalesce(sum(chips), 0) into v_total
+  from public.party_bets
+  where room_id = p_room_id
+    and round_number = v_room.current_round
+    and player_id = v_player.id;
+
+  if v_total + p_chips > v_score then
+    raise exception using errcode = '22003', message = 'Insufficient score';
+  end if;
+
+  -- 6. Insert / upsert the bet
+  insert into public.party_bets (
+    room_id, round_number, player_id, slot_index, chips,
+    client_action_id, position_x, position_y
+  ) values (
+    p_room_id, v_room.current_round, v_player.id, p_slot_index, p_chips,
+    p_client_action_id, p_position_x, p_position_y
+  )
+  on conflict (room_id, round_number, player_id, client_action_id) do update
+    set slot_index = excluded.slot_index,
+        chips = excluded.chips,
+        position_x = excluded.position_x,
+        position_y = excluded.position_y
+  returning * into v_bet;
+
+  update public.party_matches
+  set state_version = state_version + 1
+  where room_id = p_room_id;
+
+  return to_jsonb(v_bet);
+end;
+$$;
+
+create or replace function public.move_party_bet_v1(
+  p_room_id uuid,
+  p_bet_id uuid,
+  p_slot_index integer,
+  p_position_x double precision default null,
+  p_position_y double precision default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room public.rooms%rowtype;
+  v_round public.party_rounds%rowtype;
+  v_player public.players%rowtype;
+  v_challenge public.party_challenges%rowtype;
+  v_bet public.party_bets%rowtype;
+begin
+  if (p_position_x is not null and p_position_x not between 0 and 1)
+     or (p_position_y is not null and p_position_y not between 0 and 1) then
+    raise exception using errcode = '22023', message = 'Invalid bet position';
+  end if;
+
+  select * into v_room from public.rooms where id = p_room_id;
+  select * into v_player
+  from public.players
+  where room_id = p_room_id
+    and auth_user_id = (select auth.uid())
+    and is_connected
+  order by joined_at desc limit 1;
+
+  if v_player.id is null then
+    raise exception using errcode = '42501', message = 'Room membership required';
+  end if;
+
+  select * into v_round
+  from public.party_rounds
+  where room_id = p_room_id and round_number = v_room.current_round;
+  select * into v_challenge
+  from public.party_challenges where id = v_round.challenge_id;
+
+  if v_round.phase <> 'betting'
+     or (v_round.phase_ends_at is not null
+         and v_round.phase_ends_at < statement_timestamp()) then
+    return null;
+  end if;
+
+  if (v_challenge.challenge_type in ('binary', 'choice', 'versus') and p_slot_index not between 0 and 1)
+     or (v_challenge.challenge_type in ('count', 'attempt') and p_slot_index not between 0 and 4)
+     or (v_challenge.challenge_type = 'showdown' and p_slot_index not between 0 and 7) then
+    raise exception using errcode = '22023', message = 'Invalid bet slot';
+  end if;
+
+  update public.party_bets
+  set slot_index = p_slot_index,
+      position_x = p_position_x,
+      position_y = p_position_y
+  where id = p_bet_id
+    and room_id = p_room_id
+    and round_number = v_room.current_round
+    and player_id = v_player.id
+  returning * into v_bet;
+
+  if v_bet.id is null then
+    raise exception using errcode = '42501', message = 'Bet ownership required';
+  end if;
+
+  update public.party_matches
+  set state_version = state_version + 1 where room_id = p_room_id;
+  return to_jsonb(v_bet);
+end;
+$$;
+
+create or replace function public.remove_party_bet_v1(
+  p_room_id uuid,
+  p_bet_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room public.rooms%rowtype;
+  v_round public.party_rounds%rowtype;
+  v_player public.players%rowtype;
+  v_bet public.party_bets%rowtype;
+begin
+  select * into v_room from public.rooms where id = p_room_id;
+  select * into v_player
+  from public.players
+  where room_id = p_room_id
+    and auth_user_id = (select auth.uid())
+    and is_connected
+  order by joined_at desc limit 1;
+
+  if v_player.id is null then
+    raise exception using errcode = '42501', message = 'Room membership required';
+  end if;
+
+  select * into v_round
+  from public.party_rounds
+  where room_id = p_room_id and round_number = v_room.current_round;
+
+  if v_round.phase <> 'betting'
+     or (v_round.phase_ends_at is not null
+         and v_round.phase_ends_at < statement_timestamp()) then
+    return null;
+  end if;
+
+  delete from public.party_bets
+  where id = p_bet_id
+    and room_id = p_room_id
+    and round_number = v_room.current_round
+    and player_id = v_player.id
+  returning * into v_bet;
+
+  if v_bet.id is null then
+    raise exception using errcode = '42501', message = 'Bet ownership required';
+  end if;
+
+  update public.party_matches
+  set state_version = state_version + 1 where room_id = p_room_id;
+  return to_jsonb(v_bet);
+end;
+$$;
 
 create or replace function public.get_party_snapshot_v1(p_room_id uuid)
 returns jsonb
@@ -58,7 +314,7 @@ begin
       and v_round.phase = 'betting'
     );
 
-  -- All bets in the room and round are included so all players see placed chips
+  -- All bets in the room and round are returned with player_id so all chips remain visible
   select coalesce(
     jsonb_agg(
       jsonb_build_object(
