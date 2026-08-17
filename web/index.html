@@ -105,13 +105,41 @@
         background-color: #0F0805;
           }
     }
-  </style>
   <script id="splash-screen-script">
     function removeSplashFromWeb() {
       document.getElementById("splash")?.remove();
       document.getElementById("splash-branding")?.remove();
       document.body.style.background = "#0F0805";
     }
+
+    // Universal iOS/Android Screen Awake (WakeLock & Visibility Manager)
+    let wakeLockSentinel = null;
+
+    async function acquireWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+          });
+        }
+      } catch (err) {
+        // WakeLock request ignored or unsupported
+      }
+    }
+
+    const unlockWakeLock = () => {
+      acquireWakeLock();
+    };
+
+    window.addEventListener('touchstart', unlockWakeLock, { passive: true });
+    window.addEventListener('click', unlockWakeLock, { passive: true });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        acquireWakeLock();
+      }
+    });
   </script>
 </head>
 <body>

@@ -2260,7 +2260,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _isBetOperationInFlight = false;
     }
 
-    _selectedChipValue = null;
+    if (_selectedChipValue != null) {
+      final updatedTotal = _currentPlayerTotalBets(ref.read(gameStateProvider));
+      final updatedBank = ref.read(gameStateProvider).scores[player.id] ?? player.bankScore;
+      final updatedLimit = GameConstants.bettingLimitForBank(updatedBank);
+      if (updatedTotal + _selectedChipValue! > updatedLimit) {
+        _selectedChipValue = null;
+      }
+    }
     _selectedBetId = null;
     if (_canUseRef) setState(() {});
   }
@@ -2568,7 +2575,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
         if (!isAvailable) return;
         setState(() {
-          _selectedChipValue = value;
+          _selectedChipValue = _selectedChipValue == value ? null : value;
           _selectedBetId = null;
         });
       },
@@ -5541,7 +5548,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
 
-    final selectedChip = _selectedChipValue;
+    var selectedChip = _selectedChipValue;
+    if (selectedChip == null) {
+      final totalBets = _currentPlayerTotalBets(gameState);
+      final player = ref.read(currentPlayerProvider);
+      final bank = player == null ? 0 : (gameState.scores[player.id] ?? player.bankScore);
+      final limit = GameConstants.bettingLimitForBank(bank);
+      final available = limit - totalBets;
+      final dynamicChips = _getDynamicChips(limit);
+      for (final chip in dynamicChips) {
+        if (chip <= available) {
+          selectedChip = chip;
+          break;
+        }
+      }
+      if (selectedChip != null) {
+        setState(() => _selectedChipValue = selectedChip);
+      }
+    }
+
     if (selectedChip == null) return;
     await _placeBet(spec.index, selectedChip, position: position);
   }
