@@ -100,7 +100,8 @@ void main() {
       'answer': 123,
       'winning_guess_id': 'guess-b',
       'winning_slot_index': 3,
-      'scores': {'player-a': 45, 'player-b': '30'},
+      'scores': {'player-a': 45, 'player-b': 15},
+      'bank_scores': {'player-a': 45, 'player-b': -30},
       'payouts': <String, int>{},
     });
 
@@ -109,7 +110,8 @@ void main() {
     expect(result.answer, 123);
     expect(result.winningGuessId, 'guess-b');
     expect(result.winningSlotIndex, 3);
-    expect(result.scores, {'player-a': 45, 'player-b': 30});
+    expect(result.scores, {'player-a': 45, 'player-b': -30});
+    expect(result.legacyScores, {'player-a': 45, 'player-b': 15});
   });
 }
 

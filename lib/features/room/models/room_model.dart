@@ -11,6 +11,8 @@ class Room {
   final int maxPlayers;
   final String? category;
   final GameMode gameMode;
+  final List<String> partyAvailableItems;
+  final int partyChallengesPerPlayer;
   final RoundPhase roundPhase;
   final String? currentQuestionId;
   final int stateVersion;
@@ -28,6 +30,9 @@ class Room {
     this.maxPlayers = GameConstants.freeMaxPlayers,
     this.category,
     this.gameMode = GameMode.classic,
+    this.partyAvailableItems = const [],
+    this.partyChallengesPerPlayer =
+        GameConstants.partyDefaultChallengesPerPlayer,
     this.roundPhase = RoundPhase.idle,
     this.currentQuestionId,
     this.stateVersion = 0,
@@ -47,6 +52,12 @@ class Room {
       maxPlayers: json['max_players'] as int? ?? GameConstants.freeMaxPlayers,
       category: json['category'] as String?,
       gameMode: GameMode.fromString(json['game_mode'] as String?),
+      partyAvailableItems: (json['party_available_items'] as List? ?? const [])
+          .map((item) => item.toString())
+          .toList(growable: false),
+      partyChallengesPerPlayer:
+          (json['party_challenges_per_player'] as num?)?.toInt() ??
+          GameConstants.partyDefaultChallengesPerPlayer,
       roundPhase: RoundPhase.fromString(
         json['round_phase'] as String? ?? 'idle',
       ),
@@ -69,6 +80,8 @@ class Room {
       'max_players': maxPlayers,
       'category': category,
       'game_mode': gameMode.name,
+      'party_available_items': partyAvailableItems,
+      'party_challenges_per_player': partyChallengesPerPlayer,
       'round_phase': roundPhase.name,
       'current_question_id': currentQuestionId,
       'state_version': stateVersion,
@@ -89,6 +102,8 @@ class Room {
     int? maxPlayers,
     String? category,
     GameMode? gameMode,
+    List<String>? partyAvailableItems,
+    int? partyChallengesPerPlayer,
     RoundPhase? roundPhase,
     String? currentQuestionId,
     int? stateVersion,
@@ -106,6 +121,9 @@ class Room {
       maxPlayers: maxPlayers ?? this.maxPlayers,
       category: category ?? this.category,
       gameMode: gameMode ?? this.gameMode,
+      partyAvailableItems: partyAvailableItems ?? this.partyAvailableItems,
+      partyChallengesPerPlayer:
+          partyChallengesPerPlayer ?? this.partyChallengesPerPlayer,
       roundPhase: roundPhase ?? this.roundPhase,
       currentQuestionId: currentQuestionId ?? this.currentQuestionId,
       stateVersion: stateVersion ?? this.stateVersion,

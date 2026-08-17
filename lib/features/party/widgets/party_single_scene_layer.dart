@@ -31,6 +31,7 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
   final PartySceneAction onStartAction;
   final PartySceneAction onOpenResultEntry;
   final PartySceneResultAction onSubmitResult;
+  final PartySceneResultAction onSubmitChoice;
   final PartySceneAction onConfirmResult;
   final PartySceneAction onDisputeResult;
 
@@ -44,6 +45,7 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
     required this.onStartAction,
     required this.onOpenResultEntry,
     required this.onSubmitResult,
+    required this.onSubmitChoice,
     required this.onConfirmResult,
     required this.onDisputeResult,
   });
@@ -55,7 +57,7 @@ class PartySingleSceneLayer extends ConsumerStatefulWidget {
 
 class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     with WidgetsBindingObserver {
-  final TextEditingController _resultController = TextEditingController();
+  String _resultDigits = '';
   CameraController? _cameraController;
   Future<List<CameraDescription>>? _cameraDiscoveryFuture;
   List<CameraDescription> _availableCameras = const [];
@@ -103,7 +105,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
   void didUpdateWidget(covariant PartySingleSceneLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.snapshot.round.number != widget.snapshot.round.number) {
-      _resultController.clear();
+      _resultDigits = '';
       _autoConfirmInFlight = false;
       _showCamera = false;
       unawaited(_disposeCamera());
@@ -135,7 +137,6 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _consensusTimer?.cancel();
-    _resultController.dispose();
     unawaited(_cameraController?.dispose());
     super.dispose();
   }
@@ -348,8 +349,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       fit: StackFit.expand,
       children: [
         Positioned(
-          left: 8,
-          right: 8,
+          left: 6,
+          right: 6,
           top: widget.stageTop,
           bottom: 6,
           child: IgnorePointer(
@@ -374,48 +375,83 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
 
   Widget _buildStage(List<PartyMoment> moments) {
     final round = widget.snapshot.round;
-    final canOpenCamera = !_isPerformer && moments.length < 3;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(child: _buildStageLabel()),
-              const SizedBox(width: 10),
-              _cameraButton(
-                enabled: canOpenCamera,
-                momentCount: moments.length,
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 360),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                final scale = Tween<double>(
-                  begin: 0.985,
-                  end: 1,
-                ).animate(animation);
-                return FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(scale: scale, child: child),
-                );
-              },
-              child: KeyedSubtree(
-                key: ValueKey(
-                  '${round.number}-${round.phase}-${round.performerReady}',
-                ),
-                child: _buildStageBody(),
-              ),
-            ),
+    final canOpenCamera =
+        !round.challenge.isChoice && !_isPerformer && moments.length < 3;
+    final cameraIsInline = round.phase == PartyRoundPhase.action;
+    final hideCamera = cameraIsInline || round.challenge.isChoice;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: PartyPalette.surface.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: PartyPalette.orangeSoft.withValues(alpha: 0.32),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.24),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(19),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: _buildStageLabel()),
+                      if (!hideCamera) ...[
+                        const SizedBox(width: 9),
+                        _cameraButton(
+                          enabled: canOpenCamera,
+                          momentCount: moments.length,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 11),
+                  Container(
+                    height: 1,
+                    color: PartyPalette.cream.withValues(alpha: 0.10),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 360),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        final scale = Tween<double>(
+                          begin: 0.985,
+                          end: 1,
+                        ).animate(animation);
+                        return FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(scale: scale, child: child),
+                        );
+                      },
+                      child: KeyedSubtree(
+                        key: ValueKey(
+                          '${round.number}-${round.phase}-${round.performerReady}',
+                        ),
+                        child: _buildStageBody(moments),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -426,33 +462,52 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       PartyRoundPhase.ready =>
         round.performerReady ? 'READY TO START' : 'GET READY',
       PartyRoundPhase.action => 'LIVE CHALLENGE',
-      PartyRoundPhase.resultEntry => 'RECORD THE RESULT',
+      PartyRoundPhase.resultEntry =>
+        round.challenge.isChoice ? 'MAKE YOUR CHOICE' : 'RECORD THE RESULT',
       PartyRoundPhase.resultConfirm => 'FINAL CHECK',
       _ => 'PARTY MODE',
     };
+
     return Row(
       children: [
         Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
+          width: 7,
+          height: 7,
+          decoration: const BoxDecoration(
+            color: PartyPalette.orange,
             shape: BoxShape.circle,
-            color: round.phase == PartyRoundPhase.action
-                ? PartyPalette.orange
-                : PartyPalette.sage,
           ),
         ),
-        const SizedBox(width: 9),
-        Flexible(
+        const SizedBox(width: 8),
+        Expanded(
           child: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.outfit(
-              color: PartyPalette.creamMuted,
+              color: PartyPalette.orangeSoft,
               fontSize: 11,
               fontWeight: FontWeight.w900,
-              letterSpacing: 1.35,
+              letterSpacing: 1.3,
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: PartyPalette.nightDeep.withValues(alpha: 0.24),
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(
+              color: PartyPalette.cream.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Text(
+            'R${round.number}',
+            style: GoogleFonts.outfit(
+              color: PartyPalette.creamMuted,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.6,
             ),
           ),
         ),
@@ -465,8 +520,11 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       button: true,
       label: 'Open camera',
       child: Material(
-        color: PartyPalette.surfaceRaised.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(14),
+        color: PartyPalette.nightDeep.withValues(alpha: 0.24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: PartyPalette.cream.withValues(alpha: 0.09)),
+        ),
         child: InkWell(
           onTap: enabled ? _enterCamera : null,
           borderRadius: BorderRadius.circular(14),
@@ -506,11 +564,11 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     );
   }
 
-  Widget _buildStageBody() {
+  Widget _buildStageBody(List<PartyMoment> moments) {
     final round = widget.snapshot.round;
     return switch (round.phase) {
       PartyRoundPhase.ready => _buildReady(),
-      PartyRoundPhase.action => _buildAction(),
+      PartyRoundPhase.action => _buildAction(moments),
       PartyRoundPhase.resultEntry => _buildResultEntry(),
       PartyRoundPhase.resultConfirm => _buildResultReview(),
       _ => const SizedBox.shrink(),
@@ -520,120 +578,523 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
   Widget _buildReady() {
     final round = widget.snapshot.round;
     final performerName = round.performer.name.toUpperCase();
+    final isAttempt = round.challenge.isAttempt;
     String message;
     Widget? action;
 
     if (_isHost) {
-      message =
-          'Make sure $performerName is in position, then start the timer.';
+      message = isAttempt
+          ? 'Give $performerName up to five clean tries, then record the successful attempt.'
+          : 'Make sure $performerName is in position, then start the timer.';
       action = _primaryButton(
-        label: 'START ${round.challenge.durationSeconds} SECONDS',
+        label: isAttempt
+            ? 'START ATTEMPTS'
+            : 'START ${round.challenge.durationSeconds} SECONDS',
         icon: Icons.play_arrow_rounded,
         onPressed: widget.onStartAction,
       );
     } else if (_isPerformer) {
-      message = 'Get in position. The host will start the timer.';
+      message = isAttempt
+          ? 'You get up to five tries. The host records the first one you land.'
+          : 'Get in position. The host will start the timer.';
     } else {
-      message =
-          'Keep the attempt in view. The host starts when $performerName is ready.';
+      message = isAttempt
+          ? 'Watch all five tries. The host records the first one that lands.'
+          : 'Keep the challenge in view. The host starts when $performerName is ready.';
     }
 
-    return _centeredStage(
-      kicker: 'UP NEXT',
-      title: performerName,
-      subtitle: message,
-      action: action,
+    final initial = performerName.isEmpty ? '?' : performerName.substring(0, 1);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 330;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: compact ? 58 : 68,
+              height: compact ? 58 : 68,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: PartyPalette.nightDeep.withValues(alpha: 0.26),
+                border: Border.all(
+                  color: PartyPalette.orangeSoft.withValues(alpha: 0.48),
+                  width: 1.4,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                initial,
+                style: TextStyle(
+                  fontFamily: 'RehnCondensed',
+                  color: PartyPalette.cream,
+                  fontSize: compact ? 34 : 40,
+                  fontWeight: FontWeight.w900,
+                  height: 0.9,
+                ),
+              ),
+            ),
+            SizedBox(height: compact ? 8 : 11),
+            const _StageKicker('UP NEXT'),
+            SizedBox(height: compact ? 7 : 9),
+            Text(
+              performerName,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: _stageTitleStyle(fontSize: compact ? 36 : 43),
+            ),
+            SizedBox(height: compact ? 10 : 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 390),
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: compact ? 10 : 12,
+                ),
+                decoration: BoxDecoration(
+                  color: PartyPalette.nightDeep.withValues(alpha: 0.20),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(
+                    color: PartyPalette.cream.withValues(alpha: 0.08),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.lightbulb_outline_rounded,
+                      color: PartyPalette.orangeSoft,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Text(
+                        message,
+                        style: GoogleFonts.outfit(
+                          color: PartyPalette.blueMuted,
+                          fontSize: compact ? 11.5 : 12.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.28,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (action != null) ...[
+              SizedBox(height: compact ? 12 : 18),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: SizedBox(width: double.infinity, child: action),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildAction() {
+  Widget _buildAction(List<PartyMoment> moments) {
     final round = widget.snapshot.round;
+    final isAttempt = round.challenge.isAttempt;
     final duration = round.challenge.durationSeconds;
-    final progress = duration <= 0
+    final progress = isAttempt || duration <= 0
         ? 0.0
         : (widget.secondsRemaining / duration).clamp(0.0, 1.0);
-    final urgent = widget.secondsRemaining <= 10;
+    final urgent = !isAttempt && widget.secondsRemaining <= 10;
+    final canOpenCamera = !_isPerformer && moments.length < 3;
+    final ownBet = _ownBetSummary();
+    final canRecord = _isHost;
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          '${round.performer.name.toUpperCase()} — GO',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.outfit(
-            color: PartyPalette.cream,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0.6,
-          ),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: 156,
-          height: 156,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              CircularProgressIndicator(
-                value: progress,
-                strokeWidth: 6,
-                strokeCap: StrokeCap.round,
-                color: urgent ? const Color(0xFFD85C49) : PartyPalette.orange,
-                backgroundColor: PartyPalette.surfaceRaised,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 310;
+        final timerSize = compact ? 78.0 : 90.0;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(compact ? 13 : 16),
+              decoration: BoxDecoration(
+                color: PartyPalette.nightDeep.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: PartyPalette.cream.withValues(alpha: 0.08),
+                ),
               ),
-              Center(
-                child: Text(
-                  '00:${widget.secondsRemaining.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                    fontFamily: 'RehnCondensed',
-                    color: PartyPalette.cream,
-                    fontSize: 48,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: timerSize,
+                    height: timerSize,
+                    child: isAttempt
+                        ? Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: PartyPalette.surfaceRaised,
+                              border: Border.all(
+                                color: PartyPalette.orange,
+                                width: 4,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'UP TO',
+                                      style: GoogleFonts.outfit(
+                                        color: PartyPalette.blueMuted,
+                                        fontSize: compact ? 9 : 10,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                    Text(
+                                      '5 TRIES',
+                                      style: TextStyle(
+                                        fontFamily: 'RehnCondensed',
+                                        color: PartyPalette.cream,
+                                        fontSize: compact ? 23 : 26,
+                                        fontWeight: FontWeight.w900,
+                                        height: 0.95,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )
+                        : Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 5,
+                                strokeCap: StrokeCap.round,
+                                color: urgent
+                                    ? const Color(0xFFD85C49)
+                                    : PartyPalette.orange,
+                                backgroundColor: PartyPalette.surfaceRaised,
+                              ),
+                              Center(
+                                child: Text(
+                                  '00:${widget.secondsRemaining.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontFamily: 'RehnCondensed',
+                                    color: PartyPalette.cream,
+                                    fontSize: compact ? 27 : 31,
+                                    fontWeight: FontWeight.w900,
+                                    height: 0.9,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                  SizedBox(width: compact ? 12 : 15),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${round.performer.name.toUpperCase()} - GO',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            color: PartyPalette.cream,
+                            fontSize: compact ? 15 : 17,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.45,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              ownBet == null
+                                  ? (_isPerformer
+                                        ? Icons.flash_on_rounded
+                                        : Icons.visibility_outlined)
+                                  : Icons.casino_outlined,
+                              color: PartyPalette.orangeSoft,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                ownBet ??
+                                    (_isPerformer
+                                        ? 'YOUR TURN - GIVE IT EVERYTHING'
+                                        : _isHost
+                                        ? 'KEEP THE RESULT CLEAN'
+                                        : 'WATCH THE ATTEMPT'),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  color: ownBet == null
+                                      ? PartyPalette.blueMuted
+                                      : PartyPalette.creamMuted,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.2,
+                                  letterSpacing: 0.25,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _cameraActionTile(
+                    enabled: canOpenCamera,
+                    momentCount: moments.length,
+                  ),
+                ],
+              ),
+            ),
+            if (canRecord) ...[
+              SizedBox(height: compact ? 10 : 13),
+              _secondaryButton(
+                label: round.challenge.isAttempt || round.challenge.isBinary
+                    ? 'RECORD RESULT'
+                    : widget.secondsRemaining > 0
+                    ? 'END & RECORD'
+                    : 'CONTINUE TO RESULT',
+                icon: Icons.arrow_forward_rounded,
+                onPressed: widget.onOpenResultEntry,
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _cameraActionTile({required bool enabled, required int momentCount}) {
+    return Semantics(
+      button: true,
+      label: 'Open camera',
+      child: Material(
+        color: PartyPalette.nightDeep.withValues(alpha: 0.24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: PartyPalette.cream.withValues(alpha: 0.08)),
+        ),
+        child: InkWell(
+          key: const ValueKey('party-performance-camera'),
+          onTap: enabled ? _enterCamera : null,
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            width: 62,
+            height: 72,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  momentCount >= 3
+                      ? Icons.check_rounded
+                      : Icons.photo_camera_outlined,
+                  color: enabled
+                      ? PartyPalette.orangeSoft
+                      : PartyPalette.blueMuted.withValues(alpha: 0.42),
+                  size: 24,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '$momentCount/3',
+                  style: GoogleFonts.outfit(
+                    color: enabled
+                        ? PartyPalette.creamMuted
+                        : PartyPalette.blueMuted.withValues(alpha: 0.42),
+                    fontSize: 10,
                     fontWeight: FontWeight.w900,
-                    height: 0.9,
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _ownBetSummary() {
+    final playerId = widget.currentPlayer?.id;
+    if (playerId == null) return null;
+    final bets = widget.snapshot.round.bets
+        .where((bet) => bet.playerId == playerId)
+        .toList(growable: false);
+    if (bets.isEmpty) return null;
+
+    final labels = <String>[];
+    for (final bet in bets) {
+      final label = _betSlotLabel(bet.slotIndex);
+      if (!labels.contains(label)) labels.add(label);
+    }
+    final chips = bets.fold<int>(0, (total, bet) => total + bet.chips);
+    return 'YOUR BET - ${labels.join(' + ')} - $chips CHIPS';
+  }
+
+  String _betSlotLabel(int slotIndex) {
+    final challenge = widget.snapshot.round.challenge;
+    if (challenge.isChoice) {
+      return challenge.choiceLabel(slotIndex)?.toUpperCase() ?? 'OPTION ';
+    }
+    if (challenge.isBinary) return slotIndex == 1 ? 'YES' : 'NO';
+    if (challenge.isAttempt) {
+      return switch (slotIndex) {
+        0 => 'FIRST TRY',
+        1 => 'SECOND TRY',
+        2 => 'THIRD TRY',
+        3 => '4-5 TRIES',
+        4 => "DOESN'T LAND",
+        _ => 'ATTEMPT',
+      };
+    }
+
+    final boundaries = challenge.betBoundaries;
+    if (boundaries.length < 4) return 'RANGE ${slotIndex + 1}';
+    return switch (slotIndex) {
+      0 => 'UNDER ${boundaries[0]}',
+      1 => '${boundaries[0]}-${boundaries[1] - 1}',
+      2 => '${boundaries[1]}-${boundaries[2]}',
+      3 => '${boundaries[2] + 1}-${boundaries[3]}',
+      4 => '${boundaries[3] + 1}+',
+      _ => 'RANGE ${slotIndex + 1}',
+    };
+  }
+
+  Widget _buildChoiceEntry() {
+    final round = widget.snapshot.round;
+    final optionA = round.challenge.optionA;
+    final optionB = round.challenge.optionB;
+    if (!_isPerformer) {
+      return _centeredStage(
+        kicker: 'BETS ARE LOCKED',
+        title: '${round.performer.name.toUpperCase()} IS CHOOSING',
+        subtitle: 'No hints now. Their real choice decides the winning side.',
+      );
+    }
+    if (optionA == null || optionB == null) {
+      return _centeredStage(
+        kicker: 'UNLOCKING OPTIONS',
+        title: 'ONE MOMENT',
+        subtitle: 'Your choices are being revealed after the betting window.',
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 330;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const _StageKicker('YOUR REAL CHOICE'),
+            SizedBox(height: compact ? 6 : 9),
+            Text(
+              'Friends already placed their bets.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: PartyPalette.blueMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: compact ? 10 : 15),
+            _choiceButton(index: 0, label: optionA),
+            SizedBox(height: compact ? 8 : 11),
+            _choiceButton(index: 1, label: optionB),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _choiceButton({required int index, required String label}) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 430),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          key: ValueKey('party-choice-$index'),
+          onPressed: widget.commandInFlight
+              ? null
+              : () => unawaited(widget.onSubmitChoice(index)),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: PartyPalette.cream,
+            backgroundColor: PartyPalette.surface.withValues(alpha: 0.8),
+            disabledForegroundColor: PartyPalette.blueMuted,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+            side: BorderSide(
+              color: PartyPalette.orange.withValues(alpha: 0.46),
+              width: 1.2,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(17),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: PartyPalette.orange.withValues(alpha: 0.14),
+                  border: Border.all(
+                    color: PartyPalette.orangeSoft.withValues(alpha: 0.55),
+                  ),
+                ),
+                child: Text(
+                  index == 0 ? 'A' : 'B',
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.orangeSoft,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.cream,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: PartyPalette.orangeSoft,
+                size: 20,
               ),
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        Text(
-          _isPerformer
-              ? 'Give it a real attempt.'
-              : _isHost
-              ? (round.challenge.isBinary
-                    ? 'Watch the success condition.'
-                    : 'Keep the count clean.')
-              : 'Watch the attempt. Save the moment if it gets good.',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.outfit(
-            color: PartyPalette.blueMuted,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
-          ),
-        ),
-        if (_isHost &&
-            (round.challenge.isAttempt ||
-                round.challenge.isBinary ||
-                widget.secondsRemaining == 0)) ...[
-          const SizedBox(height: 16),
-          _secondaryButton(
-            label: round.challenge.isAttempt
-                ? 'RECORD ATTEMPT'
-                : round.challenge.isBinary
-                ? 'RECORD RESULT'
-                : 'CONTINUE TO RESULT',
-            icon: Icons.arrow_forward_rounded,
-            onPressed: widget.onOpenResultEntry,
-          ),
-        ],
-      ],
+      ),
     );
   }
 
   Widget _buildResultEntry() {
     final round = widget.snapshot.round;
+    if (round.challenge.isChoice) return _buildChoiceEntry();
     if (!_isHost) {
       return _centeredStage(
         kicker: 'TIME IS UP',
@@ -680,78 +1141,184 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     if (round.challenge.isAttempt) {
       return _buildAttemptResultEntry();
     }
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const _StageKicker('ACTUAL RESULT'),
-        const SizedBox(height: 10),
-        Text(
-          round.challenge.answerUnit.toUpperCase(),
-          style: GoogleFonts.outfit(
-            color: PartyPalette.blueMuted,
-            fontSize: 11,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.6,
-          ),
-        ),
-        const SizedBox(height: 14),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 270),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _resultController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'RehnCondensed',
-                    color: PartyPalette.cream,
-                    fontSize: 48,
-                    fontWeight: FontWeight.w900,
+    return _buildCountResultEntry();
+  }
+
+  Widget _buildCountResultEntry() {
+    final challenge = widget.snapshot.round.challenge;
+    final displayValue = _resultDigits.isEmpty ? '--' : _resultDigits;
+    const keys = <Object>[1, 2, 3, 4, 5, 6, 7, 8, 9, 'back', 0, 'submit'];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 340;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const _StageKicker('ACTUAL RESULT'),
+            SizedBox(height: compact ? 6 : 9),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 310),
+              child: Container(
+                height: compact ? 57 : 64,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: PartyPalette.surface.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: PartyPalette.orange.withValues(alpha: 0.28),
                   ),
-                  decoration: InputDecoration(
-                    hintText: '0–${round.challenge.maxResult}',
-                    hintStyle: TextStyle(
-                      color: PartyPalette.blueMuted.withValues(alpha: 0.35),
-                    ),
-                    filled: true,
-                    fillColor: PartyPalette.surface.withValues(alpha: 0.92),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(
-                        color: PartyPalette.orange,
-                        width: 1.5,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        displayValue,
+                        key: const ValueKey('party-result-display'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'RehnCondensed',
+                          color: _resultDigits.isEmpty
+                              ? PartyPalette.blueMuted.withValues(alpha: 0.42)
+                              : PartyPalette.cream,
+                          fontSize: compact ? 38 : 44,
+                          fontWeight: FontWeight.w900,
+                          height: 0.95,
+                        ),
                       ),
                     ),
-                  ),
-                  onSubmitted: (_) => _submitTypedResult(),
+                    Container(
+                      width: 1,
+                      height: 30,
+                      color: PartyPalette.blueMuted.withValues(alpha: 0.2),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 78,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            challenge.answerUnit.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(
+                              color: PartyPalette.creamMuted,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.75,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'MAX ${challenge.maxResult}',
+                            style: GoogleFonts.outfit(
+                              color: PartyPalette.blueMuted,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              IconButton.filled(
-                onPressed: widget.commandInFlight ? null : _submitTypedResult,
-                icon: const Icon(Icons.arrow_forward_rounded),
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(62, 62),
-                  backgroundColor: PartyPalette.orange,
-                  foregroundColor: PartyPalette.nightDeep,
+            ),
+            SizedBox(height: compact ? 7 : 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 310),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: keys.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: compact ? 6 : 8,
+                  childAspectRatio: compact ? 2.35 : 2.05,
                 ),
+                itemBuilder: (context, index) {
+                  final keyValue = keys[index];
+                  final isBack = keyValue == 'back';
+                  final isSubmit = keyValue == 'submit';
+                  final enabled =
+                      !widget.commandInFlight &&
+                      (!isSubmit || _resultDigits.isNotEmpty);
+                  return Material(
+                    color: isSubmit
+                        ? PartyPalette.orange
+                        : PartyPalette.surfaceRaised.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(13),
+                    child: InkWell(
+                      key: ValueKey('party-result-key-$keyValue'),
+                      onTap: !enabled
+                          ? null
+                          : isBack
+                          ? _removeResultDigit
+                          : isSubmit
+                          ? _submitNumpadResult
+                          : () => _appendResultDigit(keyValue as int),
+                      borderRadius: BorderRadius.circular(13),
+                      child: Center(
+                        child: isBack
+                            ? const Icon(
+                                Icons.backspace_outlined,
+                                color: PartyPalette.creamMuted,
+                                size: 19,
+                              )
+                            : isSubmit
+                            ? const Icon(
+                                Icons.check_rounded,
+                                color: PartyPalette.nightDeep,
+                                size: 24,
+                              )
+                            : Text(
+                                '$keyValue',
+                                style: const TextStyle(
+                                  fontFamily: 'RehnCondensed',
+                                  color: PartyPalette.cream,
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                      ),
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  void _appendResultDigit(int digit) {
+    final candidate = _resultDigits == '0' ? '$digit' : '$_resultDigits$digit';
+    final value = int.tryParse(candidate);
+    if (value == null || value > widget.snapshot.round.challenge.maxResult) {
+      HapticFeedback.mediumImpact();
+      return;
+    }
+    setState(() => _resultDigits = candidate);
+  }
+
+  void _removeResultDigit() {
+    if (_resultDigits.isEmpty) return;
+    setState(() {
+      _resultDigits = _resultDigits.substring(0, _resultDigits.length - 1);
+    });
+  }
+
+  void _submitNumpadResult() {
+    final value = int.tryParse(_resultDigits);
+    if (value == null || value > widget.snapshot.round.challenge.maxResult) {
+      HapticFeedback.mediumImpact();
+      return;
+    }
+    unawaited(widget.onSubmitResult(value));
   }
 
   Widget _buildAttemptResultEntry() {
@@ -817,20 +1384,11 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     );
   }
 
-  void _submitTypedResult() {
-    final value = int.tryParse(_resultController.text);
-    final max = widget.snapshot.round.challenge.maxResult;
-    if (value == null || value < 0 || value > max) {
-      HapticFeedback.mediumImpact();
-      return;
-    }
-    FocusScope.of(context).unfocus();
-    unawaited(widget.onSubmitResult(value));
-  }
-
   Widget _buildResultReview() {
     final round = widget.snapshot.round;
-    final result = round.challenge.isBinary
+    final result = round.challenge.isChoice
+        ? (round.challenge.choiceLabel(round.proposedResult ?? -1) ?? 'CHOICE')
+        : round.challenge.isBinary
         ? (round.proposedResult == 1 ? 'SUCCESS' : 'FAILED')
         : round.challenge.isAttempt
         ? (round.proposedResult == 0
@@ -863,12 +1421,14 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
             letterSpacing: 1.2,
           ),
         ),
-        const SizedBox(height: 22),
-        _secondaryButton(
-          label: 'OBJECT — RESULT IS WRONG',
-          icon: Icons.flag_outlined,
-          onPressed: _consensusSeconds > 0 ? widget.onDisputeResult : null,
-        ),
+        if (!round.challenge.isChoice) ...[
+          const SizedBox(height: 22),
+          _secondaryButton(
+            label: 'OBJECT — RESULT IS WRONG',
+            icon: Icons.flag_outlined,
+            onPressed: _consensusSeconds > 0 ? widget.onDisputeResult : null,
+          ),
+        ],
       ],
     );
   }
@@ -879,34 +1439,86 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     required String subtitle,
     Widget? action,
   }) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _StageKicker(kicker),
-        const SizedBox(height: 12),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: _stageTitleStyle(),
-        ),
-        const SizedBox(height: 14),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(
-              color: PartyPalette.blueMuted,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              height: 1.35,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 320;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: compact ? 42 : 48,
+              height: compact ? 42 : 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: PartyPalette.nightDeep.withValues(alpha: 0.24),
+                border: Border.all(
+                  color: PartyPalette.orangeSoft.withValues(alpha: 0.30),
+                ),
+              ),
+              child: const Icon(
+                Icons.hourglass_top_rounded,
+                color: PartyPalette.orangeSoft,
+                size: 21,
+              ),
             ),
-          ),
-        ),
-        if (action != null) ...[const SizedBox(height: 26), action],
-      ],
+            SizedBox(height: compact ? 9 : 12),
+            _StageKicker(kicker),
+            SizedBox(height: compact ? 9 : 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: _stageTitleStyle(fontSize: compact ? 34 : 40),
+            ),
+            SizedBox(height: compact ? 11 : 15),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 390),
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: compact ? 10 : 12,
+                ),
+                decoration: BoxDecoration(
+                  color: PartyPalette.nightDeep.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(
+                    color: PartyPalette.cream.withValues(alpha: 0.08),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: PartyPalette.orangeSoft,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        subtitle,
+                        style: GoogleFonts.outfit(
+                          color: PartyPalette.blueMuted,
+                          fontSize: compact ? 11.5 : 12.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.32,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (action != null) ...[
+              SizedBox(height: compact ? 14 : 20),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: SizedBox(width: double.infinity, child: action),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -959,8 +1571,9 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
         foregroundColor: PartyPalette.cream,
+        backgroundColor: PartyPalette.nightDeep.withValues(alpha: 0.18),
         disabledForegroundColor: PartyPalette.blueMuted.withValues(alpha: 0.5),
-        side: BorderSide(color: PartyPalette.orange.withValues(alpha: 0.52)),
+        side: BorderSide(color: PartyPalette.orange.withValues(alpha: 0.38)),
         minimumSize: const Size(180, 52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         textStyle: GoogleFonts.outfit(
@@ -976,9 +1589,10 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
     final controller = _cameraController;
     final round = widget.snapshot.round;
     final capturePhase =
-        round.phase == PartyRoundPhase.action ||
-        round.phase == PartyRoundPhase.resultEntry ||
-        round.phase == PartyRoundPhase.resultConfirm;
+        !round.challenge.isChoice &&
+        (round.phase == PartyRoundPhase.action ||
+            round.phase == PartyRoundPhase.resultEntry ||
+            round.phase == PartyRoundPhase.resultConfirm);
     final canCapture =
         capturePhase &&
         moments.length < 3 &&
@@ -1243,14 +1857,25 @@ class _StageKicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      textAlign: TextAlign.center,
-      style: GoogleFonts.outfit(
-        color: PartyPalette.orangeSoft,
-        fontSize: 11,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.8,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: PartyPalette.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(
+          color: PartyPalette.orangeSoft.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.outfit(
+          color: PartyPalette.orangeSoft,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.45,
+          height: 1,
+        ),
       ),
     );
   }

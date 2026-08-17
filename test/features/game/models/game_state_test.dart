@@ -8,6 +8,12 @@ import 'package:witsgame/features/game/models/question_model.dart';
 import 'package:witsgame/features/game/providers/game_providers.dart';
 
 void main() {
+  test('negative bank keeps a 15-chip betting limit without erasing debt', () {
+    expect(GameConstants.bettingLimitForBank(-30), 15);
+    expect(GameConstants.bettingLimitForBank(0), 15);
+    expect(GameConstants.bettingLimitForBank(12), 15);
+    expect(GameConstants.bettingLimitForBank(40), 40);
+  });
   test('nextRound preserves identity and scores while clearing round data', () {
     const state = GameState(
       roomId: 'room-1',

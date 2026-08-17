@@ -11,7 +11,7 @@ class PartyGameService {
 
   Future<PartySnapshot> startGame({
     required String roomId,
-    int bettingDurationSeconds = 20,
+    int bettingDurationSeconds = 30,
   }) async {
     final response = await _client.rpc(
       'start_party_game_v2',
@@ -33,7 +33,7 @@ class PartyGameService {
 
   Future<PartySnapshot> advanceToBetting(
     String roomId, {
-    int durationSeconds = 20,
+    int durationSeconds = 30,
   }) async {
     final response = await _client.rpc(
       'advance_party_to_betting_v1',
@@ -103,6 +103,25 @@ class PartyGameService {
     return _snapshot(response);
   }
 
+  Future<PartySnapshot> beginChoice(String roomId) async {
+    final response = await _client.rpc(
+      'begin_party_choice_v1',
+      params: {'p_room_id': roomId},
+    );
+    return _snapshot(response);
+  }
+
+  Future<PartySnapshot> submitChoice({
+    required String roomId,
+    required int choiceIndex,
+  }) async {
+    final response = await _client.rpc(
+      'submit_party_choice_v1',
+      params: {'p_room_id': roomId, 'p_choice': choiceIndex},
+    );
+    return _snapshot(response);
+  }
+
   Future<PartySnapshot> beginReady(String roomId) async {
     final response = await _client.rpc(
       'begin_party_ready_v1',
@@ -157,7 +176,7 @@ class PartyGameService {
   Future<Map<String, dynamic>> advanceRound(String roomId) async {
     final response = await _client.rpc(
       'advance_party_round_v2',
-      params: {'p_room_id': roomId, 'p_betting_duration_seconds': 20},
+      params: {'p_room_id': roomId, 'p_betting_duration_seconds': 30},
     );
     return Map<String, dynamic>.from(response as Map);
   }

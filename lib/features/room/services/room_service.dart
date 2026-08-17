@@ -77,6 +77,59 @@ class RoomService {
     throw StateError('Could not generate a unique room code.');
   }
 
+  Future<Room?> configurePartyItems({
+    required String roomId,
+    required List<String> availableItems,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'configure_party_room_items_v1',
+        params: {'p_room_id': roomId, 'p_available_items': availableItems},
+      );
+      return Room.fromJson(Map<String, dynamic>.from(response as Map));
+    } on PostgrestException catch (error) {
+      // Keep Party room creation compatible during an additive backend rollout.
+      // Item filtering becomes authoritative when the migration is installed.
+      if (error.code == 'PGRST202') return null;
+      rethrow;
+    }
+  }
+
+  Future<Room> configurePartyRoom({
+    required String roomId,
+    required List<String> availableItems,
+    required int challengesPerPlayer,
+  }) async {
+    try {
+      final response = await _client.rpc(
+        'configure_party_room_v2',
+        params: {
+          'p_room_id': roomId,
+          'p_available_items': availableItems,
+          'p_challenges_per_player': challengesPerPlayer,
+        },
+      );
+      return Room.fromJson(Map<String, dynamic>.from(response as Map));
+    } on PostgrestException catch (error) {
+      if (error.code == 'PGRST202' &&
+          challengesPerPlayer ==
+              GameConstants.partyDefaultChallengesPerPlayer) {
+        final legacyRoom = await configurePartyItems(
+          roomId: roomId,
+          availableItems: availableItems,
+        );
+        if (legacyRoom != null) return legacyRoom;
+      }
+      if (error.code == 'PGRST202') {
+        throw StateError(
+          'Party setup is waiting for its server update. '
+          'Run the latest Supabase migration and try again.',
+        );
+      }
+      rethrow;
+    }
+  }
+
   /// Find a room by its code
   Future<Room?> findRoomByCode(String code) async {
     final response = await _client.rpc(

@@ -60,7 +60,130 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('host can finish an attempt before the timer expires', (
+  testWidgets('stage panel fits a compact phone viewport', (tester) async {
+    final host = _player(id: 'host', isHost: true);
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(phase: PartyRoundPhase.resultEntry),
+      player: host,
+      surfaceSize: const Size(340, 667),
+      stageTop: 220,
+    );
+
+    expect(find.text('RECORD THE RESULT'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('party-result-key-submit')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('host can end a Count early when the set is over', (
+    tester,
+  ) async {
+    final host = _player(id: 'host', isHost: true);
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(phase: PartyRoundPhase.action),
+      player: host,
+      secondsRemaining: 43,
+    );
+
+    expect(find.text('END & RECORD'), findsOneWidget);
+    expect(find.text('00:43'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('live stage keeps the current player bet visible', (
+    tester,
+  ) async {
+    final spectator = _player(id: 'spectator');
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.action,
+        bets: const [
+          PartyBetSnapshot(
+            id: 'bet',
+            slotIndex: 2,
+            chips: 50,
+            playerId: 'spectator',
+          ),
+        ],
+      ),
+      player: spectator,
+      secondsRemaining: 43,
+    );
+
+    expect(find.text('YOUR BET - 20-30 - 50 CHIPS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'count result uses an embedded numpad without opening a keyboard',
+    (tester) async {
+      int? submittedResult;
+      final host = _player(id: 'host', isHost: true);
+      await _pumpScene(
+        tester,
+        snapshot: _snapshot(phase: PartyRoundPhase.resultEntry),
+        player: host,
+        onSubmitResult: (result) async => submittedResult = result,
+      );
+
+      expect(find.byType(TextField), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('party-result-key-4')));
+      await tester.tap(find.byKey(const ValueKey('party-result-key-2')));
+      await tester.pump();
+      expect(find.text('42'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('party-result-key-submit')));
+      await tester.pump();
+      expect(submittedResult, 42);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('only the performer can submit an unlocked Choice', (
+    tester,
+  ) async {
+    int? submittedChoice;
+    final performer = _player(id: 'performer');
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.resultEntry,
+        challengeType: PartyChallengeType.choice,
+      ),
+      player: performer,
+      onSubmitChoice: (choice) async => submittedChoice = choice,
+    );
+
+    expect(find.text('Music'), findsOneWidget);
+    expect(find.text('Movies and TV'), findsOneWidget);
+    expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('party-choice-1')));
+    await tester.pump();
+    expect(submittedChoice, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('friends wait while the performer makes a Choice', (
+    tester,
+  ) async {
+    final spectator = _player(id: 'spectator');
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.resultEntry,
+        challengeType: PartyChallengeType.choice,
+      ),
+      player: spectator,
+    );
+
+    expect(find.text('ALEX IS CHOOSING'), findsOneWidget);
+    expect(find.byKey(const ValueKey('party-choice-0')), findsNothing);
+    expect(find.byKey(const ValueKey('party-choice-1')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('attempt stage uses five tries without a countdown', (
     tester,
   ) async {
     final host = _player(id: 'host', isHost: true);
@@ -74,8 +197,10 @@ void main() {
       secondsRemaining: 47,
     );
 
-    expect(find.text('RECORD ATTEMPT'), findsOneWidget);
-    expect(find.text('00:47'), findsOneWidget);
+    expect(find.text('RECORD RESULT'), findsOneWidget);
+    expect(find.text('UP TO'), findsOneWidget);
+    expect(find.text('5 TRIES'), findsOneWidget);
+    expect(find.text('00:47'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets('host can finish a quick binary dare before time expires', (
@@ -141,8 +266,12 @@ Future<void> _pumpScene(
   required PartySnapshot snapshot,
   required Player player,
   int secondsRemaining = 60,
+  Size surfaceSize = const Size(430, 760),
+  double stageTop = 235,
+  Future<void> Function(int)? onSubmitResult,
+  Future<void> Function(int)? onSubmitChoice,
 }) async {
-  tester.view.physicalSize = const Size(900, 700);
+  tester.view.physicalSize = surfaceSize;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -159,10 +288,11 @@ Future<void> _pumpScene(
             currentPlayer: player,
             secondsRemaining: secondsRemaining,
             commandInFlight: false,
-            stageTop: 235,
+            stageTop: stageTop,
             onStartAction: noAction,
             onOpenResultEntry: noAction,
-            onSubmitResult: noResult,
+            onSubmitResult: onSubmitResult ?? noResult,
+            onSubmitChoice: onSubmitChoice ?? noResult,
             onConfirmResult: noAction,
             onDisputeResult: noAction,
           ),
@@ -189,6 +319,7 @@ PartySnapshot _snapshot({
   bool performerReady = false,
   PartyChallengeType challengeType = PartyChallengeType.count,
   int durationSeconds = 60,
+  List<PartyBetSnapshot> bets = const [],
 }) {
   final now = DateTime.utc(2026);
   return PartySnapshot(
@@ -224,13 +355,14 @@ PartySnapshot _snapshot({
         id: 'challenge',
         text: switch (challengeType) {
           PartyChallengeType.binary => 'Can Alex land the shot?',
+          PartyChallengeType.choice => 'Which would Alex choose?',
           PartyChallengeType.attempt =>
             'On which attempt will Alex land the shot?',
           PartyChallengeType.count => 'How many push-ups can Alex do?',
         },
         rules: 'One clean attempt.',
         answerUnit: switch (challengeType) {
-          PartyChallengeType.binary => 'result',
+          PartyChallengeType.binary || PartyChallengeType.choice => 'choice',
           PartyChallengeType.attempt => 'attempt',
           PartyChallengeType.count => 'push-ups',
         },
@@ -240,13 +372,17 @@ PartySnapshot _snapshot({
             ? const [10, 20, 30, 40]
             : const [],
         type: challengeType,
+        optionA: challengeType == PartyChallengeType.choice ? 'Music' : null,
+        optionB: challengeType == PartyChallengeType.choice
+            ? 'Movies and TV'
+            : null,
         performerSuccessBonus: 3,
       ),
       submittedGuessCount: 0,
       performerReady: performerReady,
       ownGuess: null,
       guesses: const [],
-      bets: const [],
+      bets: bets,
       proposedResult: null,
       performerBonus: 0,
     ),

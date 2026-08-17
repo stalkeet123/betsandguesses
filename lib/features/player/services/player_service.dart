@@ -5,9 +5,12 @@ import '../models/player_model.dart';
 class PlayerService {
   final SupabaseClient _client;
 
-  static const _playerSelectColumns =
+  static const _legacyPlayerSelectColumns =
       'id, room_id, device_id, name, avatar_color, score, is_host, '
       'is_ready, is_connected, last_seen, joined_at';
+  static const _playerSelectColumns =
+      'id, room_id, device_id, name, avatar_color, score, bank_score, '
+      'is_host, is_ready, is_connected, last_seen, joined_at';
 
   PlayerService(this._client);
 
@@ -33,9 +36,19 @@ class PlayerService {
   }
 
   Future<List<Player>> getPlayers(String roomId) async {
+    try {
+      return await _getPlayers(roomId, _playerSelectColumns);
+    } on PostgrestException catch (error) {
+      // Lets the web client deploy before the additive bank_score migration.
+      if (!error.message.toLowerCase().contains('bank_score')) rethrow;
+      return _getPlayers(roomId, _legacyPlayerSelectColumns);
+    }
+  }
+
+  Future<List<Player>> _getPlayers(String roomId, String columns) async {
     final response = await _client
         .from('players')
-        .select(_playerSelectColumns)
+        .select(columns)
         .eq('room_id', roomId)
         .order('joined_at');
     return (response as List).map((e) => Player.fromJson(e)).toList();
@@ -81,11 +94,12 @@ class PlayerService {
     return output;
   }
 
-  Future<void> toggleReady(String playerId, bool isReady) async {
-    await _client.rpc(
+  Future<Player> toggleReady(String playerId, bool isReady) async {
+    final response = await _client.rpc(
       'set_player_ready_v2',
       params: {'p_player_id': playerId, 'p_is_ready': isReady},
     );
+    return Player.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
   Future<void> leaveRoom(String playerId) async {

@@ -72,7 +72,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
         : Future.value(const <PartyRecapRound>[]);
     final players = await playersFuture;
     players.sort((a, b) {
-      final scoreOrder = b.score.compareTo(a.score);
+      final scoreOrder = b.bankScore.compareTo(a.bankScore);
       if (scoreOrder != 0) return scoreOrder;
       final nameOrder = a.name.toLowerCase().compareTo(b.name.toLowerCase());
       if (nameOrder != 0) return nameOrder;
@@ -101,15 +101,15 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
   List<Player> get _winners {
     if (_sortedPlayers.isEmpty) return const [];
-    final winningScore = _sortedPlayers.first.score;
+    final winningScore = _sortedPlayers.first.bankScore;
     return _sortedPlayers
-        .where((player) => player.score == winningScore)
+        .where((player) => player.bankScore == winningScore)
         .toList(growable: false);
   }
 
   int _rankForIndex(int index) {
-    final score = _sortedPlayers[index].score;
-    return _sortedPlayers.indexWhere((player) => player.score == score) + 1;
+    final score = _sortedPlayers[index].bankScore;
+    return _sortedPlayers.indexWhere((player) => player.bankScore == score) + 1;
   }
 
   void _goHome() {
@@ -417,7 +417,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    _formatScore(winners.first.score),
+                    _formatScore(winners.first.bankScore),
                     maxLines: 1,
                     style: TextStyle(
                       fontFamily: 'RehnCondensed',
@@ -566,7 +566,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
               child: Text(
-                _formatScore(player.score),
+                _formatScore(player.bankScore),
                 maxLines: 1,
                 style: TextStyle(
                   color: isWinner ? AppColors.feltDark : AppColors.ivory,
@@ -862,7 +862,9 @@ class _PartyRecapSheetState extends State<_PartyRecapSheet> {
     try {
       final bytes = await _renderCard(_index);
       final recap = widget.rounds[_index];
-      final resultText = recap.challengeType == PartyChallengeType.binary
+      final resultText = recap.challengeType == PartyChallengeType.choice
+          ? 'chose ${recap.choiceLabel(recap.result) ?? 'an option'}'
+          : recap.challengeType == PartyChallengeType.binary
           ? (recap.result == 1
                 ? 'completed the challenge'
                 : 'missed the challenge')
@@ -1008,7 +1010,10 @@ class _PartyShareCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isBinary = recap.challengeType == PartyChallengeType.binary;
-    final headline = isBinary
+    final isChoice = recap.challengeType == PartyChallengeType.choice;
+    final headline = isChoice
+        ? (recap.choiceLabel(recap.result) ?? 'CHOICE').toUpperCase()
+        : isBinary
         ? (recap.result == 1 ? 'DID IT' : 'FAILED')
         : '${recap.result}\n${recap.answerUnit.toUpperCase()}';
     return ClipRRect(
@@ -1106,7 +1111,9 @@ class _PartyShareCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    isBinary
+                    isChoice
+                        ? '${recap.performerName.toUpperCase()} CHOSE'
+                        : isBinary
                         ? '${recap.durationSeconds}-SECOND CHALLENGE'
                         : 'IN ${recap.durationSeconds} SECONDS',
                     style: GoogleFonts.outfit(
@@ -1133,10 +1140,14 @@ class _PartyShareCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: _RecapStat(
-                          label: isBinary ? 'ROOM SAID YES' : 'ROOM LINE',
+                          label: isChoice
+                              ? 'ROOM GOT IT'
+                              : isBinary
+                              ? 'ROOM SAID YES'
+                              : 'ROOM LINE',
                           value: recap.crowdGuess == null
                               ? '—'
-                              : isBinary
+                              : isChoice || isBinary
                               ? '${recap.crowdGuess}%'
                               : '${recap.crowdGuess}',
                         ),
@@ -1145,7 +1156,9 @@ class _PartyShareCard extends StatelessWidget {
                       Expanded(
                         child: _RecapStat(
                           label: 'RESULT',
-                          value: isBinary
+                          value: isChoice
+                              ? (recap.result == 0 ? 'A' : 'B')
+                              : isBinary
                               ? (recap.result == 1 ? 'SUCCESS' : 'FAILED')
                               : '${recap.result}',
                         ),

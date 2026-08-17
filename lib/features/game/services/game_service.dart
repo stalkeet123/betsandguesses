@@ -412,6 +412,7 @@ class RoundSettlementResult {
   final String? winningGuessId;
   final int winningSlotIndex;
   final Map<String, int> scores;
+  final Map<String, int> legacyScores;
   final Map<String, int> payouts;
   final DateTime? phaseEndsAt;
 
@@ -422,6 +423,7 @@ class RoundSettlementResult {
     required this.winningGuessId,
     required this.winningSlotIndex,
     required this.scores,
+    required this.legacyScores,
     required this.payouts,
     required this.phaseEndsAt,
   });
@@ -433,7 +435,8 @@ class RoundSettlementResult {
       answer: (json['answer'] as num).toInt(),
       winningGuessId: json['winning_guess_id'] as String?,
       winningSlotIndex: (json['winning_slot_index'] as num?)?.toInt() ?? 0,
-      scores: _intMap(json['scores']),
+      scores: _intMap(json['bank_scores'] ?? json['scores']),
+      legacyScores: _intMap(json['scores']),
       payouts: _intMap(json['payouts']),
       phaseEndsAt: json['phase_ends_at'] == null
           ? null

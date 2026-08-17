@@ -20,8 +20,9 @@ enum PartyRoundPhase {
 
 enum PartyChallengeType {
   count,
-  binary,
-  attempt;
+  binary, // Legacy-only: disabled for newly selected rounds.
+  attempt,
+  choice;
 
   static PartyChallengeType fromString(String? value) {
     return PartyChallengeType.values.firstWhere(
@@ -32,12 +33,16 @@ enum PartyChallengeType {
 }
 
 enum PartyChallengeCategory {
+  personality,
+  attempt,
+  count,
   general,
   verbal,
   precision,
   physical,
   dare,
-  skill;
+  skill,
+  social;
 
   static PartyChallengeCategory fromString(String? value) {
     return PartyChallengeCategory.values.firstWhere(
@@ -92,6 +97,8 @@ class PartyChallenge {
   final PartyChallengeCategory category;
   final PartyResultDirection resultDirection;
   final List<String> requiredItems;
+  final String? optionA;
+  final String? optionB;
   final int performerSuccessBonus;
 
   const PartyChallenge({
@@ -106,14 +113,26 @@ class PartyChallenge {
     this.category = PartyChallengeCategory.general,
     this.resultDirection = PartyResultDirection.higher,
     this.requiredItems = const [],
+    this.optionA,
+    this.optionB,
     required this.performerSuccessBonus,
   });
 
   bool get isBinary => type == PartyChallengeType.binary;
   bool get isAttempt => type == PartyChallengeType.attempt;
+  bool get isChoice => type == PartyChallengeType.choice;
+  bool get usesTwoOptionBoard => isBinary || isChoice;
+
+  String? choiceLabel(int value) => switch (value) {
+    0 => optionA,
+    1 => optionB,
+    _ => null,
+  };
 
   int? betSlotForResult(int result) {
-    if (isBinary) return result == 0 || result == 1 ? result : null;
+    if (isBinary || isChoice) {
+      return result == 0 || result == 1 ? result : null;
+    }
     if (!isAttempt) return null;
     return switch (result) {
       0 => 4,
@@ -149,7 +168,8 @@ class PartyChallenge {
       resultDirection: PartyResultDirection.fromString(
         json['result_direction'] as String? ??
             switch (type) {
-              PartyChallengeType.binary => 'binary',
+              PartyChallengeType.binary ||
+              PartyChallengeType.choice => 'binary',
               PartyChallengeType.attempt => 'lower',
               PartyChallengeType.count => 'higher',
             },
@@ -157,6 +177,8 @@ class PartyChallenge {
       requiredItems: (json['required_items'] as List? ?? const [])
           .map((item) => item.toString())
           .toList(growable: false),
+      optionA: json['option_a'] as String?,
+      optionB: json['option_b'] as String?,
       performerSuccessBonus:
           (json['performer_success_bonus'] as num?)?.toInt() ?? 3,
     );

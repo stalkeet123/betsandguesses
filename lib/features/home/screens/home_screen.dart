@@ -33,7 +33,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _isLoading = false;
   String? _prefilledRoomCode;
   bool _showQrJoinGuide = false;
-  GameMode _selectedHomeMode = GameMode.classic;
+
+  static const _partyItemOptions = <_PartyItemOption>[
+    _PartyItemOption('phone', 'Phone', Icons.smartphone_rounded, ['phone']),
+    _PartyItemOption('chair', 'Chair', Icons.chair_rounded, ['chair']),
+    _PartyItemOption('paper', 'Paper', Icons.description_rounded, ['paper']),
+    _PartyItemOption('cup', 'Cup / mug', Icons.local_cafe_rounded, [
+      'cup',
+      'plastic cup',
+      'sturdy mug',
+    ]),
+    _PartyItemOption('bottle', 'Bottle + water', Icons.water_drop_rounded, [
+      'plastic bottle',
+      'water',
+    ]),
+    _PartyItemOption('coins', 'Coins', Icons.paid_rounded, [
+      'coin',
+      'three coins',
+    ]),
+    _PartyItemOption('pen', 'Pen', Icons.edit_rounded, ['pen']),
+    _PartyItemOption('spoon', 'Spoon', Icons.restaurant_rounded, ['spoon']),
+    _PartyItemOption('cards', 'Playing cards', Icons.style_rounded, [
+      'playing card',
+    ]),
+    _PartyItemOption('socks', 'Socks + basket', Icons.shopping_basket_rounded, [
+      'rolled-up socks',
+      'basket',
+    ]),
+    _PartyItemOption('bin', 'Trash can', Icons.delete_outline_rounded, [
+      'trash can',
+    ]),
+    _PartyItemOption('table', 'Table', Icons.table_restaurant_rounded, [
+      'table',
+    ]),
+    _PartyItemOption('room', 'Wall + clear floor', Icons.meeting_room_rounded, [
+      'wall',
+      'clear wall',
+      'clear floor',
+    ]),
+    _PartyItemOption('extras', 'Coaster / bottle cap', Icons.circle_outlined, [
+      'coaster',
+      'bottle cap',
+    ]),
+    _PartyItemOption('shoe', 'Shoe', Icons.ice_skating_rounded, ['shoe']),
+  ];
 
   @override
   void initState() {
@@ -130,9 +173,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     var selectedRounds = isPremium
         ? GameConstants.defaultRounds
         : GameConstants.freeMaxRounds;
+    var selectedPartyChallengesPerPlayer =
+        GameConstants.partyDefaultChallengesPerPlayer;
     var selectedMaxPlayers = GameConstants.freeMaxPlayers;
     var selectedCategory = GameConstants.defaultCategory;
-    var selectedMode = _selectedHomeMode;
+    var selectedMode = GameMode.classic;
+    final selectedPartyItemIds = <String>{};
     final setupThemeMode = ValueNotifier<GameMode>(selectedMode);
 
     _showHomeSheet(
@@ -144,8 +190,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               !isPremium &&
               (selectedMaxPlayers > GameConstants.freeMaxPlayers ||
                   (selectedMode == GameMode.classic &&
-                      (selectedRounds > GameConstants.freeMaxRounds ||
-                          selectedCategory != GameConstants.defaultCategory)));
+                      selectedRounds > GameConstants.freeMaxRounds) ||
+                  (selectedMode == GameMode.party &&
+                      selectedPartyChallengesPerPlayer >
+                          GameConstants.partyFreeMaxChallengesPerPlayer) ||
+                  (selectedMode == GameMode.classic &&
+                      selectedCategory != GameConstants.defaultCategory));
 
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -175,7 +225,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           mode: mode,
                           selected: selectedMode == mode,
                           onTap: () {
-                            setState(() => _selectedHomeMode = mode);
                             setModalState(() {
                               selectedMode = mode;
                               setupThemeMode.value = mode;
@@ -207,27 +256,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   },
                 ),
                 const SizedBox(height: 10),
+                _setupSlider(
+                  icon: Icons.groups_rounded,
+                  label: 'PLAYERS',
+                  value: selectedMaxPlayers,
+                  min: GameConstants.minPlayers,
+                  max: GameConstants.maxPlayers,
+                  valueText: selectedMaxPlayers == GameConstants.maxPlayers
+                      ? '${GameConstants.maxPlayers}+'
+                      : '$selectedMaxPlayers',
+                  premiumStart: GameConstants.freeMaxPlayers + 1,
+                  isPremiumLocked:
+                      !isPremium &&
+                      selectedMaxPlayers > GameConstants.freeMaxPlayers,
+                  partyTheme: false,
+                  onChanged: (value) {
+                    setModalState(() => selectedMaxPlayers = value);
+                  },
+                ),
+              ] else ...[
+                _setupSlider(
+                  icon: Icons.groups_rounded,
+                  label: 'PLAYERS',
+                  value: selectedMaxPlayers,
+                  min: 3,
+                  max: GameConstants.maxPlayers,
+                  valueText: selectedMaxPlayers == GameConstants.maxPlayers
+                      ? '${GameConstants.maxPlayers}+'
+                      : '$selectedMaxPlayers',
+                  premiumStart: GameConstants.freeMaxPlayers + 1,
+                  isPremiumLocked:
+                      !isPremium &&
+                      selectedMaxPlayers > GameConstants.freeMaxPlayers,
+                  partyTheme: true,
+                  onChanged: (value) {
+                    setModalState(() => selectedMaxPlayers = value);
+                  },
+                ),
+                const SizedBox(height: 10),
+                _setupSlider(
+                  icon: Icons.person_pin_circle_rounded,
+                  label: 'CHALLENGES PER PLAYER',
+                  value: selectedPartyChallengesPerPlayer,
+                  min: GameConstants.partyMinChallengesPerPlayer,
+                  max: GameConstants.partyMaxChallengesPerPlayer,
+                  premiumStart:
+                      GameConstants.partyFreeMaxChallengesPerPlayer + 1,
+                  isPremiumLocked:
+                      !isPremium &&
+                      selectedPartyChallengesPerPlayer >
+                          GameConstants.partyFreeMaxChallengesPerPlayer,
+                  partyTheme: true,
+                  onChanged: (value) {
+                    setModalState(
+                      () => selectedPartyChallengesPerPlayer = value,
+                    );
+                  },
+                ),
               ],
-              _setupSlider(
-                icon: Icons.groups_rounded,
-                label: 'PLAYERS',
-                value: selectedMaxPlayers,
-                min: selectedMode == GameMode.party
-                    ? 3
-                    : GameConstants.minPlayers,
-                max: GameConstants.maxPlayers,
-                valueText: selectedMaxPlayers == GameConstants.maxPlayers
-                    ? '${GameConstants.maxPlayers}+'
-                    : '$selectedMaxPlayers',
-                premiumStart: GameConstants.freeMaxPlayers + 1,
-                isPremiumLocked:
-                    !isPremium &&
-                    selectedMaxPlayers > GameConstants.freeMaxPlayers,
-                partyTheme: selectedMode == GameMode.party,
-                onChanged: (value) {
-                  setModalState(() => selectedMaxPlayers = value);
-                },
-              ),
               if (selectedMode == GameMode.classic) ...[
                 const SizedBox(height: 10),
                 FutureBuilder<List<String>>(
@@ -249,7 +335,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ] else ...[
                 const SizedBox(height: 10),
-                _partySetupNote(),
+                _partyItemsPicker(
+                  selectedIds: selectedPartyItemIds,
+                  onToggle: (id) {
+                    setModalState(() {
+                      if (!selectedPartyItemIds.add(id)) {
+                        selectedPartyItemIds.remove(id);
+                      }
+                    });
+                  },
+                ),
               ],
               const SizedBox(height: 14),
               SizedBox(
@@ -263,10 +358,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       return;
                     }
                     _createRoom(
-                      maxRounds: selectedRounds,
+                      maxRounds: selectedMode == GameMode.classic
+                          ? selectedRounds
+                          : GameConstants.defaultRounds,
                       maxPlayers: selectedMaxPlayers,
                       category: selectedCategory,
                       gameMode: selectedMode,
+                      partyChallengesPerPlayer:
+                          selectedPartyChallengesPerPlayer,
+                      partyAvailableItems: {
+                        ..._partyItemOptions
+                            .where(
+                              (option) =>
+                                  selectedPartyItemIds.contains(option.id),
+                            )
+                            .expand((option) => option.values),
+                      }.toList(growable: false),
                     );
                   },
                   icon: Icon(
@@ -310,6 +417,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required int maxPlayers,
     required String category,
     required GameMode gameMode,
+    int partyChallengesPerPlayer =
+        GameConstants.partyDefaultChallengesPerPlayer,
+    List<String> partyAvailableItems = const [],
   }) async {
     if (_isLoading) return;
 
@@ -333,7 +443,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
       final deviceId = ref.read(deviceIdProvider);
-      final room = await roomService.createRoom(
+      var room = await roomService.createRoom(
         'temp',
         maxRounds: maxRounds,
         maxPlayers: maxPlayers,
@@ -348,6 +458,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         avatarColor: _pickAvatarColor(),
         isHost: true,
       );
+
+      if (gameMode == GameMode.party) {
+        room = await roomService.configurePartyRoom(
+          roomId: room.id,
+          availableItems: partyAvailableItems,
+          challengesPerPlayer: partyChallengesPerPlayer,
+        );
+      }
 
       ref.read(currentPlayerProvider.notifier).set(player);
       ref
@@ -569,6 +687,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       builder: (context) {
         Widget buildSurface(GameMode mode) {
           final isParty = mode == GameMode.party;
+          final isSetup = title == 'SETUP';
+          final mediaQuery = MediaQuery.of(context);
+          final setupHeight = min(
+            780.0,
+            max(
+              0.0,
+              mediaQuery.size.height -
+                  mediaQuery.padding.vertical -
+                  mediaQuery.viewInsets.bottom -
+                  28,
+            ),
+          );
           final accent = isParty
               ? PartyPalette.orangeSoft
               : AppColors.brassLight;
@@ -581,9 +711,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 18 + MediaQuery.of(context).viewInsets.bottom,
               ),
               child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.97,
-                ),
+                constraints: isSetup
+                    ? BoxConstraints.tightFor(height: setupHeight)
+                    : BoxConstraints(
+                        maxHeight: MediaQuery.sizeOf(context).height * 0.97,
+                      ),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 260),
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
@@ -650,12 +782,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ],
                       ),
                       const SizedBox(height: 14),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          child: child,
+                      if (isSetup)
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              return ClipRect(
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.topCenter,
+                                    child: SizedBox(
+                                      width: constraints.maxWidth,
+                                      child: child,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            child: child,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -716,35 +869,95 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _partySetupNote() {
+  Widget _partyItemsPicker({
+    required Set<String> selectedIds,
+    required ValueChanged<String> onToggle,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
       decoration: BoxDecoration(
         color: PartyPalette.nightDeep.withValues(alpha: 0.58),
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: PartyPalette.orangeSoft.withValues(alpha: 0.32),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.timer_rounded,
-            color: PartyPalette.orangeSoft,
-            size: 22,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Everyone performs once. Every challenge lasts exactly 60 seconds.',
-              style: GoogleFonts.outfit(
-                color: PartyPalette.cream.withValues(alpha: 0.86),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                height: 1.25,
+          Row(
+            children: [
+              const Icon(
+                Icons.inventory_2_outlined,
+                color: PartyPalette.orangeSoft,
+                size: 22,
               ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'WHAT DO YOU HAVE NEARBY?',
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.cream,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.7,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            selectedIds.isEmpty
+                ? 'No problem. You will only get challenges that need no special props.'
+                : 'We will only use these items. Pick everything within easy reach.',
+            style: GoogleFonts.outfit(
+              color: PartyPalette.creamMuted.withValues(alpha: 0.82),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: 1.25,
             ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final option in _partyItemOptions)
+                FilterChip(
+                  selected: selectedIds.contains(option.id),
+                  onSelected: (_) => onToggle(option.id),
+                  avatar: Icon(
+                    option.icon,
+                    size: 17,
+                    color: selectedIds.contains(option.id)
+                        ? PartyPalette.nightDeep
+                        : PartyPalette.orangeSoft,
+                  ),
+                  label: Text(option.label),
+                  labelStyle: GoogleFonts.outfit(
+                    color: selectedIds.contains(option.id)
+                        ? PartyPalette.nightDeep
+                        : PartyPalette.cream,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  showCheckmark: false,
+                  selectedColor: PartyPalette.orangeSoft,
+                  backgroundColor: PartyPalette.surface.withValues(alpha: 0.56),
+                  side: BorderSide(
+                    color: selectedIds.contains(option.id)
+                        ? PartyPalette.orangeSoft
+                        : PartyPalette.creamMuted.withValues(alpha: 0.22),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 5,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
           ),
         ],
       ),
@@ -810,15 +1023,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 size: 24,
               ),
               const SizedBox(width: 10),
-              Text(
-                label,
-                style: _homeTextStyle(
-                  color: AppColors.ivory,
-                  size: 22,
-                  letterSpacing: 1,
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: _homeTextStyle(
+                      color: AppColors.ivory,
+                      size: 22,
+                      letterSpacing: 1,
+                    ),
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               if (trailing != null) trailing,
               if (premiumRange != null) ...[
                 _premiumBadge('$premiumRange+'),
@@ -1145,24 +1365,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ),
           Positioned.fill(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic,
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   center: Alignment.topCenter,
                   radius: 1.18,
-                  colors: _selectedHomeMode == GameMode.party
-                      ? [
-                          PartyPalette.orange.withValues(alpha: 0.18),
-                          PartyPalette.night.withValues(alpha: 0.24),
-                          Colors.black.withValues(alpha: 0.44),
-                        ]
-                      : [
-                          const Color(0xFF17844E).withValues(alpha: 0.28),
-                          const Color(0xFF052719).withValues(alpha: 0.1),
-                          Colors.black.withValues(alpha: 0.36),
-                        ],
+                  colors: [
+                    const Color(0xFF17844E).withValues(alpha: 0.28),
+                    const Color(0xFF052719).withValues(alpha: 0.1),
+                    Colors.black.withValues(alpha: 0.36),
+                  ],
                 ),
               ),
             ),
@@ -1193,22 +1405,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 const SizedBox(height: 10),
                               ],
                               _buildNamePanel(),
-                              if (!kIsWeb) ...[
-                                const SizedBox(height: 10),
-                                _dimIfGuide(child: _buildHomeModePicker()),
-                              ],
                               const SizedBox(height: 10),
                               if (!kIsWeb) ...[
                                 _dimIfGuide(
                                   child: _buildHeroActionButton(
-                                    label: _selectedHomeMode == GameMode.party
-                                        ? 'CREATE PARTY LOBBY'
-                                        : 'CREATE LOBBY',
-                                    icon: _selectedHomeMode == GameMode.party
-                                        ? Icons.celebration_rounded
-                                        : Icons.groups_rounded,
-                                    partyTheme:
-                                        _selectedHomeMode == GameMode.party,
+                                    label: 'CREATE LOBBY',
+                                    icon: Icons.groups_rounded,
                                     isLoading: _isLoading,
                                     onPressed: _isLoading
                                         ? null
@@ -1322,58 +1524,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _buildSubtitleWithLines() {
-    final isParty = _selectedHomeMode == GameMode.party;
-    final accent = isParty ? PartyPalette.orangeSoft : AppColors.brassLight;
     return Row(
       children: [
-        Expanded(child: _goldRule(color: accent)),
+        Expanded(child: _goldRule()),
         const SizedBox(width: 16),
         Text(
-          isParty ? 'LIVE CHALLENGES & BETTING' : 'PARTY QUIZ & BETTING GAME',
-          style: _homeTextStyle(color: accent, size: 17, letterSpacing: 2.2),
+          'PARTY QUIZ & BETTING GAME',
+          style: _homeTextStyle(
+            color: AppColors.brassLight,
+            size: 17,
+            letterSpacing: 2.2,
+          ),
         ),
         const SizedBox(width: 16),
-        Expanded(child: _goldRule(color: accent)),
+        Expanded(child: _goldRule()),
       ],
-    );
-  }
-
-  Widget _buildHomeModePicker() {
-    final isParty = _selectedHomeMode == GameMode.party;
-    final accent = isParty ? PartyPalette.orangeSoft : AppColors.brassLight;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 260),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: (isParty ? PartyPalette.nightDeep : AppColors.ink).withValues(
-          alpha: 0.76,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accent.withValues(alpha: 0.54)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.24),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          for (final mode in GameMode.values)
-            Expanded(
-              child: _modeSetupButton(
-                mode: mode,
-                selected: _selectedHomeMode == mode,
-                onTap: () {
-                  if (_selectedHomeMode == mode) return;
-                  ref.read(audioServiceProvider).playClick();
-                  setState(() => _selectedHomeMode = mode);
-                },
-              ),
-            ),
-        ],
-      ),
     );
   }
 
@@ -1545,32 +1710,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required String label,
     required IconData icon,
     required VoidCallback? onPressed,
-    bool partyTheme = false,
     bool isLoading = false,
   }) {
     return SizedBox(
       height: 76,
       child: DecoratedBox(
-        decoration: partyTheme
-            ? BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [PartyPalette.orangeSoft, PartyPalette.orange],
-                ),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: PartyPalette.cream.withValues(alpha: 0.72),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: PartyPalette.orange.withValues(alpha: 0.34),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              )
-            : _goldButtonDecoration(radius: 22),
+        decoration: _goldButtonDecoration(radius: 22),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -1984,12 +2129,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _goldRule({Color color = AppColors.brassLight}) {
+  Widget _goldRule() {
     return Container(
       height: 1.5,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Colors.transparent, color.withValues(alpha: 0.75)],
+          colors: [
+            Colors.transparent,
+            AppColors.brassLight.withValues(alpha: 0.75),
+          ],
         ),
       ),
     );
@@ -2080,4 +2228,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           : null,
     );
   }
+}
+
+class _PartyItemOption {
+  final String id;
+  final String label;
+  final IconData icon;
+  final List<String> values;
+
+  const _PartyItemOption(this.id, this.label, this.icon, this.values);
 }

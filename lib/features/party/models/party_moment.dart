@@ -38,6 +38,8 @@ class PartyRecapRound {
   final int performerBonus;
   final PartyChallengeType challengeType;
   final int durationSeconds;
+  final String? optionA;
+  final String? optionB;
 
   const PartyRecapRound({
     required this.roundNumber,
@@ -53,8 +55,15 @@ class PartyRecapRound {
     required this.performerBonus,
     required this.challengeType,
     required this.durationSeconds,
+    this.optionA,
+    this.optionB,
   });
 
+  String? choiceLabel(int value) => switch (value) {
+    0 => optionA,
+    1 => optionB,
+    _ => null,
+  };
   factory PartyRecapRound.fromJson(Map<String, dynamic> json) {
     return PartyRecapRound(
       roundNumber: (json['round_number'] as num).toInt(),
@@ -72,6 +81,8 @@ class PartyRecapRound {
         json['challenge_type'] as String?,
       ),
       durationSeconds: (json['duration_seconds'] as num?)?.toInt() ?? 60,
+      optionA: json['option_a'] as String?,
+      optionB: json['option_b'] as String?,
     );
   }
 }

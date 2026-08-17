@@ -31,19 +31,15 @@ class LobbyScreen extends ConsumerStatefulWidget {
 
 class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   List<Player> _players = [];
-  Set<String> _presentDeviceIds = {};
-  bool _hasPresenceSync = false;
+  int _playerStreamRevision = 0;
+  int _latestPlayerLoadId = 0;
+  Timer? _playerRefreshDebounce;
   bool _isStarting = false;
   bool _isReadyLoading = false;
   bool _isNavigatingToGame = false;
 
-  List<Player> get _activePlayers {
-    final connected = _players.where((player) => player.isConnected);
-    if (!_hasPresenceSync) return connected.toList();
-    return connected
-        .where((player) => _presentDeviceIds.contains(player.deviceId))
-        .toList();
-  }
+  List<Player> get _activePlayers =>
+      _players.where((player) => player.isConnected).toList(growable: false);
 
   bool _samePlayerList(List<Player> a, List<Player> b) {
     if (identical(a, b)) return true;
@@ -56,6 +52,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           left.name != right.name ||
           left.avatarColor != right.avatarColor ||
           left.score != right.score ||
+          left.bankScore != right.bankScore ||
           left.isHost != right.isHost ||
           left.isReady != right.isReady ||
           left.isConnected != right.isConnected) {
@@ -70,15 +67,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     setState(() => _players = players);
   }
 
-  bool _sameStringSet(Set<String> a, Set<String> b) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    for (final value in a) {
-      if (!b.contains(value)) return false;
-    }
-    return true;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -90,6 +78,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       unawaited(audio.prepareGameAudio());
       ref.read(gameServiceProvider).prefetchQuestions();
     });
+  }
+
+  @override
+  void dispose() {
+    _playerRefreshDebounce?.cancel();
+    super.dispose();
+  }
+
+  void _schedulePlayerRefresh() {
+    _playerRefreshDebounce?.cancel();
+    _playerRefreshDebounce = Timer(
+      const Duration(milliseconds: 180),
+      () => unawaited(_loadPlayers()),
+    );
   }
 
   void _setupRealtimeListener() {
@@ -114,7 +116,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             },
             onGameEnded: (_) {},
             onPlayerJoined: (_) {
-              // Player list updates come via playersStreamProvider.
+              _schedulePlayerRefresh();
             },
             onPlayerLeft: (payload) {
               final kickedPlayerId = payload['player_id'] as String?;
@@ -136,8 +138,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   );
                 }
               }
-              // The leaving player handles their own DB cleanup.
-              // The host's player list refreshes via playersStreamProvider.
+              // The database stream is authoritative; this refresh also
+              // covers a delayed or temporarily disconnected stream.
+              _schedulePlayerRefresh();
             },
             presencePayload: currentPlayer == null
                 ? null
@@ -146,18 +149,21 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                     'player_id': currentPlayer.id,
                     'name': currentPlayer.name,
                   },
-            onPresenceChanged: (deviceIds) {
-              if (!mounted) return;
-              if (_hasPresenceSync &&
-                  _sameStringSet(_presentDeviceIds, deviceIds)) {
-                return;
-              }
-              setState(() {
-                _hasPresenceSync = true;
-                _presentDeviceIds = Set<String>.of(deviceIds);
-              });
+            onPresenceChanged: (_) {
+              // Presence may briefly be partial while clients subscribe or
+              // reconnect. It is only a refresh hint; database player rows are
+              // the stable source for what the lobby renders.
+              _schedulePlayerRefresh();
             },
           )
+          .then((_) async {
+            final player = ref.read(currentPlayerProvider);
+            if (player == null) return;
+            return realtimeService.broadcast(widget.roomCode, 'player_joined', {
+              'player_id': player.id,
+              'device_id': player.deviceId,
+            });
+          })
           .catchError((Object error, StackTrace stackTrace) {
             debugPrint(
               'Lobby realtime subscription failed: $error\n$stackTrace',
@@ -170,13 +176,63 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
 
+    final loadId = ++_latestPlayerLoadId;
+    final streamRevisionAtStart = _playerStreamRevision;
     final playerService = ref.read(playerServiceProvider);
-    final players = await playerService.getPlayers(room.id);
-    if (mounted) {
+    try {
+      final players = await playerService.getPlayers(room.id);
+      if (!mounted ||
+          loadId != _latestPlayerLoadId ||
+          streamRevisionAtStart != _playerStreamRevision) {
+        return;
+      }
       _setPlayersIfChanged(
-        playerService.collapseDuplicateConnectedPlayers(players),
+        _anchorCurrentPlayer(
+          playerService.collapseDuplicateConnectedPlayers(players),
+        ),
       );
+    } catch (error, stackTrace) {
+      debugPrint('Lobby player refresh failed: $error\n$stackTrace');
     }
+  }
+
+  List<Player> _anchorCurrentPlayer(List<Player> players) {
+    final current = ref.read(currentPlayerProvider);
+    if (current == null || !current.isConnected) return players;
+    if (players.any(
+      (player) =>
+          player.id == current.id || player.deviceId == current.deviceId,
+    )) {
+      return players;
+    }
+    return [...players, current]
+      ..sort((left, right) => left.joinedAt.compareTo(right.joinedAt));
+  }
+
+  void _applyPlayerStreamSnapshot(List<Map<String, dynamic>> data) {
+    if (!mounted) return;
+    _playerStreamRevision++;
+    final playerService = ref.read(playerServiceProvider);
+    final players = _anchorCurrentPlayer(
+      playerService.collapseDuplicateConnectedPlayers(
+        data.map(Player.fromJson).toList(growable: false),
+      ),
+    );
+    _syncCurrentPlayer(players);
+    _setPlayersIfChanged(players);
+  }
+
+  void _syncCurrentPlayer(List<Player> players) {
+    final current = ref.read(currentPlayerProvider);
+    if (current == null) return;
+    final index = players.indexWhere(
+      (player) =>
+          player.id == current.id || player.deviceId == current.deviceId,
+    );
+    if (index == -1) return;
+    final authoritative = players[index];
+    if (_samePlayerList([current], [authoritative])) return;
+    ref.read(currentPlayerProvider.notifier).set(authoritative);
   }
 
   void _enterStartedRoom(Room startedRoom) {
@@ -205,18 +261,33 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     setState(() => _isReadyLoading = true);
     try {
       final playerService = ref.read(playerServiceProvider);
-      await playerService.toggleReady(player.id, !player.isReady);
-      ref
-          .read(currentPlayerProvider.notifier)
-          .set(player.copyWith(isReady: !player.isReady));
+      final updatedPlayer = await playerService.toggleReady(
+        player.id,
+        !player.isReady,
+      );
+      ref.read(currentPlayerProvider.notifier).set(updatedPlayer);
       await _loadPlayers();
     } finally {
       if (mounted) setState(() => _isReadyLoading = false);
     }
   }
 
+  Future<void> _openPaywall() async {
+    await context.pushNamed('premium');
+    if (mounted) {
+      ref.invalidate(premiumStatusProvider);
+    }
+  }
+
   Future<void> _startGame() async {
     if (_isStarting) return;
+
+    final isPremium = ref.read(premiumStatusProvider).value ?? false;
+    if (!isPremium && _activePlayers.length > GameConstants.freeMaxPlayers) {
+      await _openPaywall();
+      return;
+    }
+
     setState(() => _isStarting = true);
 
     try {
@@ -259,7 +330,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         durationSeconds: GameConstants.guessTimerSeconds,
       );
       final question = secureStart.question;
-      final startingScores = secureStart.scores;
+      final legacyStartingScores = secureStart.scores;
       final startedRoom = secureStart.room;
       final deadline = startedRoom.phaseEndsAt;
       final playerService = ref.read(playerServiceProvider);
@@ -269,15 +340,18 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       _players = lobbyPlayers
           .map(
             (player) => player.copyWith(
-              score: startingScores[player.id] ?? player.score,
+              score: legacyStartingScores[player.id] ?? player.score,
             ),
           )
           .toList();
+      final startingBankScores = <String, int>{
+        for (final player in _players) player.id: player.bankScore,
+      };
       _seedGameState(
         startedRoom,
         question,
         phase: startedRoom.roundPhase,
-        scores: startingScores,
+        scores: startingBankScores,
       );
       ref.read(currentRoomProvider.notifier).set(startedRoom);
 
@@ -289,7 +363,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               'round': 1,
               'phase': startedRoom.roundPhase.name,
               'question': question.toJson(),
-              'scores': startingScores,
+              'scores': legacyStartingScores,
+              'bank_scores': startingBankScores,
               'phase_ends_at': deadline?.toIso8601String(),
             })
             .catchError((Object error, StackTrace stackTrace) {
@@ -321,7 +396,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
     final question = Question.fromJson(questionData);
     final round = payload['round'] as int? ?? 1;
-    final scores = _scoresFromPayload(payload['scores']);
+    final scores = _scoresFromPayload(
+      payload['bank_scores'] ?? payload['scores'],
+    );
     final phase = RoundPhase.fromString(
       payload['phase'] as String? ?? RoundPhase.guessing.name,
     );
@@ -362,7 +439,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           currentQuestion: question,
           scores:
               scores ??
-              {for (final player in _players) player.id: player.score},
+              {for (final player in _players) player.id: player.bankScore},
         );
   }
 
@@ -387,18 +464,25 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   String get _inviteLink {
-    if (kIsWeb) {
-      final uri = Uri.base;
-      final origin =
-          '${uri.scheme}://${uri.host}${uri.port != 80 && uri.port != 443 && uri.port != 0 ? ":${uri.port}" : ""}';
-      return '$origin/#/?room=${widget.roomCode}';
-    }
-
-    const webAppUrl = String.fromEnvironment(
+    const defaultWebUrl = String.fromEnvironment(
       'WEB_APP_URL',
       defaultValue: 'https://bets-and-guesses.com',
     );
-    return '$webAppUrl/#/?room=${widget.roomCode}';
+
+    if (kIsWeb) {
+      final uri = Uri.base;
+      final isLocalhost = uri.host == 'localhost' ||
+          uri.host == '127.0.0.1' ||
+          uri.host == '0.0.0.0' ||
+          uri.host.isEmpty;
+      if (!isLocalhost) {
+        final origin =
+            '${uri.scheme}://${uri.host}${uri.port != 80 && uri.port != 443 && uri.port != 0 ? ":${uri.port}" : ""}';
+        return '$origin/#/?room=${widget.roomCode}';
+      }
+    }
+
+    return '$defaultWebUrl/#/?room=${widget.roomCode}';
   }
 
   Future<void> _copyText(String text, String message) async {
@@ -443,16 +527,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
     if (room != null) {
       ref.listen(playersStreamProvider(room.id), (prev, next) {
-        next.whenData((data) {
-          if (mounted) {
-            final playerService = ref.read(playerServiceProvider);
-            _setPlayersIfChanged(
-              playerService.collapseDuplicateConnectedPlayers(
-                data.map((e) => Player.fromJson(e)).toList(),
-              ),
-            );
-          }
-        });
+        next.whenData(_applyPlayerStreamSnapshot);
+        if (next.hasError && prev?.hasError != true) {
+          _schedulePlayerRefresh();
+        }
       });
       ref.listen(roomStreamProvider(room.id), (prev, next) {
         next.whenData((data) {
@@ -834,8 +912,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                       thickness: 1,
                       color: AppColors.brassLight.withValues(alpha: 0.12),
                     ),
-                    itemBuilder: (context, index) =>
-                        _buildPlayerRow(players[index]),
+                    itemBuilder: (context, index) => KeyedSubtree(
+                      key: ValueKey(players[index].id),
+                      child: _buildPlayerRow(players[index]),
+                    ),
                   ),
           ),
         ],
@@ -940,16 +1020,22 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Widget _buildActionsPanel(bool isHost, Player? currentPlayer) {
+    final isPremium = ref.watch(premiumStatusProvider).value ?? false;
+    final exceedsLimit =
+        !isPremium && _activePlayers.length > GameConstants.freeMaxPlayers;
+
     final isPlayerReady =
         currentPlayer?.isReady == true || currentPlayer?.isHost == true;
     final primaryEnabled = isHost
-        ? (_canStart && !_isStarting)
+        ? (exceedsLimit ? !_isStarting : (_canStart && !_isStarting))
         : currentPlayer != null;
     final primaryLabel = isHost
-        ? 'START GAME'
+        ? (exceedsLimit ? 'UPGRADE TO PLAY' : 'START GAME')
         : (isPlayerReady ? 'READY' : 'MARK READY');
     final primaryIcon = isHost
-        ? Icons.workspace_premium_rounded
+        ? (exceedsLimit
+            ? Icons.workspace_premium_rounded
+            : Icons.play_arrow_rounded)
         : (isPlayerReady ? Icons.check_rounded : Icons.circle_outlined);
 
     return Container(
@@ -957,6 +1043,42 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       decoration: _darkGoldDecoration(radius: 16),
       child: Column(
         children: [
+          if (isHost && exceedsLimit) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.28),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.brassLight.withValues(alpha: 0.5),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    color: AppColors.brassLight,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'Free limit: ${GameConstants.freeMaxPlayers} players (${_activePlayers.length} in lobby)',
+                      style: const TextStyle(
+                        color: AppColors.brassLight,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           SizedBox(
             width: double.infinity,
             height: 56,
@@ -964,7 +1086,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               onPressed: primaryEnabled
                   ? () {
                       if (isHost) {
-                        _startGame();
+                        if (exceedsLimit) {
+                          _openPaywall();
+                        } else {
+                          _startGame();
+                        }
                       } else {
                         _toggleReady();
                       }
@@ -986,7 +1112,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryEnabled
-                    ? AppColors.brass
+                    ? (exceedsLimit
+                        ? AppColors.brassLight
+                        : AppColors.brass)
                     : AppColors.surfaceLight,
                 foregroundColor: primaryEnabled
                     ? AppColors.ink

@@ -12,8 +12,18 @@ class GameConstants {
   static const int maxRounds = 12;
   static const String defaultCategory = 'Mixed';
 
+  static const int partyDefaultChallengesPerPlayer = 1;
+  static const int partyMinChallengesPerPlayer = 1;
+  static const int partyFreeMaxChallengesPerPlayer = 2;
+  static const int partyMaxChallengesPerPlayer = 4;
+
   static const int freeChipsPerRound = 2;
   static const int startingScore = 15;
+
+  /// The bank is the competitive score and may be negative. The betting limit
+  /// stays at least 15 so a losing player is never removed from the game.
+  static int bettingLimitForBank(int bank) =>
+      bank < startingScore ? startingScore : bank;
 
   // Visual slot layout: [Smaller] [Low range] [Sweet spot] [High range] [Larger]
   static const List<int> boardOdds = [4, 3, 2, 3, 4];
@@ -22,7 +32,7 @@ class GameConstants {
 
   static const int guessTimerSeconds = 30;
   static const int betTimerSeconds = 45;
-  static const int partyBetTimerSeconds = 20;
+  static const int partyBetTimerSeconds = 30;
   static const int roundResultsSeconds = 7;
   static const int partyRoundResultsSeconds = 10;
   static const int roundTransitionSeconds = 1;

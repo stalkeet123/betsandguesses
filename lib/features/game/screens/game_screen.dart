@@ -220,7 +220,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final scores = <String, int>{};
     for (final player in _players) {
-      scores[player.id] = player.score;
+      scores[player.id] = player.bankScore;
     }
 
     final seededState = ref.read(gameStateProvider);
@@ -409,7 +409,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         onScoreUpdate: (payload) {
           if (!_canUseRef) return;
           if (!_payloadMatchesCurrentRound(payload)) return;
-          final scoresData = payload['scores'] as Map<String, dynamic>?;
+          final scoresData =
+              (payload['bank_scores'] ?? payload['scores'])
+                  as Map<String, dynamic>?;
           if (scoresData != null) {
             final scores = scoresData.map((k, v) => MapEntry(k, v as int));
             ref.read(gameStateProvider.notifier).setScores(scores);
@@ -443,7 +445,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
             payload['phase'] as String? ?? RoundPhase.guessing.name,
           );
           final question = Question.fromJson(questionData);
-          final scores = _scoresFromPayload(payload['scores']);
+          final scores = _scoresFromPayload(
+            payload['bank_scores'] ?? payload['scores'],
+          );
           final deadline = _deadlineFromPayload(payload);
           final gameNotifier = ref.read(gameStateProvider.notifier);
           gameNotifier.startGame(
@@ -769,7 +773,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _players = await playerService.getPlayers(room.id);
       final currentPlayer = _restoreCurrentPlayer(room.id);
       final scores = <String, int>{
-        for (final player in _players) player.id: player.score,
+        for (final player in _players) player.id: player.bankScore,
       };
       final phase = room.roundPhase;
       final round = room.currentRound;
@@ -1097,7 +1101,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           roomId: snapshot.room.id,
           roomCode: snapshot.room.code,
           currentRound: round.number,
-          maxRounds: snapshot.turnCount,
+          maxRounds: snapshot.room.maxRounds,
           phase: round.phase.gamePhase,
           currentQuestion: question,
           guesses: guesses,
@@ -1135,10 +1139,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
         );
         break;
       case PartyRoundPhase.action:
-        _startTimer(
-          round.challenge.durationSeconds,
-          deadline: round.phaseEndsAt,
-        );
+        if (round.challenge.isAttempt) {
+          _stopTimer();
+          _timerSeconds = 0;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_canUseRef) {
+              ref.read(gameTimerProvider.notifier).setTimer(0);
+            }
+          });
+        } else {
+          _startTimer(
+            round.challenge.durationSeconds,
+            deadline: round.phaseEndsAt,
+          );
+        }
         break;
       case PartyRoundPhase.reveal:
         _stopTimer();
@@ -1513,8 +1527,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     if (room.gameMode == GameMode.party) {
       _stopTimer();
+      final challenge = _partySnapshot?.round.challenge;
       await _runPartyCommand(
-        () => ref.read(partyGameServiceProvider).beginReady(room.id),
+        () => challenge?.isChoice == true
+            ? ref.read(partyGameServiceProvider).beginChoice(room.id)
+            : ref.read(partyGameServiceProvider).beginReady(room.id),
       );
       return;
     }
@@ -1569,7 +1586,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     });
     await realtimeService.broadcast(widget.roomCode, 'score_update', {
       'round': gameState.currentRound,
-      'scores': newScores,
+      'scores': settlement.legacyScores,
+      'bank_scores': newScores,
     });
     await realtimeService.broadcast(widget.roomCode, 'phase_change', {
       'phase': RoundPhase.revealAnswer.name,
@@ -1621,7 +1639,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         .map((entry) => entry.key)
         .toSet();
     final winningSlotIndex = _winningBetSlotIndex(gameState);
-    final scanOrder = _partySnapshot?.round.challenge.isBinary == true
+    final scanOrder = _partySnapshot?.round.challenge.usesTwoOptionBoard == true
         ? [0, 1, 0, 1, if (winningSlotIndex != null) winningSlotIndex]
         : [
             4,
@@ -1765,6 +1783,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
     final player = ref.read(currentPlayerProvider);
     return player != null && _partySnapshot?.round.performer.id != player.id;
+  }
+
+  bool _canCurrentPerformerChoose(GameState gameState) {
+    if (gameState.phase != RoundPhase.betting) return false;
+    final snapshot = _partySnapshot;
+    final player = ref.read(currentPlayerProvider);
+    return snapshot?.round.challenge.isChoice == true &&
+        player != null &&
+        snapshot!.round.performer.id == player.id;
   }
 
   void _lockBettingWindow() {
@@ -2058,8 +2085,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     final totalBets = _currentPlayerTotalBets(gameState);
-    final currentScore = gameState.scores[player.id] ?? player.score;
-    if (totalBets + chips > currentScore) {
+    final currentBank = gameState.scores[player.id] ?? player.bankScore;
+    final bettingLimit = GameConstants.bettingLimitForBank(currentBank);
+    if (totalBets + chips > bettingLimit) {
       setState(() => _selectedChipValue = null);
       ref.read(audioServiceProvider).playClick(); // error sound fallback
       return;
@@ -2092,7 +2120,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       chips: chips,
       payoutMultiplier:
           room.gameMode == GameMode.party &&
-              _partySnapshot?.round.challenge.isBinary == true
+              _partySnapshot?.round.challenge.usesTwoOptionBoard == true
           ? 2
           : GameConstants.boardOdds[slotIndex],
       playerName: player.name,
@@ -2211,7 +2239,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       slotIndex: targetSlotIndex,
       payoutMultiplier:
           room.gameMode == GameMode.party &&
-              _partySnapshot?.round.challenge.isBinary == true
+              _partySnapshot?.round.challenge.usesTwoOptionBoard == true
           ? 2
           : GameConstants.boardOdds[targetSlotIndex],
       positionX: safeDx,
@@ -2400,7 +2428,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final player = _playerById(playerId);
       return _LeaderboardEntry(
         name: player?.name ?? 'Player',
-        score: gameState.scores[playerId] ?? player?.score ?? 0,
+        score: gameState.scores[playerId] ?? player?.bankScore ?? 0,
       );
     }).toList();
 
@@ -2609,12 +2637,65 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
+  String _partyQuestionHeading({
+    required PartyRoundSnapshot? round,
+    required bool isPerformer,
+  }) {
+    if (round == null) return 'PARTY CHALLENGE';
+    if (!isPerformer) return '${round.performer.name.toUpperCase()} IS UP';
+    if (round.challenge.isChoice &&
+        round.phase == PartyRoundPhase.resultEntry) {
+      return 'MAKE YOUR CHOICE';
+    }
+    if (round.challenge.isChoice) return 'THIS ONE IS ABOUT YOU';
+    if (round.phase == PartyRoundPhase.action) return 'YOU’RE LIVE';
+    return 'YOU’RE UP';
+  }
+
+  String _partyQuestionForViewer({
+    required String text,
+    required PartyRoundSnapshot? round,
+    required bool isPerformer,
+  }) {
+    if (!isPerformer || round == null) return text;
+    final performerName = round.performer.name.trim();
+    if (performerName.isEmpty) return text;
+
+    final escapedName = RegExp.escape(performerName);
+    final possessive = RegExp(
+      "$escapedName(?:'s|’s)",
+      caseSensitive: false,
+    );
+    final subject = RegExp('\\b$escapedName\\b', caseSensitive: false);
+    return text
+        .replaceAll(possessive, 'your')
+        .replaceAll(subject, 'you');
+  }
+
   Widget _buildPartyQuestionCard(GameState gameState) {
     final round = _partySnapshot?.round;
+    final currentPlayer = ref.read(currentPlayerProvider);
+    final isPerformer =
+        round != null && currentPlayer?.id == round.performer.id;
+    final isChoiceFocus = isPerformer && round!.challenge.isChoice;
+    final isChoiceSelection =
+        isChoiceFocus && round.phase == PartyRoundPhase.resultEntry;
     final requiredItems = round?.challenge.requiredItems ?? const <String>[];
     final canReroll =
         round?.phase == PartyRoundPhase.betting &&
-        ref.read(currentPlayerProvider)?.isHost == true;
+        currentPlayer?.isHost == true;
+    final rawQuestion = gameState.currentQuestion?.getText(locale: 'en');
+    final questionText = rawQuestion == null
+        ? null
+        : _partyQuestionForViewer(
+            text: rawQuestion,
+            round: round,
+            isPerformer: isPerformer,
+          );
+    final heading = _partyQuestionHeading(
+      round: round,
+      isPerformer: isPerformer,
+    );
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 260),
       width: double.infinity,
@@ -2727,9 +2808,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
         : null;
     final challenge = _partySnapshot?.round.challenge;
     final isBinary = challenge?.isBinary == true;
+    final isChoice = challenge?.isChoice == true;
     final isAttempt = challenge?.isAttempt == true;
     final answerText = answer == null
         ? '--'
+        : isChoice
+        ? (challenge?.choiceLabel(answer) ?? 'CHOICE')
         : isBinary
         ? (answer == 1 ? 'SUCCESS' : 'FAILED')
         : isAttempt
@@ -2805,7 +2889,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           child: Column(
             children: [
               Text(
-                isBinary || isAttempt ? 'RESULT' : 'ANSWER',
+                isBinary || isChoice || isAttempt ? 'RESULT' : 'ANSWER',
                 maxLines: 1,
                 style: GoogleFonts.outfit(
                   color: didWin && resultSettled
@@ -2851,7 +2935,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               style: TextStyle(
                                 fontFamily: 'RehnCondensed',
                                 color: headlineColor,
-                                fontSize: isBinary || isAttempt ? 54 : 76,
+                                fontSize: isBinary || isChoice || isAttempt
+                                    ? 54
+                                    : 76,
                                 fontWeight: FontWeight.w900,
                                 height: 0.86,
                                 letterSpacing: 0,
@@ -2936,6 +3022,69 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (isParty &&
         gameState.phase == RoundPhase.betting &&
         currentPlayer?.id == partyRound?.performer.id) {
+      final isChoice = partyRound?.challenge.isChoice == true;
+      final selectedChoice = partyRound?.proposedResult;
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: PartyPalette.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: PartyPalette.orangeSoft.withValues(alpha: 0.26),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isChoice
+                  ? selectedChoice == null
+                        ? Icons.touch_app_rounded
+                        : Icons.check_circle_rounded
+                  : Icons.sports_gymnastics_rounded,
+              color: PartyPalette.orangeSoft,
+              size: 23,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              isChoice
+                  ? selectedChoice == null
+                        ? 'MAKE YOUR CHOICE'
+                        : 'CHOICE SAVED'
+                  : 'FRIENDS ARE BETTING',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.8,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              isChoice
+                  ? selectedChoice == null
+                        ? 'Tap one of the two bet areas. Your answer stays hidden.'
+                        : 'Tap the other option if you want to change it.'
+                  : 'Your performance starts after the betting timer.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppColors.ivory.withValues(alpha: 0.62),
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (isParty &&
+        gameState.phase == RoundPhase.betting &&
+        partyRound?.challenge.isChoice == true &&
+        !_canCurrentPlayerEditBets(gameState)) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -2950,30 +3099,30 @@ class _GameScreenState extends ConsumerState<GameScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(
-              Icons.sports_gymnastics_rounded,
+              Icons.hourglass_top_rounded,
               color: PartyPalette.orangeSoft,
-              size: 23,
+              size: 22,
             ),
             const SizedBox(height: 3),
             Text(
-              'FRIENDS ARE BETTING',
+              'WAITING FOR ${partyRound!.performer.name.toUpperCase()}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 color: AppColors.ivory,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 0.8,
+                letterSpacing: 0.7,
               ),
             ),
-            const SizedBox(height: 1),
             Text(
-              'Your performance starts after the betting timer.',
+              'Bets are locked. Their private choice decides the winner.',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 color: AppColors.ivory.withValues(alpha: 0.62),
                 fontSize: 9,
                 fontWeight: FontWeight.w600,
-                height: 1,
               ),
             ),
           ],
@@ -2987,20 +3136,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
               .where((bet) => bet.playerId == currentPlayer.id)
               .toList();
     final totalOnTable = myBets.fold<int>(0, (sum, bet) => sum + bet.chips);
-    final totalChips = currentPlayer == null
+    final bank = currentPlayer == null
         ? 0
-        : gameState.scores[currentPlayer.id] ??
-              (currentPlayer.score > 0
-                  ? currentPlayer.score
-                  : GameConstants.startingScore);
-    final availableChips = max(0, totalChips - totalOnTable);
-    final bankLabel = '$availableChips';
+        : gameState.scores[currentPlayer.id] ?? currentPlayer.bankScore;
+    final bettingLimit = currentPlayer == null
+        ? 0
+        : GameConstants.bettingLimitForBank(bank);
+    final availableChips = max(0, bettingLimit - totalOnTable);
+    final bankLabel = '$bank';
     final selectedBet = _selectedBet(gameState);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final chipSize = 42.0;
-        final dynamicChips = _getDynamicChips(totalChips);
+        final dynamicChips = _getDynamicChips(bettingLimit);
         final chipValues = dynamicChips
             .map(
               (val) => (
@@ -4590,8 +4739,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
                 final sortedPlayers = [..._players]
                   ..sort((a, b) {
-                    final scoreA = gameState.scores[a.id] ?? a.score;
-                    final scoreB = gameState.scores[b.id] ?? b.score;
+                    final scoreA = gameState.scores[a.id] ?? a.bankScore;
+                    final scoreB = gameState.scores[b.id] ?? b.bankScore;
                     return scoreB.compareTo(scoreA);
                   });
                 final visiblePlayers = sortedPlayers.take(3).toList();
@@ -4609,7 +4758,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             visiblePlayers[index],
                             index,
                             gameState.scores[visiblePlayers[index].id] ??
-                                visiblePlayers[index].score,
+                                visiblePlayers[index].bankScore,
                           ),
                         ),
                       ),
@@ -4626,8 +4775,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildPartyPlayersStrip(GameState gameState) {
     final sortedPlayers = [..._players]
       ..sort((a, b) {
-        final scoreA = gameState.scores[a.id] ?? a.score;
-        final scoreB = gameState.scores[b.id] ?? b.score;
+        final scoreA = gameState.scores[a.id] ?? a.bankScore;
+        final scoreB = gameState.scores[b.id] ?? b.bankScore;
         return scoreB.compareTo(scoreA);
       });
     final visiblePlayers = sortedPlayers.take(3).toList();
@@ -4712,7 +4861,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             ),
                           ),
                           Text(
-                            '${gameState.scores[visiblePlayers[index].id] ?? visiblePlayers[index].score}',
+                            '${gameState.scores[visiblePlayers[index].id] ?? visiblePlayers[index].bankScore}',
                             style: GoogleFonts.outfit(
                               color: PartyPalette.orangeSoft,
                               fontSize: 14,
@@ -4895,19 +5044,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildBettingBoardAsset(GameState gameState, String? currentPlayerId) {
     final canEdit = _canCurrentPlayerEditBets(gameState);
+    final canChoose = _canCurrentPerformerChoose(gameState);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final boundaryValues = _boardBoundaryValues(gameState);
         final challenge = _partySnapshot?.round.challenge;
-        final isBinary = challenge?.isBinary == true;
+        final usesTwoOptionBoard = challenge?.usesTwoOptionBoard == true;
         final isAttempt = challenge?.isAttempt == true;
         final isReveal = _isRevealPhase(gameState);
         final winningSlotIndex = isReveal
             ? _winningBetSlotIndex(gameState)
             : null;
-        final activeSlots = isBinary
+        final activeSlots = challenge?.isChoice == true
+            ? _choiceBetSlotsFor(challenge)
+            : challenge?.isBinary == true
             ? _binaryBetSlots
             : isAttempt
             ? _attemptBetSlots
@@ -4937,7 +5089,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                       height: spec.rect.height * size.height,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTapDown: canEdit
+                        onTapDown: canEdit || canChoose
                             ? (details) => _handleBetSlotTap(
                                 spec,
                                 details.localPosition,
@@ -4950,7 +5102,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         child: _buildCodedBetSlot(
                           spec: spec,
                           isWinningReveal: activeRevealSlotIndex == spec.index,
-                          boundaries: isBinary || isAttempt
+                          isChoiceSelected:
+                              canChoose &&
+                              _partySnapshot?.round.proposedResult ==
+                                  spec.index,
+                          boundaries: usesTwoOptionBoard || isAttempt
                               ? const <int>[]
                               : boundaryValues,
                         ),
@@ -4958,17 +5114,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   if (_showWinnerBadge && winningSlotIndex != null)
                     ..._buildWinParticles(size, winningSlotIndex),
-                  if (!isBinary && !isAttempt)
+                  if (!usesTwoOptionBoard && !isAttempt)
                     ..._buildBoundaryLabels(boundaryValues, size),
                   if (!(_showWinnerBadge && winningSlotIndex != null))
-                    _buildAllPlacedChips(
-                      gameState.bets,
-                      size,
-                      currentPlayerId,
-                      canEdit: canEdit,
-                      isReveal: isReveal,
-                      winningSlotIndex: winningSlotIndex,
-                      emphasizeWinners: _showWinnerBadge,
+                    Positioned.fill(
+                      child: _buildAllPlacedChips(
+                        gameState.bets,
+                        size,
+                        currentPlayerId,
+                        canEdit: canEdit,
+                        isReveal: isReveal,
+                        winningSlotIndex: winningSlotIndex,
+                        emphasizeWinners: _showWinnerBadge,
+                      ),
                     ),
                   if (_showWinnerBadge && winningSlotIndex != null)
                     ..._buildPayoutFlightChips(
@@ -5002,14 +5160,27 @@ class _GameScreenState extends ConsumerState<GameScreen>
     Offset localPosition,
     Size slotSize,
   ) async {
-    if (_isBetOperationInFlight) return;
+    if (_isBetOperationInFlight || _isPartyCommandInFlight) return;
+
+    final gameState = ref.read(gameStateProvider);
+    if (_canCurrentPerformerChoose(gameState)) {
+      final roomId = _partySnapshot?.room.id;
+      if (roomId == null) return;
+      _playButtonFeedback();
+      await _runPartyCommand(
+        () => ref
+            .read(partyGameServiceProvider)
+            .submitChoice(roomId: roomId, choiceIndex: spec.index),
+      );
+      return;
+    }
 
     final position = Offset(
       (localPosition.dx / slotSize.width).clamp(0.12, 0.88).toDouble(),
       (localPosition.dy / slotSize.height).clamp(0.18, 0.82).toDouble(),
     );
 
-    final selectedBet = _selectedBet(ref.read(gameStateProvider));
+    final selectedBet = _selectedBet(gameState);
     if (selectedBet != null) {
       await _moveBet(selectedBet, spec.index, position: position);
       return;
@@ -5024,10 +5195,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     required _BetSlotSpec spec,
     required bool isWinningReveal,
     required List<int> boundaries,
+    bool isChoiceSelected = false,
   }) {
+    final isEmphasized = isWinningReveal || isChoiceSelected;
     return AnimatedScale(
       duration: const Duration(milliseconds: 210),
-      scale: isWinningReveal ? 1.026 : 1,
+      scale: isEmphasized ? 1.026 : 1,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -5035,7 +5208,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             child: _BetSlotSurface(
               spec: spec,
               isHovering: false,
-              isWinningReveal: isWinningReveal,
+              isWinningReveal: isEmphasized,
               isPartyMode:
                   ref.read(currentRoomProvider)?.gameMode == GameMode.party,
             ),
@@ -5102,7 +5275,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         .toList();
     if (winningBets.isEmpty) return const [];
 
-    final odds = _partySnapshot?.round.challenge.isBinary == true
+    final odds = _partySnapshot?.round.challenge.usesTwoOptionBoard == true
         ? 2
         : GameConstants.boardOdds[winningSlotIndex];
     final center = Offset(
@@ -5448,6 +5621,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildPartySlotTitle(_BetSlotSpec slot, List<int> boundaries) {
+    if (_partySnapshot?.round.challenge.isChoice == true) {
+      return _buildPartyChoiceSlotTitle(slot);
+    }
     final range = boundaries.length >= 4
         ? switch (slot.index) {
             4 => '${_formatGuessValue(boundaries[3])}+',
@@ -5540,6 +5716,41 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPartyChoiceSlotTitle(_BetSlotSpec slot) {
+    final isLocked = slot.title.endsWith('LOCKED');
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 32, 18, 15),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              isLocked
+                  ? 'YOUR OPTIONS STAY PRIVATE'
+                  : 'OPTION ${slot.index == 0 ? 'A' : 'B'}',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: PartyPalette.orangeSoft,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.25,
+              ),
+            ),
+            const SizedBox(height: 7),
+            Expanded(
+              child: _AdaptiveQuestionText(
+                text: isLocked ? 'UNLOCKS AFTER BETTING' : slot.title,
+                color: PartyPalette.cream,
+                minFontSize: 15,
+                maxFontSize: 25,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -5799,6 +6010,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     return Stack(
       clipBehavior: Clip.none,
+      fit: StackFit.expand,
       children: [
         if (otherBets.isNotEmpty)
           _buildOtherBetMarkersGlobal(
@@ -5841,6 +6053,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     return Stack(
+      fit: StackFit.expand,
       children: [
         for (final entry in slotsWithBets.entries)
           ..._buildOtherBetMarkersForSlot(
@@ -5994,6 +6207,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     final visual = AnimatedScale(
       duration: const Duration(milliseconds: 150),
+      key: ValueKey('placed-bet-chip-${bet.id}'),
       curve: Curves.easeOutCubic,
       scale: isSelected ? 1.15 : 1,
       child: DecoratedBox(
@@ -6171,7 +6385,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   _BetSlotSpec? _betSlotSpecFor(int slotIndex) {
     final challenge = _partySnapshot?.round.challenge;
-    final slots = challenge?.isBinary == true
+    final slots = challenge?.isChoice == true
+        ? _choiceBetSlotsFor(challenge)
+        : challenge?.isBinary == true
         ? _binaryBetSlots
         : challenge?.isAttempt == true
         ? _attemptBetSlots
@@ -6182,9 +6398,33 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return null;
   }
 
+  List<_BetSlotSpec> _choiceBetSlotsFor(PartyChallenge? challenge) {
+    final optionA = challenge?.optionA?.trim();
+    final optionB = challenge?.optionB?.trim();
+    return [
+      _BetSlotSpec(
+        0,
+        optionA == null || optionA.isEmpty ? 'OPTION A LOCKED' : optionA,
+        2,
+        _BetSlotTone.choiceA,
+        const Rect.fromLTWH(0.055, 0.035, 0.890, 0.445),
+      ),
+      _BetSlotSpec(
+        1,
+        optionB == null || optionB.isEmpty ? 'OPTION B LOCKED' : optionB,
+        2,
+        _BetSlotTone.choiceB,
+        const Rect.fromLTWH(0.055, 0.520, 0.890, 0.445),
+      ),
+    ];
+  }
+
   /// Party shares the Classic mark; the mode is communicated by the room and
   /// surface treatment, not a competing logo.
-  Widget _buildPartyModeMark() => _buildPortraitLogo();
+  Widget _buildPartyModeMark() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    child: _buildPortraitLogo(allowWebPromo: false),
+  );
 
   Widget _buildPhaseSurfaceTransition({
     required String surfaceKey,
@@ -6399,6 +6639,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   .submitResult(
                                     roomId: snapshot.room.id,
                                     result: result,
+                                  ),
+                            ),
+                            onSubmitChoice: (choice) => _runPartyCommand(
+                              () => ref
+                                  .read(partyGameServiceProvider)
+                                  .submitChoice(
+                                    roomId: snapshot.room.id,
+                                    choiceIndex: choice,
                                   ),
                             ),
                             onConfirmResult: () => _runPartyCommand(
@@ -6655,6 +6903,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           .submitResult(
                             roomId: partySnapshot.room.id,
                             result: result,
+                          ),
+                    ),
+                    onSubmitChoice: (choice) => _runPartyCommand(
+                      () => ref
+                          .read(partyGameServiceProvider)
+                          .submitChoice(
+                            roomId: partySnapshot.room.id,
+                            choiceIndex: choice,
                           ),
                     ),
                     onConfirmResult: () => _runPartyCommand(
@@ -6953,7 +7209,7 @@ const List<_BetSlotSpec> _binaryBetSlots = [
   ),
 ];
 
-enum _BetSlotTone { green, black, gold, red }
+enum _BetSlotTone { green, black, gold, red, choiceA, choiceB }
 
 class _PendingBetEvent {
   final bool isRemoval;
@@ -7342,6 +7598,8 @@ class _BetSlotSurface extends StatelessWidget {
       _BetSlotTone.black => const [Color(0xFF294B43), Color(0xFF12332B)],
       _BetSlotTone.gold => const [Color(0xFFC38A4D), Color(0xFF8D5A35)],
       _BetSlotTone.red => const [Color(0xFF91554A), Color(0xFF633932)],
+      _BetSlotTone.choiceA => const [Color(0xFF48657A), Color(0xFF263E50)],
+      _BetSlotTone.choiceB => const [Color(0xFF76566B), Color(0xFF493545)],
     };
     final innerRadius = BorderRadius.circular(spec.isSweetSpot ? 12 : 6);
     final railRadius = BorderRadius.circular(spec.isSweetSpot ? 18 : 10);
@@ -7461,6 +7719,9 @@ class _BetSlotSurface extends StatelessWidget {
         return AppAssetPaths.boardGreen;
       case _BetSlotTone.gold:
         return AppAssetPaths.boardGold;
+      case _BetSlotTone.choiceA:
+      case _BetSlotTone.choiceB:
+        return AppAssetPaths.boardBlack;
     }
   }
 }

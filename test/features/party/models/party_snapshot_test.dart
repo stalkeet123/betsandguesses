@@ -113,7 +113,7 @@ void main() {
   });
 
   test('Party betting stays shorter than Classic betting', () {
-    expect(GameConstants.partyBetTimerSeconds, 20);
+    expect(GameConstants.partyBetTimerSeconds, 30);
     expect(
       GameConstants.partyBetTimerSeconds,
       lessThan(GameConstants.betTimerSeconds),
@@ -128,6 +128,26 @@ void main() {
     );
   });
 
+  test('parses the selected label for a Choice recap', () {
+    final recap = PartyRecapRound.fromJson({
+      'round_number': 2,
+      'performer_id': 'john-id',
+      'performer_name': 'John',
+      'challenge_text': 'Which would John choose?',
+      'answer_unit': 'choice',
+      'result': 1,
+      'crowd_guess': 63,
+      'performer_bonus': 0,
+      'challenge_type': 'choice',
+      'duration_seconds': 5,
+      'option_a': 'Music',
+      'option_b': 'Movies and TV',
+    });
+
+    expect(recap.challengeType, PartyChallengeType.choice);
+    expect(recap.choiceLabel(recap.result), 'Movies and TV');
+    expect(recap.crowdGuess, 63);
+  });
   test('parses a shareable Party recap row', () {
     final recap = PartyRecapRound.fromJson({
       'round_number': 2,

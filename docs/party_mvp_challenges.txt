@@ -1,0 +1,74 @@
+PARTY MVP CHALLENGE DECK
+60 cards: 20 Personality Choice + 20 Attempt + 20 Count
+Preferred rotation: Count -> Attempt -> Personality (missing-item types fall back safely)
+[NO ITEMS] cards are eligible when the host selects no props.
+Attempt cards are prop-based trick shots; with no props, Attempt turns fall back to an eligible category.
+
+PERSONALITY CHOICE (20)
+
+01. Keep for a year: Music / Movies and TV [NO ITEMS]
+02. Permanent inconvenience: Always 30 minutes early / Always 10 minutes late [NO ITEMS]
+03. Bad day: Phone stuck at 5% / Full day with no Wi-Fi [NO ITEMS]
+04. Reveal: Last five searches / Weekly screen-time report [NO ITEMS]
+05. Tiny nightmare: Wet socks for two hours / One mosquito in the room [NO ITEMS]
+06. Fame: Embarrassing meme / Anonymous creator of a hit song [NO ITEMS]
+07. Voice curse for one day: Only whisper / Only shout [NO ITEMS]
+08. Give up for a year: Coffee and energy drinks / Dessert [NO ITEMS]
+09. Travel disaster: 10-hour road trip with no music / 4-hour flight beside a crying baby [NO ITEMS]
+10. Style gamble: Group chooses one haircut / Group chooses every outfit for a week [NO ITEMS]
+11. Ridiculous fight: One horse-sized duck / One hundred duck-sized horses [NO ITEMS]
+12. Boss mistake: Send a romantic emoji / Call the boss Mom or Dad [NO ITEMS]
+13. Project on a wall: Listening history / Video watch history [NO ITEMS]
+14. Texting rule for a month: No emojis / Only emojis [NO ITEMS]
+15. Make plans with: Reliable but predictable / Exciting but always chaotic [NO ITEMS]
+16. Life soundtrack for a week: Thought subtitles / Laugh track after every sentence [NO ITEMS]
+17. Repeat for a week: One song / One movie [NO ITEMS]
+18. Social power: Always detect lies / Always make your own lies believable [NO ITEMS]
+19. Project for one minute: Busiest group chat / Latest 20 camera-roll photos [NO ITEMS]
+20. Lose with no backup: Every saved contact / Every saved photo [NO ITEMS]
+
+ATTEMPT - SUCCESS ON WHICH TRY? (20)
+
+01. Flip a bottle cap and land it open-side up. [bottle cap + table]
+02. Slide a coin so part hangs over the table edge without falling. [coin + table]
+03. Thumb-flip a coin into a cup held in the other hand. [coin + cup]
+04. Toss a coaster so it lands flat across the top of a cup. [coaster + cup]
+05. Bank a paper ball off a clear wall and into a cup. [paper + cup + clear wall]
+06. Bounce a paper ball exactly once on a table and into a cup. [paper + cup + table]
+07. Flip a pen from one hand and catch it with the other. [pen]
+08. Flip a spoon and catch only the handle. [spoon]
+09. Land a bottle flip. [plastic bottle + water + table]
+10. Bounce a coin once on the table and leave it inside a cup. [coin + cup + table]
+11. Make a backward paper-ball shot from two large steps. [paper + trash can]
+12. Flip a spoon and land it bowl-side up on the table. [spoon + table]
+13. Toss a pen, turn the palm down, and catch it before it touches anything. [pen]
+14. Toss a playing card into a cup from two large steps. [playing card + cup]
+15. Land a rolled-up sock shot from three large steps. [rolled-up socks + basket]
+16. Flick a bottle cap from the table into a cup. [bottle cap + cup + table]
+17. Land a paper ball in a cup from two large steps. [paper + cup]
+18. Flip a shoe and land it sole-down. [shoe + clear floor]
+19. Slide a coin off a table and catch it with the same hand. [coin + table]
+20. Drop three coins from one elbow and catch all three in the same hand. [three coins]
+
+COUNT - MOSTLY VERBAL (20)
+
+01. Countries in 60 seconds. [NO ITEMS]
+02. U.S. states in 60 seconds. [NO ITEMS]
+03. U.S. presidents in 60 seconds. [NO ITEMS]
+04. World capital cities in 60 seconds. [NO ITEMS]
+05. Rappers in 60 seconds. [NO ITEMS]
+06. Music artists or bands in 60 seconds. [NO ITEMS]
+07. Movie titles in 60 seconds. [NO ITEMS]
+08. TV series in 60 seconds. [NO ITEMS]
+09. Superheroes in 60 seconds. [NO ITEMS]
+10. Video-game characters in 60 seconds. [NO ITEMS]
+11. Restaurant or fast-food chains in 60 seconds. [NO ITEMS]
+12. Clothing or shoe brands in 60 seconds. [NO ITEMS]
+13. Car brands in 60 seconds. [NO ITEMS]
+14. Social-media or messaging apps in 60 seconds. [NO ITEMS]
+15. NBA teams in 60 seconds. [NO ITEMS]
+16. NFL teams in 60 seconds. [NO ITEMS]
+17. Animals in 60 seconds. [NO ITEMS]
+18. Clean push-ups in one continuous set. [clear floor]
+19. Clean bodyweight squats in one continuous set. [clear floor]
+20. Seconds balanced on one foot, eyes open. [clear floor]

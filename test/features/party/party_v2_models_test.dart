@@ -76,6 +76,57 @@ void main() {
     expect(challenge.performerSuccessBonus, 3);
   });
 
+  test('Party Choice parses private options and maps A/B to two bet slots', () {
+    final challenge = PartyChallenge.fromJson({
+      'id': 'choice-1',
+      'text': 'Which would Alex choose?',
+      'rules': 'Choose honestly after bets lock.',
+      'answer_unit': 'choice',
+      'duration_seconds': 5,
+      'max_result': 1,
+      'bet_boundaries': [],
+      'challenge_type': 'choice',
+      'category': 'personality',
+      'result_direction': 'binary',
+      'option_a': 'Music',
+      'option_b': 'Movies and TV',
+      'performer_success_bonus': 0,
+    });
+
+    expect(challenge.isChoice, isTrue);
+    expect(challenge.usesTwoOptionBoard, isTrue);
+    expect(challenge.category, PartyChallengeCategory.personality);
+    expect(challenge.choiceLabel(0), 'Music');
+    expect(challenge.choiceLabel(1), 'Movies and TV');
+    expect(challenge.betSlotForResult(0), 0);
+    expect(challenge.betSlotForResult(1), 1);
+    expect(challenge.betSlotForResult(2), isNull);
+  });
+
+  test(
+    'Party Choice accepts hidden options in a performer betting snapshot',
+    () {
+      final challenge = PartyChallenge.fromJson({
+        'id': 'choice-private',
+        'text': 'Which would Alex choose?',
+        'rules': 'Options unlock after betting.',
+        'answer_unit': 'choice',
+        'duration_seconds': 5,
+        'max_result': 1,
+        'bet_boundaries': [],
+        'challenge_type': 'choice',
+        'category': 'personality',
+        'result_direction': 'binary',
+        'option_a': null,
+        'option_b': null,
+        'performer_success_bonus': 0,
+      });
+
+      expect(challenge.isChoice, isTrue);
+      expect(challenge.optionA, isNull);
+      expect(challenge.optionB, isNull);
+    },
+  );
   test(
     'Party attempt challenge maps success and failure to fixed bet slots',
     () {

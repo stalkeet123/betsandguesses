@@ -9,6 +9,7 @@ class Player {
   final String name;
   final String avatarColor;
   final int score;
+  final int bankScore;
   final bool isHost;
   final bool isReady;
   final bool isConnected;
@@ -22,6 +23,7 @@ class Player {
     required this.name,
     this.avatarColor = '#FF6B9D',
     this.score = 0,
+    this.bankScore = 0,
     this.isHost = false,
     this.isReady = false,
     this.isConnected = true,
@@ -38,7 +40,11 @@ class Player {
       deviceId: json['device_id'] as String? ?? json['id'] as String,
       name: json['name'] as String,
       avatarColor: json['avatar_color'] as String? ?? '#FF6B9D',
-      score: json['score'] as int? ?? 0,
+      score: (json['score'] as num?)?.toInt() ?? 0,
+      bankScore:
+          (json['bank_score'] as num?)?.toInt() ??
+          (json['score'] as num?)?.toInt() ??
+          0,
       isHost: json['is_host'] as bool? ?? false,
       isReady: json['is_ready'] as bool? ?? false,
       isConnected: json['is_connected'] as bool? ?? true,
@@ -57,6 +63,7 @@ class Player {
       'name': name,
       'avatar_color': avatarColor,
       'score': score,
+      'bank_score': bankScore,
       'is_host': isHost,
       'is_ready': isReady,
       'is_connected': isConnected,
@@ -82,6 +89,7 @@ class Player {
     String? name,
     String? avatarColor,
     int? score,
+    int? bankScore,
     bool? isHost,
     bool? isReady,
     bool? isConnected,
@@ -95,6 +103,7 @@ class Player {
       name: name ?? this.name,
       avatarColor: avatarColor ?? this.avatarColor,
       score: score ?? this.score,
+      bankScore: bankScore ?? this.bankScore,
       isHost: isHost ?? this.isHost,
       isReady: isReady ?? this.isReady,
       isConnected: isConnected ?? this.isConnected,
