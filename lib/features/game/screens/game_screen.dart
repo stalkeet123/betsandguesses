@@ -1805,20 +1805,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (gameState.phase != RoundPhase.betting) return false;
     final room = ref.read(currentRoomProvider);
     if (room == null) return false;
-
-    // Classic can receive the phase broadcast before the rooms-row update.
-    // Until that row arrives, its deadline still belongs to the previous phase
-    // and would incorrectly lock a live betting board. The Classic RPC remains
-    // the authority for rejecting genuinely late writes.
     if (room.gameMode != GameMode.party) return true;
 
-    final deadline = _partySnapshot?.round.phaseEndsAt ?? room.phaseEndsAt;
-    if (!GameSyncPolicy.isInteractionWindowOpen(
-      deadline: deadline,
-      now: ref.read(roomServiceProvider).serverNow,
-    )) {
-      return false;
-    }
     final player = ref.read(currentPlayerProvider);
     if (player == null) return false;
     final challenge = _partySnapshot?.round.challenge;
