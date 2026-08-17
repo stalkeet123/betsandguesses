@@ -73,6 +73,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   DateTime? _phaseDeadline;
   final List<_PendingBetEvent> _pendingBetEvents = [];
   PartySnapshot? _partySnapshot;
+  int? _optimisticChoiceIndex;
   bool _isPartyCommandInFlight = false;
   Timer? _partySnapshotWatchdogTimer;
   Timer? _partyTransitionFallbackTimer;
@@ -1104,6 +1105,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         })
         .toList(growable: false);
 
+    final existingLocalBets = ref
+        .read(gameStateProvider)
+        .bets
+        .where((b) => b.id.startsWith('local-'))
+        .toList();
+    final allBets = [...bets, ...existingLocalBets];
+
     final currentPlayer = ref.read(currentPlayerProvider);
     ref.read(currentRoomProvider.notifier).set(snapshot.room);
     ref
@@ -1116,7 +1124,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           phase: round.phase.gamePhase,
           currentQuestion: question,
           guesses: guesses,
-          bets: bets,
+          bets: allBets,
           scores: snapshot.scores,
           correctAnswer: round.phase == PartyRoundPhase.reveal
               ? round.proposedResult
@@ -1125,8 +1133,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           hasSubmittedGuess: false,
         );
     _partySnapshot = snapshot;
+    if (round.proposedResult != null) {
+      _optimisticChoiceIndex = round.proposedResult;
+    }
     ref.read(partySessionProvider.notifier).setSnapshot(snapshot);
     if (previous?.round.number != round.number) {
+      _optimisticChoiceIndex = null;
       _guessInput = '';
       _selectedChipValue = null;
       _selectedBetId = null;
@@ -5381,7 +5393,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           isWinningReveal: activeRevealSlotIndex == spec.index,
                           isChoiceSelected:
                               canChoose &&
-                              _partySnapshot?.round.proposedResult ==
+                              (_optimisticChoiceIndex ??
+                                      _partySnapshot?.round.proposedResult) ==
                                   spec.index,
                           boundaries: usesTwoOptionBoard || isAttempt || isShowdown
                               ? const <int>[]
@@ -5443,7 +5456,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (_canCurrentPerformerChoose(gameState)) {
       final roomId = _partySnapshot?.room.id;
       if (roomId == null) return;
-      _playButtonFeedback();
+      unawaited(HapticFeedback.heavyImpact());
+      ref.read(audioServiceProvider).playDrop();
+      setState(() => _optimisticChoiceIndex = spec.index);
       await _runPartyCommand(
         () => ref
             .read(partyGameServiceProvider)
@@ -5477,7 +5492,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final isEmphasized = isWinningReveal || isChoiceSelected;
     return AnimatedScale(
       duration: const Duration(milliseconds: 210),
-      scale: isEmphasized ? 1.026 : 1,
+      scale: isChoiceSelected ? 1.038 : (isWinningReveal ? 1.026 : 1.0),
+      curve: Curves.easeOutCubic,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -5490,24 +5506,47 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ref.read(currentRoomProvider)?.gameMode == GameMode.party,
             ),
           ),
+          if (isChoiceSelected)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFFFFD700),
+                      width: 2.6,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFFD700).withValues(alpha: 0.5),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           _buildBetSlotLabel(spec, boundaries),
           if (isChoiceSelected)
             Positioned(
               top: 8,
               right: 12,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4.5),
                 decoration: BoxDecoration(
-                  color: PartyPalette.nightDeep.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(99),
-                  border: Border.all(
-                    color: PartyPalette.orangeSoft,
-                    width: 1.4,
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFFFFB300),
+                      Color(0xFFFF8F00),
+                    ],
                   ),
+                  borderRadius: BorderRadius.circular(99),
                   boxShadow: [
                     BoxShadow(
-                      color: PartyPalette.orange.withValues(alpha: 0.35),
-                      blurRadius: 10,
+                      color: const Color(0xFFFFB300).withValues(alpha: 0.55),
+                      blurRadius: 14,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
@@ -5516,17 +5555,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   children: [
                     const Icon(
                       Icons.check_circle_rounded,
-                      color: Color(0xFF4ADE80),
-                      size: 13,
+                      color: Colors.black,
+                      size: 15,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 4.5),
                     Text(
-                      'GİZLİ SEÇİMİN',
+                      'SEÇİMİN',
                       style: GoogleFonts.outfit(
-                        color: PartyPalette.cream,
-                        fontSize: 9.5,
+                        color: Colors.black,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
+                        letterSpacing: 0.8,
                       ),
                     ),
                   ],
@@ -6043,32 +6082,40 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildPartyChoiceSlotTitle(_BetSlotSpec slot) {
-    final isLocked = slot.title.endsWith('LOCKED');
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 32, 18, 15),
+        padding: const EdgeInsets.fromLTRB(16, 26, 16, 14),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              isLocked
-                  ? 'YOUR OPTIONS STAY PRIVATE'
-                  : 'OPTION ${slot.index == 0 ? 'A' : 'B'}',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                color: PartyPalette.orangeSoft,
-                fontSize: 9,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.25,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 3.5),
+              decoration: BoxDecoration(
+                color: PartyPalette.nightDeep.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(
+                  color: PartyPalette.orangeSoft.withValues(alpha: 0.45),
+                  width: 1.2,
+                ),
+              ),
+              child: Text(
+                'OPTION ${slot.index == 0 ? 'A' : 'B'}',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.orangeSoft,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.25,
+                ),
               ),
             ),
-            const SizedBox(height: 7),
+            const SizedBox(height: 8),
             Expanded(
               child: _AdaptiveQuestionText(
-                text: isLocked ? 'UNLOCKS AFTER BETTING' : slot.title,
+                text: slot.title,
                 color: PartyPalette.cream,
                 minFontSize: 15,
-                maxFontSize: 25,
+                maxFontSize: 26,
               ),
             ),
           ],
@@ -6796,7 +6843,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   _BetSlotSpec? _betSlotSpecFor(int slotIndex) {
     final challenge = _partySnapshot?.round.challenge;
-    final slots = challenge?.isChoice == true
+    final isVersus = challenge?.isVersus == true;
+    final isShowdown = challenge?.isShowdown == true;
+    final slots = isVersus
+        ? _versusBetSlotsFor(_partySnapshot?.round)
+        : isShowdown
+        ? _showdownBetSlotsFor(_players)
+        : challenge?.isChoice == true
         ? _choiceBetSlotsFor(challenge)
         : challenge?.isBinary == true
         ? _binaryBetSlots
@@ -6815,14 +6868,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return [
       _BetSlotSpec(
         0,
-        optionA == null || optionA.isEmpty ? 'OPTION A LOCKED' : optionA,
+        optionA == null || optionA.isEmpty ? 'OPTION A' : optionA,
         2,
         _BetSlotTone.choiceA,
         const Rect.fromLTWH(0.055, 0.035, 0.890, 0.445),
       ),
       _BetSlotSpec(
         1,
-        optionB == null || optionB.isEmpty ? 'OPTION B LOCKED' : optionB,
+        optionB == null || optionB.isEmpty ? 'OPTION B' : optionB,
         2,
         _BetSlotTone.choiceB,
         const Rect.fromLTWH(0.055, 0.520, 0.890, 0.445),
