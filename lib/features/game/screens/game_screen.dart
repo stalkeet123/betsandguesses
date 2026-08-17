@@ -2184,9 +2184,38 @@ class _GameScreenState extends ConsumerState<GameScreen>
           positionY: safeDy,
         );
         if (!_canUseRef) return;
-        gameNotifier.removeBetById(optimisticId);
-        _applyPartySnapshot(snapshot);
-        unawaited(_broadcastPartyState(snapshot));
+        final placedPartyBet = snapshot.round.bets.cast<PartyBetSnapshot?>().firstWhere(
+          (b) =>
+              b != null &&
+              b.slotIndex == slotIndex &&
+              b.playerId == player.id &&
+              b.chips == chips,
+          orElse: () => snapshot.round.bets.isNotEmpty
+              ? snapshot.round.bets.last
+              : null,
+        );
+        final assignedId = placedPartyBet?.id ?? const Uuid().v4();
+        final mappedBet = optimisticBet.copyWith(
+          id: assignedId,
+          playerName: player.name,
+          playerColor: player.avatarColor,
+        );
+        gameNotifier.replaceBet(optimisticId, mappedBet);
+        _partySnapshot = snapshot;
+        unawaited(
+          realtimeService
+              .broadcast(widget.roomCode, 'bet_placed', {
+                'bet': {
+                  ...mappedBet.toJson(),
+                  'id': assignedId,
+                  'player_name': player.name,
+                  'player_color': player.avatarColor,
+                },
+              })
+              .catchError((Object error, StackTrace stackTrace) {
+                debugPrint('Party bet broadcast failed: $error\n$stackTrace');
+              }),
+        );
         return;
       }
       final bet = await gameService.placeBet(
@@ -2239,6 +2268,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _isBetOperationInFlight = false;
     }
 
+    _selectedChipValue = null;
     _selectedBetId = null;
     if (_canUseRef) setState(() {});
   }
@@ -2250,22 +2280,32 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }) async {
     if (!_canUseRef) return;
     final room = ref.read(currentRoomProvider);
+    final player = ref.read(currentPlayerProvider);
     final gameState = ref.read(gameStateProvider);
     if (room == null ||
-        sourceBet.id.startsWith('local-') ||
-        _isBetOperationInFlight) {
+        player == null ||
+        _isBetOperationInFlight ||
+        sourceBet.slotIndex == targetSlotIndex) {
       return;
     }
     if (!_canCurrentPlayerEditBets(gameState)) {
       _lockBettingWindow();
       return;
     }
+    if (room.gameMode == GameMode.party &&
+        _partySnapshot?.round.performer.id == player.id) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The performer does not bet this round.')),
+      );
+      return;
+    }
 
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     final gameNotifier = ref.read(gameStateProvider.notifier);
-    final oldBet = sourceBet;
+
     final targetGuessId = _targetGuessIdForSlot(targetSlotIndex, gameState);
+
     final safeDx = (position != null && position.dx.isFinite)
         ? position.dx
         : null;
@@ -2273,9 +2313,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ? position.dy
         : null;
 
+    final oldBet = sourceBet;
     final optimisticBet = sourceBet.copyWith(
-      targetGuessId: targetGuessId,
       slotIndex: targetSlotIndex,
+      targetGuessId: targetGuessId,
       payoutMultiplier:
           room.gameMode == GameMode.party &&
               _partySnapshot?.round.challenge.usesTwoOptionBoard == true
@@ -2301,8 +2342,27 @@ class _GameScreenState extends ConsumerState<GameScreen>
           positionY: safeDy,
         );
         if (!_canUseRef) return;
-        _applyPartySnapshot(snapshot);
-        unawaited(_broadcastPartyState(snapshot));
+        final movedBet = optimisticBet.copyWith(
+          id: sourceBet.id,
+          playerName: sourceBet.playerName ?? player.name,
+          playerColor: sourceBet.playerColor ?? player.avatarColor,
+        );
+        gameNotifier.addBet(movedBet);
+        _partySnapshot = snapshot;
+        unawaited(
+          realtimeService
+              .broadcast(widget.roomCode, 'bet_placed', {
+                'bet': {
+                  ...movedBet.toJson(),
+                  'id': sourceBet.id,
+                  'player_name': movedBet.playerName,
+                  'player_color': movedBet.playerColor,
+                },
+              })
+              .catchError((Object error, StackTrace stackTrace) {
+                debugPrint('Party bet move broadcast failed: $error\n$stackTrace');
+              }),
+        );
         return;
       }
       final movedBet = await gameService.updateBet(
@@ -2385,8 +2445,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
             betId: bet.id,
           );
           if (!_canUseRef) return;
-          _applyPartySnapshot(snapshot);
-          unawaited(_broadcastPartyState(snapshot));
+          _partySnapshot = snapshot;
+          unawaited(
+            realtimeService
+                .broadcast(widget.roomCode, 'bet_removed', {
+                  'round': bet.roundNumber,
+                  'bet_id': bet.id,
+                  'player_id': bet.playerId,
+                  'slot_index': bet.slotIndex,
+                })
+                .catchError((Object error, StackTrace stackTrace) {
+                  debugPrint('Party bet removal broadcast failed: $error\n$stackTrace');
+                }),
+          );
           return;
         }
         await gameService.removeBet(bet.id);
@@ -3110,9 +3181,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
               isChoice
                   ? selectedChoice == null
                         ? (isTimeoutWaiting
-                            ? 'SEÇİMİNİ YAPMAN BEKLENİYOR!'
-                            : 'GİZLİ SEÇİMİNİ YAP')
-                        : 'GİZLİ SEÇİMİN KAYDEDİLDİ'
+                            ? 'MAKE YOUR CHOICE!'
+                            : 'PICK YOUR OPTION')
+                        : 'YOUR CHOICE IS RECORDED'
                   : 'FRIENDS ARE BETTING',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
@@ -3127,9 +3198,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
               isChoice
                   ? selectedChoice == null
                         ? (isTimeoutWaiting
-                            ? 'Süre doldu! Sonuçlar için A veya B seçeneğine dokun.'
-                            : 'A veya B seçeneğine dokun. Seçimin gizli tutulur.')
-                        : 'Değiştirmek istersen diğer seçeneğe dokunabilirsin.'
+                            ? 'Time is up! Tap Option A or B to reveal results.'
+                            : 'Tap Option A or B. Your choice stays private.')
+                        : 'You can tap the other option anytime to change.'
                   : 'Your performance starts after the betting timer.',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
@@ -3177,7 +3248,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(height: 5),
               Text(
-                'PERFORMER BEKLENİYOR (${partyRound!.performer.name.toUpperCase()})',
+                'WAITING FOR ${partyRound!.performer.name.toUpperCase()}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -3190,7 +3261,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(height: 1),
               Text(
-                'Bahisler kapandı. Performer seçimini tamamlayınca sonuç açılacak.',
+                'Betting is closed. Results will reveal once the performer picks an option.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.outfit(
                   color: AppColors.ivory.withValues(alpha: 0.65),
@@ -5560,7 +5631,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                     const SizedBox(width: 4.5),
                     Text(
-                      'SEÇİMİN',
+                      'YOUR CHOICE',
                       style: GoogleFonts.outfit(
                         color: Colors.black,
                         fontSize: 10.5,
@@ -8399,7 +8470,7 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 15), (timer) {
+    _timer = Timer.periodic(const Duration(seconds: 14), (timer) {
       if (mounted) {
         setState(() => _showPromo = !_showPromo);
       }
@@ -8424,16 +8495,13 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 600),
-      switchInCurve: Curves.easeOutBack,
-      switchOutCurve: Curves.easeIn,
+      duration: const Duration(milliseconds: 400),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
       transitionBuilder: (child, animation) {
         return FadeTransition(
           opacity: animation,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.9, end: 1.0).animate(animation),
-            child: child,
-          ),
+          child: child,
         );
       },
       child: _showPromo
@@ -8462,77 +8530,63 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
   Widget _buildPromoCard({required Key key}) {
     return Container(
       key: key,
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1E1E1E), Color(0xFF0A0A0A)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.brassLight.withValues(alpha: 0.4),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: _launchStore,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.apple,
-                      color: AppColors.brassLight,
-                      size: 24,
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          'DOWNLOAD ON APP STORE',
-                          style: GoogleFonts.outfit(
-                            color: AppColors.ivory,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 18,
-                            letterSpacing: 1.2,
-                          ),
-                          maxLines: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Flexible(
-                  child: Text(
-                    'Tap to download for a better party experience!',
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      color: AppColors.ivory.withValues(alpha: 0.8),
-                      fontSize: 11,
-                      height: 1.2,
-                    ),
-                  ),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF222222), Color(0xFF0F0F0F)],
+              ),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.brassLight.withValues(alpha: 0.5),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
               ],
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.apple,
+                    color: AppColors.brassLight,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'GET ON APP STORE',
+                    style: GoogleFonts.outfit(
+                      color: AppColors.ivory,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10.5,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: AppColors.brassLight,
+                    size: 8.5,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
