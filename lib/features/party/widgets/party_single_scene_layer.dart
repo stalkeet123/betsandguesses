@@ -2041,43 +2041,58 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                 ],
               ),
             ),
-            if (!round.challenge.isChoice) ...[
+              if (!round.challenge.isChoice) ...[
               SizedBox(height: compact ? 10 : 16),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _consensusSeconds > 0 && !widget.commandInFlight
-                              ? () async {
-                                  HapticFeedback.heavyImpact();
-                                  setState(() => _myReviewVote = 0);
-                                  await widget.onDisputeResult();
-                                }
-                              : null,
-                          borderRadius: BorderRadius.circular(14),
-                          child: Container(
-                            height: compact ? 44 : 50,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: _myReviewVote == 0
-                                    ? [
-                                        const Color(0xFFEF4444),
-                                        const Color(0xFF991B1B),
-                                      ]
-                                    : [
-                                        PartyPalette.terracotta.withValues(alpha: 0.3),
-                                        PartyPalette.nightDeep,
-                                      ],
-                              ),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: const Color(0xFFEF4444).withValues(alpha: 0.7),
-                                width: 1.4,
-                              ),
+              if (_isHost)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    'WAITING FOR PLAYERS TO REVIEW...',
+                    style: GoogleFonts.outfit(
+                      color: PartyPalette.cream.withValues(alpha: 0.7),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                )
+              else
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _consensusSeconds > 0 && !widget.commandInFlight
+                                ? () async {
+                                    HapticFeedback.heavyImpact();
+                                    setState(() => _myReviewVote = 0);
+                                    await widget.onDisputeResult();
+                                  }
+                                : null,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              height: compact ? 44 : 50,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: _myReviewVote == 0
+                                      ? [
+                                          const Color(0xFFEF4444),
+                                          const Color(0xFF991B1B),
+                                        ]
+                                      : [
+                                          PartyPalette.terracotta.withValues(alpha: 0.3),
+                                          PartyPalette.nightDeep,
+                                        ],
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.7),
+                                  width: 1.4,
+                                ),
+
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,

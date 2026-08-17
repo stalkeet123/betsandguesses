@@ -5,6 +5,9 @@
 -- 4. Result Confirmation: confirm_party_result_v1 & dispute_party_result_v1 for all challenge types.
 -- 5. get_party_snapshot_v1: returns all visible bets, full scores, and resolved challenge text.
 
+-- Ensure the bank_score column exists on players before creating the functions
+alter table public.players add column if not exists bank_score integer not null default 0;
+
 alter table public.party_bets drop constraint if exists party_bets_slot_valid;
 alter table public.party_bets add constraint party_bets_slot_valid check (slot_index between 0 and 7);
 
@@ -380,6 +383,8 @@ begin
   update public.party_rounds
   set phase = 'reveal',
       performer_bonus = v_performer_bonus,
+      settled_at = statement_timestamp(),
+      result_confirmed_by = coalesce(v_round.result_confirmed_by, v_round.result_submitted_by, v_round.performer_id),
       phase_started_at = statement_timestamp(),
       phase_ends_at = statement_timestamp() + interval '8 seconds'
   where id = v_round.id;
@@ -483,6 +488,16 @@ begin
   where room_id = p_room_id and round_number = v_room.current_round
   for update;
 
+  select * into v_player
+  from public.players
+  where room_id = p_room_id
+    and auth_user_id = (select auth.uid())
+  order by joined_at desc limit 1;
+
+  if v_player.id is null then
+    raise exception using errcode = '42501', message = 'Player not found in room';
+  end if;
+
   select * into v_match from public.party_matches where room_id = p_room_id;
   select * into v_challenge from public.party_challenges where id = v_round.challenge_id;
 
@@ -568,6 +583,8 @@ begin
   update public.party_rounds
   set phase = 'reveal',
       performer_bonus = v_performer_bonus,
+      result_confirmed_by = coalesce(v_round.result_confirmed_by, v_player.id),
+      settled_at = statement_timestamp(),
       phase_started_at = statement_timestamp(),
       phase_ends_at = statement_timestamp() + interval '8 seconds'
   where id = v_round.id;
@@ -644,8 +661,11 @@ begin
   -- Replace {player} with performer name and {witness}/{opponent} with opponent name
   v_prompt_text := replace(
     replace(
-      replace(v_challenge.prompt_template, '{player}', coalesce(v_performer.name, 'Player')),
-      '{witness}', coalesce(v_witness.name, 'Opponent')
+      replace(
+        replace(v_challenge.prompt_template, '{player}', coalesce(v_performer.name, 'Player')),
+        '{witness}', coalesce(v_witness.name, 'Opponent')
+      ),
+      '(witness)', coalesce(v_witness.name, 'Opponent')
     ),
     '{opponent}', coalesce(v_witness.name, 'Opponent')
   );

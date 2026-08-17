@@ -331,7 +331,7 @@ begin
     select player_id
     from unnest(v_turn_order) with ordinality as t(player_id, position)
     where player_id <> v_performer_id
-    order by position limit 1
+    order by random() limit 1
   );
   select id into v_challenge_id
   from public.party_challenges
@@ -448,7 +448,7 @@ begin
     select player_id
     from unnest(v_match.turn_order) with ordinality as t(player_id, position)
     where player_id <> v_performer_id
-    order by position limit 1
+    order by random() limit 1
   );
   select c.id into v_challenge_id
   from public.party_challenges c

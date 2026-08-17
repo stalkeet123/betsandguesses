@@ -40,16 +40,16 @@ class GameConstants {
   static const int maxGuessSlots = 4;
 
   static const List<String> avatarColors = [
-    '#44D65F',
-    '#1F9DFF',
-    '#FF3B30',
-    '#B45CFF',
-    '#FFB020',
-    '#00D4C8',
-    '#FF5FA2',
-    '#7CFF4D',
-    '#FF7A1A',
-    '#6D7CFF',
+    '#FF8DA1', // Soft Rose
+    '#68A6FF', // Soft Blue
+    '#58D68D', // Soft Green
+    '#B088F9', // Soft Purple
+    '#FFC85C', // Soft Orange
+    '#48E5C2', // Soft Teal
+    '#FF9AA2', // Soft Pink
+    '#A8E6CF', // Soft Mint
+    '#FFD3B6', // Soft Peach
+    '#818CFF', // Soft Indigo
   ];
 }
 
