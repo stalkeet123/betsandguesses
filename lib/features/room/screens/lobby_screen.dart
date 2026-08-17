@@ -303,6 +303,25 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             );
         ref.read(partySessionProvider.notifier).setSnapshot(snapshot);
         ref.read(currentRoomProvider.notifier).set(snapshot.room);
+
+        final partyQuestion = Question(
+          id: snapshot.round.challenge.id,
+          textTr: snapshot.round.challenge.text,
+          textEn: snapshot.round.challenge.text,
+          answer: null,
+          answerUnit: snapshot.round.challenge.answerUnit,
+          category: 'Party Challenge',
+          source: snapshot.round.challenge.rules,
+        );
+        final partyScores = Map<String, int>.from(snapshot.scores);
+        _seedGameState(
+          snapshot.room,
+          partyQuestion,
+          round: snapshot.round.number,
+          phase: snapshot.round.phase.gamePhase,
+          scores: partyScores,
+        );
+
         unawaited(
           ref
               .read(realtimeServiceProvider)
@@ -312,6 +331,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 'round': snapshot.round.number,
                 'phase': snapshot.round.phase.gamePhase.name,
                 'state_version': snapshot.stateVersion,
+                'question': partyQuestion.toJson(),
+                'scores': partyScores,
+                'bank_scores': partyScores,
+                'phase_ends_at': snapshot.round.phaseEndsAt?.toIso8601String(),
               }),
         );
         if (mounted) {

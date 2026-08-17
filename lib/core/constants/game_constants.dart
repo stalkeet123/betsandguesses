@@ -12,7 +12,7 @@ class GameConstants {
   static const int maxRounds = 12;
   static const String defaultCategory = 'Mixed';
 
-  static const int partyDefaultChallengesPerPlayer = 1;
+  static const int partyDefaultChallengesPerPlayer = 2;
   static const int partyMinChallengesPerPlayer = 1;
   static const int partyFreeMaxChallengesPerPlayer = 2;
   static const int partyMaxChallengesPerPlayer = 4;

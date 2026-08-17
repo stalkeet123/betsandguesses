@@ -78,6 +78,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _partyTransitionFallbackTimer;
   String? _partySnapshotWatchdogKey;
   int _partySnapshotWatchdogAttempt = 0;
+  bool _showPartyRoundTransition = false;
+  int? _partyTransitionRound;
+  Timer? _partyRoundTransitionTimer;
   bool _isRefreshingPartyPlayers = false;
   bool _isAppInForeground = true;
   bool _isActive = true;
@@ -134,6 +137,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _isActive = false;
     _timer?.cancel();
     _timer = null;
+    _partyRoundTransitionTimer?.cancel();
     _stopPartySnapshotWatchdog();
     _partyTransitionFallbackTimer?.cancel();
     _partyTransitionFallbackTimer = null;
@@ -146,6 +150,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _isActive = false;
     WidgetsBinding.instance.removeObserver(this);
     _stopTimer();
+    _partyRoundTransitionTimer?.cancel();
     _realtimeRetryTimer?.cancel();
     _roomSyncDebounceTimer?.cancel();
     _partySnapshotWatchdogTimer?.cancel();
@@ -212,6 +217,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _restoreCurrentPlayer(room.id);
 
     if (room.gameMode == GameMode.party) {
+      final cachedSnapshot = ref.read(partySessionProvider).snapshot;
+      if (cachedSnapshot != null && cachedSnapshot.room.id == room.id) {
+        _applyPartySnapshot(cachedSnapshot);
+      }
       unawaited(_setupRealtime());
       await _resyncPartySnapshot(roomOverride: room);
       return;
@@ -1123,6 +1132,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _roundWinners.clear();
       _roundPayouts.clear();
       _revealedResultRound = null;
+      if (round.phase == PartyRoundPhase.betting) {
+        _triggerPartyRoundTransition(snapshot);
+      }
+    } else if (previous == null && round.phase == PartyRoundPhase.betting) {
+      _triggerPartyRoundTransition(snapshot);
     }
     _syncAudioForPhase(round.phase.gamePhase);
     switch (round.phase) {
@@ -2503,6 +2517,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildRoundTimer(GameState gameState) {
     final isReveal = _isRevealPhase(gameState);
     final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
+    final partyRound = _partySnapshot?.round;
+    final isChoice = isParty && partyRound?.challenge.isChoice == true;
+    final choicePending = isChoice && partyRound?.proposedResult == null;
+
     return Row(
       children: [
         Expanded(
@@ -2517,12 +2535,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
           child: Consumer(
             builder: (context, ref, child) {
               final timerSeconds = ref.watch(gameTimerProvider);
+              final isWaitingPerformer =
+                  choicePending && (timerSeconds <= 0 || gameState.phase != RoundPhase.betting);
+
               return _InfoPill(
                 icon: isReveal
                     ? Icons.emoji_events_rounded
+                    : isWaitingPerformer
+                    ? Icons.hourglass_top_rounded
                     : Icons.timer_rounded,
                 label: isReveal
                     ? 'RESULT'
+                    : isWaitingPerformer
+                    ? 'PERFORMER BEKLENİYOR'
                     : timerSeconds > 0
                     ? '0:${timerSeconds.toString().padLeft(2, '0')}'
                     : '--:--',
@@ -2677,21 +2702,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final currentPlayer = ref.read(currentPlayerProvider);
     final isPerformer =
         round != null && currentPlayer?.id == round.performer.id;
-    final isChoiceFocus = isPerformer && round!.challenge.isChoice;
-    final isChoiceSelection =
-        isChoiceFocus && round.phase == PartyRoundPhase.resultEntry;
     final requiredItems = round?.challenge.requiredItems ?? const <String>[];
     final canReroll =
         round?.phase == PartyRoundPhase.betting &&
         currentPlayer?.isHost == true;
-    final rawQuestion = gameState.currentQuestion?.getText(locale: 'en');
-    final questionText = rawQuestion == null
-        ? null
-        : _partyQuestionForViewer(
-            text: rawQuestion,
-            round: round,
-            isPerformer: isPerformer,
-          );
     final heading = _partyQuestionHeading(
       round: round,
       isPerformer: isPerformer,
@@ -2730,9 +2744,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  round == null
-                      ? 'PARTY CHALLENGE'
-                      : '${round.performer.name.toUpperCase()} IS UP',
+                  heading,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.outfit(
@@ -2781,7 +2793,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
             child: gameState.currentQuestion == null
                 ? const _QuestionLoadingText(color: PartyPalette.blueMuted)
                 : _AdaptiveQuestionText(
-                    text: gameState.currentQuestion!.getText(locale: 'en'),
+                    text: _partyQuestionForViewer(
+                      text: gameState.currentQuestion!.getText(locale: 'en'),
+                      round: round,
+                      isPerformer: isPerformer,
+                    ),
                     color: PartyPalette.cream,
                     minFontSize: 20,
                     maxFontSize: 33,
@@ -3024,6 +3040,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         currentPlayer?.id == partyRound?.performer.id) {
       final isChoice = partyRound?.challenge.isChoice == true;
       final selectedChoice = partyRound?.proposedResult;
+      final timerSeconds = ref.watch(gameTimerProvider);
+      final isTimeoutWaiting = isChoice && selectedChoice == null && timerSeconds <= 0;
+
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -3031,8 +3050,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
           color: PartyPalette.surface.withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: PartyPalette.orangeSoft.withValues(alpha: 0.26),
+            color: isTimeoutWaiting
+                ? PartyPalette.orange
+                : PartyPalette.orangeSoft.withValues(alpha: 0.35),
+            width: isTimeoutWaiting ? 1.8 : 1.0,
           ),
+          boxShadow: [
+            if (isTimeoutWaiting)
+              BoxShadow(
+                color: PartyPalette.orange.withValues(alpha: 0.3),
+                blurRadius: 14,
+                spreadRadius: 1,
+              ),
+          ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3040,22 +3070,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
             Icon(
               isChoice
                   ? selectedChoice == null
-                        ? Icons.touch_app_rounded
+                        ? (isTimeoutWaiting
+                            ? Icons.warning_amber_rounded
+                            : Icons.touch_app_rounded)
                         : Icons.check_circle_rounded
                   : Icons.sports_gymnastics_rounded,
-              color: PartyPalette.orangeSoft,
+              color: isChoice && selectedChoice != null
+                  ? const Color(0xFF4ADE80)
+                  : PartyPalette.orangeSoft,
               size: 23,
             ),
             const SizedBox(height: 3),
             Text(
               isChoice
                   ? selectedChoice == null
-                        ? 'MAKE YOUR CHOICE'
-                        : 'CHOICE SAVED'
+                        ? (isTimeoutWaiting
+                            ? 'SEÇİMİNİ YAPMAN BEKLENİYOR!'
+                            : 'GİZLİ SEÇİMİNİ YAP')
+                        : 'GİZLİ SEÇİMİN KAYDEDİLDİ'
                   : 'FRIENDS ARE BETTING',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
-                color: AppColors.ivory,
+                color: isTimeoutWaiting ? PartyPalette.orangeSoft : AppColors.ivory,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.8,
@@ -3065,15 +3101,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
             Text(
               isChoice
                   ? selectedChoice == null
-                        ? 'Tap one of the two bet areas. Your answer stays hidden.'
-                        : 'Tap the other option if you want to change it.'
+                        ? (isTimeoutWaiting
+                            ? 'Süre doldu! Sonuçlar için A veya B seçeneğine dokun.'
+                            : 'A veya B seçeneğine dokun. Seçimin gizli tutulur.')
+                        : 'Değiştirmek istersen diğer seçeneğe dokunabilirsin.'
                   : 'Your performance starts after the betting timer.',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
-                color: AppColors.ivory.withValues(alpha: 0.62),
-                fontSize: 9,
+                color: AppColors.ivory.withValues(alpha: 0.7),
+                fontSize: 9.5,
                 fontWeight: FontWeight.w600,
-                height: 1,
+                height: 1.1,
               ),
             ),
           ],
@@ -3084,50 +3122,61 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (isParty &&
         gameState.phase == RoundPhase.betting &&
         partyRound?.challenge.isChoice == true &&
-        !_canCurrentPlayerEditBets(gameState)) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: PartyPalette.surface.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: PartyPalette.orangeSoft.withValues(alpha: 0.26),
+        (!_canCurrentPlayerEditBets(gameState) || partyRound?.proposedResult == null)) {
+      final timerSeconds = ref.watch(gameTimerProvider);
+      final isTimeout = timerSeconds <= 0;
+      final isChoiceDone = partyRound?.proposedResult != null;
+
+      if (isTimeout && !isChoiceDone) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: PartyPalette.surface.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: PartyPalette.orangeSoft.withValues(alpha: 0.4),
+              width: 1.2,
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.hourglass_top_rounded,
-              color: PartyPalette.orangeSoft,
-              size: 22,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              'WAITING FOR ${partyRound!.performer.name.toUpperCase()}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                color: AppColors.ivory,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.7,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: PartyPalette.orangeSoft,
+                ),
               ),
-            ),
-            Text(
-              'Bets are locked. Their private choice decides the winner.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                color: AppColors.ivory.withValues(alpha: 0.62),
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: 5),
+              Text(
+                'PERFORMER BEKLENİYOR (${partyRound!.performer.name.toUpperCase()})',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.7,
+                ),
               ),
-            ),
-          ],
-        ),
-      );
+              const SizedBox(height: 1),
+              Text(
+                'Bahisler kapandı. Performer seçimini tamamlayınca sonuç açılacak.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: AppColors.ivory.withValues(alpha: 0.65),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
     }
 
     final myBets = currentPlayer == null
@@ -3532,6 +3581,211 @@ class _GameScreenState extends ConsumerState<GameScreen>
           begin: const Offset(0.96, 0.96),
           end: const Offset(1, 1),
           duration: 520.ms,
+          curve: Curves.easeOutCubic,
+        );
+  }
+
+  void _triggerPartyRoundTransition(PartySnapshot snapshot) {
+    if (_partyTransitionRound == snapshot.round.number) return;
+    _partyTransitionRound = snapshot.round.number;
+    _partyRoundTransitionTimer?.cancel();
+    _showPartyRoundTransition = true;
+    _audioService.playQuestionReveal();
+    if (mounted) setState(() {});
+    _partyRoundTransitionTimer = Timer(const Duration(milliseconds: 2100), () {
+      if (_canUseRef) {
+        setState(() => _showPartyRoundTransition = false);
+      }
+    });
+  }
+
+  Widget _buildPartyRoundTransitionOverlay(PartySnapshot snapshot) {
+    final round = snapshot.round;
+    final performerName = round.performer.name.toUpperCase();
+    final initial = performerName.isEmpty ? '?' : performerName.substring(0, 1);
+    final challengeTypeLabel = round.challenge.isChoice
+        ? '⚖️ CHOICE CHALLENGE'
+        : round.challenge.isAttempt
+        ? '🎯 5 TRIES CHALLENGE'
+        : '⏱️ ${round.challenge.durationSeconds}s COUNTDOWN';
+
+    final content = IgnorePointer(
+      child: ColoredBox(
+        color: PartyPalette.nightDeep.withValues(alpha: 0.97),
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5.5),
+                      decoration: BoxDecoration(
+                        color: PartyPalette.surfaceRaised,
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: PartyPalette.orangeSoft.withValues(alpha: 0.6),
+                          width: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: PartyPalette.orange.withValues(alpha: 0.25),
+                            blurRadius: 10,
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        'ROUND ${round.number} OF ${snapshot.room.maxRounds}',
+                        style: GoogleFonts.outfit(
+                          color: PartyPalette.orangeSoft,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'ROUND ${round.number}',
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontFamily: 'RehnCondensed',
+                          color: PartyPalette.cream,
+                          fontSize: 96,
+                          fontWeight: FontWeight.w900,
+                          height: 0.88,
+                          letterSpacing: 0,
+                          shadows: [
+                            Shadow(color: Colors.black87, blurRadius: 20, offset: Offset(0, 4)),
+                            Shadow(color: PartyPalette.orange, blurRadius: 28),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            PartyPalette.surfaceRaised.withValues(alpha: 0.95),
+                            PartyPalette.surface.withValues(alpha: 0.98),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: PartyPalette.orangeSoft.withValues(alpha: 0.45),
+                          width: 1.4,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const RadialGradient(
+                                colors: [
+                                  PartyPalette.surfaceRaised,
+                                  PartyPalette.nightDeep,
+                                ],
+                              ),
+                              border: Border.all(
+                                color: PartyPalette.orangeSoft,
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: PartyPalette.orange.withValues(alpha: 0.35),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              initial,
+                              style: const TextStyle(
+                                fontFamily: 'RehnCondensed',
+                                color: PartyPalette.cream,
+                                fontSize: 34,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'PERFORMER ON STAGE',
+                                  style: GoogleFonts.outfit(
+                                    color: PartyPalette.orangeSoft,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  performerName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: 'RehnCondensed',
+                                    color: PartyPalette.cream,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    height: 0.95,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  challengeTypeLabel,
+                                  style: GoogleFonts.outfit(
+                                    color: PartyPalette.blueMuted,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (MediaQuery.disableAnimationsOf(context)) return content;
+    return content
+        .animate(key: ValueKey('party-round-transition-${round.number}'))
+        .fadeIn(duration: 220.ms, curve: Curves.easeOut)
+        .scale(
+          begin: const Offset(0.95, 0.95),
+          end: const Offset(1, 1),
+          duration: 450.ms,
           curve: Curves.easeOutCubic,
         );
   }
@@ -5214,6 +5468,48 @@ class _GameScreenState extends ConsumerState<GameScreen>
             ),
           ),
           _buildBetSlotLabel(spec, boundaries),
+          if (isChoiceSelected)
+            Positioned(
+              top: 8,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: PartyPalette.nightDeep.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(
+                    color: PartyPalette.orangeSoft,
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: PartyPalette.orange.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: Color(0xFF4ADE80),
+                      size: 13,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'GİZLİ SEÇİMİN',
+                      style: GoogleFonts.outfit(
+                        color: PartyPalette.cream,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -6421,9 +6717,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   /// Party shares the Classic mark; the mode is communicated by the room and
   /// surface treatment, not a competing logo.
-  Widget _buildPartyModeMark() => Padding(
+  Widget _buildPartyModeMark({bool allowWebPromo = false}) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    child: _buildPortraitLogo(allowWebPromo: false),
+    child: _buildPortraitLogo(allowWebPromo: allowWebPromo),
   );
 
   Widget _buildPhaseSurfaceTransition({
@@ -6466,10 +6762,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final secondsRemaining = ref.watch(gameTimerProvider);
     final round = snapshot.round;
     final performanceVisible =
-        round.phase == PartyRoundPhase.ready ||
-        round.phase == PartyRoundPhase.action ||
-        round.phase == PartyRoundPhase.resultEntry ||
-        round.phase == PartyRoundPhase.resultConfirm;
+        !round.challenge.isChoice &&
+        (round.phase == PartyRoundPhase.ready ||
+            round.phase == PartyRoundPhase.action ||
+            round.phase == PartyRoundPhase.resultEntry ||
+            round.phase == PartyRoundPhase.resultConfirm);
     const motion = Duration(milliseconds: 520);
     const fadeMotion = Duration(milliseconds: 320);
 
@@ -6549,7 +6846,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           top: logoTop,
                           width: leftWidth,
                           height: logoHeight,
-                          child: _buildPartyModeMark(),
+                          child: _buildPartyModeMark(
+                            allowWebPromo: !performanceVisible,
+                          ),
                         ),
                         AnimatedPositioned(
                           duration: motion,
@@ -6667,6 +6966,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
               ),
             ),
+            if (_showPartyRoundTransition && _partySnapshot != null)
+              Positioned.fill(
+                child: _buildPartyRoundTransitionOverlay(_partySnapshot!),
+              ),
           ],
         ),
       ),
@@ -6924,6 +7227,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           .disputeResult(partySnapshot.room.id),
                     ),
                   ),
+                ),
+              if (isPartyMode &&
+                  _showPartyRoundTransition &&
+                  partySnapshot != null)
+                Positioned.fill(
+                  child: _buildPartyRoundTransitionOverlay(partySnapshot),
                 ),
             ],
           ),

@@ -1444,14 +1444,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             Positioned(
               top: MediaQuery.paddingOf(context).top + 8,
               right: 8,
-              child: IconButton.filledTonal(
-                tooltip: 'Screenshot scene editor',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const DebugSceneEditorScreen(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton.filledTonal(
+                    tooltip: 'Preview Onboarding',
+                    onPressed: () => context.pushNamed('onboarding'),
+                    icon: const Icon(Icons.slideshow_rounded),
                   ),
-                ),
-                icon: const Icon(Icons.design_services_rounded),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(
+                    tooltip: 'Screenshot scene editor',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const DebugSceneEditorScreen(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.design_services_rounded),
+                  ),
+                ],
               ),
             ),
         ],
