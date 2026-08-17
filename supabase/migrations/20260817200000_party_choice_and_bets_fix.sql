@@ -1,8 +1,8 @@
 -- Complete fix for Party mode betting, chips, choice options, and snapshot:
 -- 1. Support slot index up to 7 for all party modes (choice/versus: 0..1, count/attempt: 0..4, showdown: 0..7).
--- 2. place_party_bet_v1: copy Classic mode robustness (idempotency, bankroll fallback, clean return).
+-- 2. place_party_bet_v1: copy Classic mode robustness (idempotency, bankroll fallback, clean return, NO is_connected check).
 -- 3. move_party_bet_v1 & remove_party_bet_v1: robust phase and slot checks.
--- 4. get_party_snapshot_v1: full snapshot with all required Dart fields and visible bets.
+-- 4. get_party_snapshot_v1: full snapshot with all required Dart fields and visible bets with player_id.
 
 alter table public.party_bets drop constraint if exists party_bets_slot_valid;
 alter table public.party_bets add constraint party_bets_slot_valid check (slot_index between 0 and 7);
@@ -42,11 +42,11 @@ begin
     raise exception using errcode = 'P0002', message = 'Party room not found';
   end if;
 
+  -- Match player by room and auth UID without requiring is_connected (identical to Classic mode)
   select * into v_player
   from public.players
   where room_id = p_room_id
     and auth_user_id = (select auth.uid())
-    and is_connected
   order by joined_at desc limit 1;
 
   if v_player.id is null then
@@ -71,22 +71,20 @@ begin
     return to_jsonb(v_bet);
   end if;
 
-  -- 2. Phase check: if betting closed, return null cleanly (like classic mode)
+  -- 2. Phase check: if betting closed, return null cleanly (with 10-sec network grace buffer)
   if v_round.phase <> 'betting'
      or (v_round.phase_ends_at is not null
-         and v_round.phase_ends_at < statement_timestamp()) then
+         and v_round.phase_ends_at + interval '10 seconds' < statement_timestamp()) then
     return null;
   end if;
 
   -- 3. Performer check: performers don't bet in standard performer-focused rounds
-  if v_player.id = v_round.performer_id and v_challenge.challenge_type not in ('showdown') then
+  if v_player.id = v_round.performer_id and v_challenge.challenge_type not in ('showdown', 'versus') then
     raise exception using errcode = '42501', message = 'Performer cannot bet';
   end if;
 
-  -- 4. Slot index validation based on challenge type
-  if (v_challenge.challenge_type in ('binary', 'choice', 'versus') and p_slot_index not between 0 and 1)
-     or (v_challenge.challenge_type in ('count', 'attempt') and p_slot_index not between 0 and 4)
-     or (v_challenge.challenge_type = 'showdown' and p_slot_index not between 0 and 7) then
+  -- 4. Slot index validation: allow 0..7
+  if p_slot_index not between 0 and 7 then
     raise exception using errcode = '22023', message = 'Invalid bet slot';
   end if;
 
@@ -160,7 +158,6 @@ begin
   from public.players
   where room_id = p_room_id
     and auth_user_id = (select auth.uid())
-    and is_connected
   order by joined_at desc limit 1;
 
   if v_player.id is null then
@@ -175,13 +172,11 @@ begin
 
   if v_round.phase <> 'betting'
      or (v_round.phase_ends_at is not null
-         and v_round.phase_ends_at < statement_timestamp()) then
+         and v_round.phase_ends_at + interval '10 seconds' < statement_timestamp()) then
     return null;
   end if;
 
-  if (v_challenge.challenge_type in ('binary', 'choice', 'versus') and p_slot_index not between 0 and 1)
-     or (v_challenge.challenge_type in ('count', 'attempt') and p_slot_index not between 0 and 4)
-     or (v_challenge.challenge_type = 'showdown' and p_slot_index not between 0 and 7) then
+  if p_slot_index not between 0 and 7 then
     raise exception using errcode = '22023', message = 'Invalid bet slot';
   end if;
 
@@ -225,7 +220,6 @@ begin
   from public.players
   where room_id = p_room_id
     and auth_user_id = (select auth.uid())
-    and is_connected
   order by joined_at desc limit 1;
 
   if v_player.id is null then
@@ -238,7 +232,7 @@ begin
 
   if v_round.phase <> 'betting'
      or (v_round.phase_ends_at is not null
-         and v_round.phase_ends_at < statement_timestamp()) then
+         and v_round.phase_ends_at + interval '10 seconds' < statement_timestamp()) then
     return null;
   end if;
 
@@ -287,7 +281,6 @@ begin
   from public.players
   where room_id = p_room_id
     and auth_user_id = (select auth.uid())
-    and is_connected
   order by joined_at desc limit 1;
   if v_me.id is null then
     raise exception using errcode = '42501', message = 'Room membership required';
@@ -314,7 +307,7 @@ begin
       and v_round.phase = 'betting'
     );
 
-  -- All bets in the room and round are returned with player_id so all chips remain visible
+  -- All bets in the room and round are returned with player_id so all chips remain visible unconditionally
   select coalesce(
     jsonb_agg(
       jsonb_build_object(

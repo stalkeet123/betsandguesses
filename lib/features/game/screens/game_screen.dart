@@ -1109,14 +1109,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
         })
         .toList(growable: false);
 
-    final existingLocalBets = ref
-        .read(gameStateProvider)
-        .bets
-        .where((b) => b.id.startsWith('local-'))
-        .toList();
-    final allBets = [...bets, ...existingLocalBets];
-
     final currentPlayer = ref.read(currentPlayerProvider);
+    final existingBets = ref.read(gameStateProvider).bets;
+    final serverBetIds = bets.map((b) => b.id).toSet();
+    final retainedLocalBets = existingBets
+        .where((b) =>
+            b.roundNumber == round.number &&
+            !serverBetIds.contains(b.id) &&
+            (b.id.startsWith('local-') || b.playerId == currentPlayer?.id))
+        .toList();
+    final allBets = [...bets, ...retainedLocalBets];
     ref.read(currentRoomProvider.notifier).set(snapshot.room);
     ref
         .read(gameStateProvider.notifier)
@@ -2252,7 +2254,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
       } else {
         debugPrint('Bet placement failed: $error');
         debugPrintStack(stackTrace: stackTrace);
-        if (_canUseRef) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Bet could not be placed: $error'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
           unawaited(_resyncFromServer(synchronizeClock: false));
         }
       }
