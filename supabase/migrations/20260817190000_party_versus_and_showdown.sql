@@ -5,26 +5,75 @@
 begin;
 
 alter table public.party_challenges
+  drop constraint if exists party_challenges_type_valid,
   drop constraint if exists party_challenges_category_valid,
   drop constraint if exists party_challenges_duration_valid,
-  drop constraint if exists party_challenges_active_taxonomy_valid;
+  drop constraint if exists party_challenges_active_taxonomy_valid,
+  drop constraint if exists party_challenges_bet_boundaries_valid,
+  drop constraint if exists party_challenges_type_direction_valid,
+  drop constraint if exists party_challenges_choice_options_valid;
 
 alter table public.party_challenges
+  add constraint party_challenges_type_valid check (
+    challenge_type in ('count', 'binary', 'attempt', 'choice', 'versus', 'showdown')
+  ),
   add constraint party_challenges_category_valid check (
     category in (
       'personality', 'attempt', 'count', 'versus', 'showdown',
       'general', 'verbal', 'precision', 'physical', 'dare', 'skill', 'social'
     )
-  );
-
-alter table public.party_challenges
+  ),
   add constraint party_challenges_duration_valid check (
     (challenge_type = 'attempt' and duration_seconds = 0)
     or (challenge_type in ('versus', 'showdown') and duration_seconds between 0 and 90)
     or (challenge_type not in ('attempt', 'versus', 'showdown') and duration_seconds between 5 and 60)
-  );
-
-alter table public.party_challenges
+  ),
+  add constraint party_challenges_type_direction_valid check (
+    (challenge_type in ('binary', 'choice', 'versus') and result_direction = 'binary')
+    or (challenge_type = 'attempt' and result_direction = 'lower')
+    or (challenge_type in ('count', 'showdown') and result_direction in ('higher', 'lower'))
+  ),
+  add constraint party_challenges_bet_boundaries_valid check (
+    (
+      challenge_type = 'count'
+      and bet_boundaries is not null
+      and cardinality(bet_boundaries) = 4
+      and bet_boundaries[1] >= 0
+      and bet_boundaries[1] < bet_boundaries[2]
+      and bet_boundaries[2] < bet_boundaries[3]
+      and bet_boundaries[3] < bet_boundaries[4]
+      and bet_boundaries[4] <= max_result
+    )
+    or (
+      challenge_type in ('binary', 'choice', 'versus')
+      and bet_boundaries is null
+      and max_result = 1
+    )
+    or (
+      challenge_type = 'attempt'
+      and bet_boundaries is null
+      and max_result = 5
+      and result_direction = 'lower'
+    )
+    or (
+      challenge_type = 'showdown'
+      and bet_boundaries is null
+      and max_result = 7
+    )
+  ),
+  add constraint party_challenges_choice_options_valid check (
+    (
+      challenge_type = 'choice'
+      and nullif(btrim(option_a), '') is not null
+      and nullif(btrim(option_b), '') is not null
+      and option_a <> option_b
+    )
+    or (
+      challenge_type <> 'choice'
+      and option_a is null
+      and option_b is null
+    )
+  ),
   add constraint party_challenges_active_taxonomy_valid check (
     not enabled
     or (challenge_type = 'choice' and category = 'personality')
