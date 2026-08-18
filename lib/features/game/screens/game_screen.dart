@@ -6132,26 +6132,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final playerName = slot.title;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
           Container(
-            width: 4,
-            height: 28,
+            width: 4.5,
+            height: 26,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
+              gradient: const LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  AppColors.brassLight,
-                  AppColors.chipGold,
-                  AppColors.brassLight.withValues(alpha: 0.35),
+                  PartyPalette.orange,
+                  PartyPalette.orangeSoft,
                 ],
               ),
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: BorderRadius.circular(3),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.brassLight.withValues(alpha: 0.4),
+                  color: PartyPalette.orange.withValues(alpha: 0.5),
                   blurRadius: 6,
                 ),
               ],
@@ -6165,41 +6164,29 @@ class _GameScreenState extends ConsumerState<GameScreen>
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontFamily: 'RehnCondensed',
-                color: AppColors.ivory,
-                fontSize: 32,
+                color: PartyPalette.cream,
+                fontSize: 31,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 1.0,
-                height: 0.95,
+                letterSpacing: 0.8,
+                height: 0.92,
                 shadows: [
                   Shadow(
                     color: Colors.black87,
                     blurRadius: 8,
                     offset: Offset(0, 2),
                   ),
-                  Shadow(
-                    color: Colors.black54,
-                    blurRadius: 16,
-                    offset: Offset(0, 4),
-                  ),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF2A1C0E),
-                  Color(0xFF140D07),
-                ],
-              ),
+              color: PartyPalette.nightDeep.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: AppColors.brassLight.withValues(alpha: 0.75),
+                color: PartyPalette.orangeSoft.withValues(alpha: 0.55),
                 width: 1.2,
               ),
               boxShadow: [
@@ -6213,8 +6200,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
             child: Text(
               '2X',
               style: GoogleFonts.outfit(
-                color: AppColors.brassLight,
-                fontSize: 13,
+                color: PartyPalette.orangeSoft,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.8,
               ),
@@ -8081,7 +8068,8 @@ class _BetSlotSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(spec.isSweetSpot ? 18 : 10);
+    final radius = BorderRadius.circular(spec.isSweetSpot ? 18 : 12);
+    if (isPartyMode) return _buildPartySurface(radius);
 
     Widget surface = DecoratedBox(
       decoration: BoxDecoration(
@@ -8175,6 +8163,95 @@ class _BetSlotSurface extends StatelessWidget {
         .shimmer(
           color: Colors.white.withValues(alpha: 0.38),
           duration: 1800.ms,
+        );
+  }
+
+  Widget _buildPartySurface(BorderRadius radius) {
+    final colors = switch (spec.tone) {
+      _BetSlotTone.green => const [Color(0xFF243B30), Color(0xFF16251E)],
+      _BetSlotTone.black => const [Color(0xFF282337), Color(0xFF181423)],
+      _BetSlotTone.gold => const [Color(0xFF382A1E), Color(0xFF221710)],
+      _BetSlotTone.red => const [Color(0xFF382026), Color(0xFF221217)],
+      _BetSlotTone.choiceA => const [Color(0xFF202E3C), Color(0xFF121B24)],
+      _BetSlotTone.choiceB => const [Color(0xFF301E32), Color(0xFF1E1120)],
+    };
+
+    final isGold = spec.isSweetSpot;
+    final borderColor = isWinningReveal
+        ? PartyPalette.orange
+        : (isGold
+            ? PartyPalette.orangeSoft.withValues(alpha: 0.55)
+            : PartyPalette.orangeSoft.withValues(alpha: 0.25));
+
+    Widget surface = AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colors.first,
+            colors.last,
+          ],
+        ),
+        border: Border.all(
+          color: borderColor,
+          width: isWinningReveal ? 2.2 : (isGold ? 1.4 : 1.1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.40),
+            blurRadius: isWinningReveal ? 20 : 10,
+            offset: Offset(0, isWinningReveal ? 8 : 4),
+          ),
+          if (isWinningReveal)
+            BoxShadow(
+              color: PartyPalette.orange.withValues(alpha: 0.50),
+              blurRadius: 28,
+              spreadRadius: 3,
+            ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(max(4, radius.topLeft.x - 1)),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 1,
+              child: Container(
+                color: Colors.white.withValues(alpha: 0.10),
+              ),
+            ),
+            if (isWinningReveal)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    colors: [
+                      PartyPalette.orangeSoft.withValues(alpha: 0.45),
+                      PartyPalette.orange.withValues(alpha: 0.25),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: const SizedBox.expand(),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (!isWinningReveal) return surface;
+
+    return surface
+        .animate(onPlay: (controller) => controller.repeat(reverse: true))
+        .shimmer(
+          color: PartyPalette.cream.withValues(alpha: 0.35),
+          duration: 1600.ms,
         );
   }
 
