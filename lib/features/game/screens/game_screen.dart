@@ -6138,64 +6138,30 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.only(left: 16, right: 54, top: 4, bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 140),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
-            decoration: BoxDecoration(
-              color: PartyPalette.nightDeep.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: PartyPalette.orangeSoft.withValues(alpha: 0.35),
-                width: 1.1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 6,
+          alignment: Alignment.center,
+          child: Text(
+            playerName.toUpperCase(),
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'RehnCondensed',
+              color: PartyPalette.cream,
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+              height: 1,
+              letterSpacing: 0.5,
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.80),
+                  blurRadius: 7,
                   offset: const Offset(0, 2),
                 ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: PartyPalette.orange,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: PartyPalette.orange.withValues(alpha: 0.8),
-                        blurRadius: 6,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  playerName.toUpperCase(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'RehnCondensed',
-                    color: PartyPalette.cream,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    height: 0.90,
-                    letterSpacing: 0.8,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black87,
-                        blurRadius: 6,
-                        offset: Offset(0, 1.5),
-                      ),
-                    ],
-                  ),
+                Shadow(
+                  color: PartyPalette.orange.withValues(alpha: 0.20),
+                  blurRadius: 12,
                 ),
               ],
             ),
