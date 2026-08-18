@@ -210,26 +210,38 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _initializeGame() async {
-    var room = ref.read(currentRoomProvider);
-    if (room == null) return;
+    final initialRoom = ref.read(currentRoomProvider);
+    if (initialRoom == null) return;
+
+    if (initialRoom.gameMode == GameMode.party) {
+      final cachedSnapshot = ref.read(partySessionProvider).snapshot;
+      if (cachedSnapshot != null && cachedSnapshot.room.id == initialRoom.id) {
+        _applyPartySnapshot(cachedSnapshot);
+      }
+      unawaited(_setupRealtime());
+      _restoreCurrentPlayer(initialRoom.id);
+
+      final roomService = ref.read(roomServiceProvider);
+      final playerService = ref.read(playerServiceProvider);
+
+      final roomFuture = roomService.getRoom(initialRoom.id);
+      final playersFuture = playerService.getPlayers(initialRoom.id);
+      final resyncFuture = _resyncPartySnapshot(roomOverride: initialRoom);
+
+      final updatedRoom = await roomFuture;
+      ref.read(currentRoomProvider.notifier).set(updatedRoom);
+      _players = await playersFuture;
+      await resyncFuture;
+      return;
+    }
 
     final roomService = ref.read(roomServiceProvider);
-    room = await roomService.getRoom(room.id);
+    final room = await roomService.getRoom(initialRoom.id);
     ref.read(currentRoomProvider.notifier).set(room);
 
     final playerService = ref.read(playerServiceProvider);
     _players = await playerService.getPlayers(room.id);
     _restoreCurrentPlayer(room.id);
-
-    if (room.gameMode == GameMode.party) {
-      final cachedSnapshot = ref.read(partySessionProvider).snapshot;
-      if (cachedSnapshot != null && cachedSnapshot.room.id == room.id) {
-        _applyPartySnapshot(cachedSnapshot);
-      }
-      unawaited(_setupRealtime());
-      await _resyncPartySnapshot(roomOverride: room);
-      return;
-    }
 
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final scores = <String, int>{};
@@ -1678,7 +1690,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final scanOrder = _partySnapshot?.round.challenge.usesTwoOptionBoard == true
         ? [0, 1, 0, 1, if (winningSlotIndex != null) winningSlotIndex]
         : (_partySnapshot?.round.challenge.isShowdown == true ||
-                _partySnapshot?.round.challenge.isPoll == true)
+              _partySnapshot?.round.challenge.isPoll == true)
         ? [
             for (var i = 0; i < max(2, min(8, _players.length)); i++) i,
             for (var i = 0; i < max(2, min(8, _players.length)); i++) i,
@@ -2174,11 +2186,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       chips: chips,
       payoutMultiplier:
           room.gameMode == GameMode.party &&
-                  (_partySnapshot?.round.challenge.usesTwoOptionBoard == true ||
-                      _partySnapshot?.round.challenge.isPoll == true ||
-                      _partySnapshot?.round.challenge.isShowdown == true)
-              ? 2
-              : GameConstants.boardOdds[slotIndex],
+              (_partySnapshot?.round.challenge.usesTwoOptionBoard == true ||
+                  _partySnapshot?.round.challenge.isPoll == true ||
+                  _partySnapshot?.round.challenge.isShowdown == true)
+          ? 2
+          : GameConstants.boardOdds[slotIndex],
       playerName: player.name,
       playerColor: player.avatarColor,
       positionX: safeDx,
@@ -2373,11 +2385,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       targetGuessId: targetGuessId,
       payoutMultiplier:
           room.gameMode == GameMode.party &&
-                  (_partySnapshot?.round.challenge.usesTwoOptionBoard == true ||
-                      _partySnapshot?.round.challenge.isPoll == true ||
-                      _partySnapshot?.round.challenge.isShowdown == true)
-              ? 2
-              : GameConstants.boardOdds[targetSlotIndex],
+              (_partySnapshot?.round.challenge.usesTwoOptionBoard == true ||
+                  _partySnapshot?.round.challenge.isPoll == true ||
+                  _partySnapshot?.round.challenge.isShowdown == true)
+          ? 2
+          : GameConstants.boardOdds[targetSlotIndex],
       positionX: safeDx,
       positionY: safeDy,
     );
@@ -5567,9 +5579,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   spec.index,
                           boundaries:
                               usesTwoOptionBoard ||
-                                      isAttempt ||
-                                      isShowdown ||
-                                      isPoll
+                                  isAttempt ||
+                                  isShowdown ||
+                                  isPoll
                               ? const <int>[]
                               : boundaryValues,
                         ),
@@ -6328,89 +6340,107 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final initial = playerName.isNotEmpty
         ? playerName.substring(0, 1).toUpperCase()
         : '?';
-    final isVersus = _partySnapshot?.round.challenge.isVersus == true;
-    final kicker = isVersus
-        ? (slot.index == 0 ? 'PERFORMER' : 'CHALLENGER')
-        : 'CONTENDER';
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const RadialGradient(
-                    colors: [
-                      PartyPalette.surfaceRaised,
-                      PartyPalette.nightDeep,
-                    ],
-                  ),
-                  border: Border.all(
-                    color: PartyPalette.orangeSoft.withValues(alpha: 0.8),
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: PartyPalette.orange.withValues(alpha: 0.25),
-                      blurRadius: 8,
-                    ),
-                  ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const RadialGradient(
+                colors: [
+                  PartyPalette.surfaceRaised,
+                  PartyPalette.nightDeep,
+                ],
+              ),
+              border: Border.all(
+                color: PartyPalette.orangeSoft.withValues(alpha: 0.8),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: PartyPalette.orange.withValues(alpha: 0.25),
+                  blurRadius: 8,
                 ),
-                alignment: Alignment.center,
-                child: Text(
-                  initial,
+              ],
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              initial,
+              style: const TextStyle(
+                fontFamily: 'RehnCondensed',
+                color: PartyPalette.cream,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'VOTE TARGET',
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.cream.withValues(alpha: 0.65),
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  playerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'RehnCondensed',
                     color: PartyPalette.cream,
-                    fontSize: 22,
+                    fontSize: 26,
                     fontWeight: FontWeight.w900,
+                    height: 0.95,
+                    letterSpacing: 0.5,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black,
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                kicker,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
-                  color: PartyPalette.cream.withValues(alpha: 0.65),
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                playerName,
-                maxLines: 1,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'RehnCondensed',
-                  color: PartyPalette.cream,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  height: 0.9,
-                  letterSpacing: 0,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black,
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: PartyPalette.nightDeep.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: PartyPalette.orangeSoft.withValues(alpha: 0.45),
+                width: 1,
+              ),
+            ),
+            child: Text(
+              '2X',
+              style: GoogleFonts.outfit(
+                color: PartyPalette.orangeSoft,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -7390,22 +7420,43 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (partySnapshot != null) {
         return _buildPartySingleSceneSurface(partySnapshot);
       }
-      return const Scaffold(
-        backgroundColor: Color(0xFF0F1B14),
-        body: Stack(
-          children: [
-            Positioned.fill(child: _PartyTableBackground()),
-            Center(
-              child: SizedBox(
-                width: 36,
-                height: 36,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFD54F)),
+      return const PopScope(
+        canPop: false,
+        child: Scaffold(
+          body: Stack(
+            children: [
+              Positioned.fill(child: _PartyTableBackground()),
+              SafeArea(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 38,
+                        height: 38,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(PartyPalette.orangeSoft),
+                        ),
+                      ),
+                      SizedBox(height: 18),
+                      Text(
+                        'GETTING READY',
+                        style: TextStyle(
+                          fontFamily: 'RehnCondensed',
+                          color: PartyPalette.cream,
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
@@ -7937,76 +7988,31 @@ List<_BetSlotSpec> _versusBetSlotsFor(PartyRoundSnapshot? round) {
 
 List<_BetSlotSpec> _showdownBetSlotsFor(List<Player> players) {
   final count = players.isEmpty ? 4 : players.length.clamp(2, 8);
-  final odds = count;
+  const odds = 2;
   final tones = const [
     _BetSlotTone.choiceA,
     _BetSlotTone.choiceB,
     _BetSlotTone.gold,
     _BetSlotTone.green,
     _BetSlotTone.red,
-    _BetSlotTone.black,
     _BetSlotTone.choiceA,
     _BetSlotTone.choiceB,
+    _BetSlotTone.gold,
   ];
 
-  if (count <= 4) {
-    const rects = [
-      Rect.fromLTWH(0.045, 0.035, 0.435, 0.445),
-      Rect.fromLTWH(0.520, 0.035, 0.435, 0.445),
-      Rect.fromLTWH(0.045, 0.520, 0.435, 0.445),
-      Rect.fromLTWH(0.520, 0.520, 0.435, 0.445),
-    ];
-    return List.generate(
-      count,
-      (i) => _BetSlotSpec(
-        i,
-        i < players.length ? players[i].name : 'PLAYER ${i + 1}',
-        odds,
-        tones[i % tones.length],
-        rects[i],
-      ),
-    );
-  } else if (count <= 6) {
-    const rects = [
-      Rect.fromLTWH(0.045, 0.020, 0.435, 0.295),
-      Rect.fromLTWH(0.520, 0.020, 0.435, 0.295),
-      Rect.fromLTWH(0.045, 0.350, 0.435, 0.295),
-      Rect.fromLTWH(0.520, 0.350, 0.435, 0.295),
-      Rect.fromLTWH(0.045, 0.680, 0.435, 0.295),
-      Rect.fromLTWH(0.520, 0.680, 0.435, 0.295),
-    ];
-    return List.generate(
-      count,
-      (i) => _BetSlotSpec(
-        i,
-        i < players.length ? players[i].name : 'PLAYER ${i + 1}',
-        odds,
-        tones[i % tones.length],
-        rects[i],
-      ),
-    );
-  } else {
-    const rects = [
-      Rect.fromLTWH(0.045, 0.015, 0.435, 0.220),
-      Rect.fromLTWH(0.520, 0.015, 0.435, 0.220),
-      Rect.fromLTWH(0.045, 0.260, 0.435, 0.220),
-      Rect.fromLTWH(0.520, 0.260, 0.435, 0.220),
-      Rect.fromLTWH(0.045, 0.505, 0.435, 0.220),
-      Rect.fromLTWH(0.520, 0.505, 0.435, 0.220),
-      Rect.fromLTWH(0.045, 0.750, 0.435, 0.220),
-      Rect.fromLTWH(0.520, 0.750, 0.435, 0.220),
-    ];
-    return List.generate(
-      count,
-      (i) => _BetSlotSpec(
-        i,
-        i < players.length ? players[i].name : 'PLAYER ${i + 1}',
-        odds,
-        tones[i % tones.length],
-        rects[i],
-      ),
-    );
-  }
+  final gap = count <= 4 ? 0.020 : (count <= 6 ? 0.014 : 0.010);
+  final slotHeight = (0.960 - (count - 1) * gap) / count;
+
+  return List.generate(
+    count,
+    (i) => _BetSlotSpec(
+      i,
+      i < players.length ? players[i].name : 'PLAYER ${i + 1}',
+      odds,
+      tones[i % tones.length],
+      Rect.fromLTWH(0.055, 0.020 + i * (slotHeight + gap), 0.890, slotHeight),
+    ),
+  );
 }
 
 enum _BetSlotTone { green, black, gold, red, choiceA, choiceB }
