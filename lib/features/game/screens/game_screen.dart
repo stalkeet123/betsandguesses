@@ -1744,27 +1744,53 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   int? _winningBetSlotIndex(GameState gameState) {
+    final indices = _winningBetSlotIndices(gameState);
+    return indices.isEmpty ? null : indices.first;
+  }
+
+  Set<int> _winningBetSlotIndices(GameState gameState) {
+    if (_partySnapshot?.round.challenge.isPoll == true) {
+      final winningSlotsFromBets = gameState.bets
+          .where((b) => b.won)
+          .map((b) => b.slotIndex)
+          .toSet();
+      if (winningSlotsFromBets.isNotEmpty) return winningSlotsFromBets;
+      final proposed =
+          gameState.correctAnswer ?? _partySnapshot?.round.proposedResult;
+      if (proposed != null && proposed >= 0) return {proposed};
+      return {};
+    }
     final correctAnswer = gameState.correctAnswer;
-    if (correctAnswer == null) return null;
+    if (correctAnswer == null) return {};
     final partySlot = _partySnapshot?.round.challenge.betSlotForResult(
       correctAnswer,
     );
-    if (partySlot != null) return partySlot;
-    return ref
+    if (partySlot != null) return {partySlot};
+    final determined = ref
         .read(gameServiceProvider)
         .determineWinningBetSlotIndex(gameState.sortedGuesses, correctAnswer);
+    return determined != null ? {determined} : {};
   }
 
   int _currentPlayerRoundPayout(GameState gameState) {
     final currentPlayer = ref.read(currentPlayerProvider);
+    if (currentPlayer == null) return 0;
+
     final partyRound = _partySnapshot?.round;
-    if (currentPlayer != null &&
-        partyRound?.phase == PartyRoundPhase.reveal &&
-        partyRound?.performer.id == currentPlayer.id) {
-      return _partyPerformerBonus(partyRound!);
+    if (partyRound?.challenge.isPoll == true) {
+      final winIndices = _winningBetSlotIndices(gameState);
+      var payout = 0;
+      for (final bet in gameState.bets) {
+        if (bet.playerId == currentPlayer.id &&
+            (bet.won || winIndices.contains(bet.slotIndex))) {
+          payout += bet.chips * 2;
+        }
+      }
+      return payout;
     }
+
     final winningSlotIndex = _winningBetSlotIndex(gameState);
-    if (currentPlayer == null || winningSlotIndex == null) return 0;
+    if (winningSlotIndex == null) return 0;
 
     var payout = 0;
     for (final bet in gameState.bets) {
@@ -1777,17 +1803,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return payout;
   }
 
-  int _partyPerformerBonus(PartyRoundSnapshot round) {
-    return round.performerBonus;
-  }
-
   Map<String, int> _partyRoundPayouts(List<Bet> bets) {
     final payouts = <String, int>{};
     for (final bet in bets.where((bet) => bet.won)) {
+      const multiplier = 2;
       payouts.update(
         bet.playerId,
-        (value) => value + bet.chips * bet.payoutMultiplier,
-        ifAbsent: () => bet.chips * bet.payoutMultiplier,
+        (value) => value + bet.chips * multiplier,
+        ifAbsent: () => bet.chips * multiplier,
       );
     }
     return payouts;
@@ -5503,9 +5526,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
         final isShowdown = challenge?.isShowdown == true;
         final isPoll = challenge?.isPoll == true;
         final isReveal = _isRevealPhase(gameState);
-        final winningSlotIndex = isReveal
-            ? _winningBetSlotIndex(gameState)
-            : null;
+        final winningSlotIndices = isReveal
+            ? _winningBetSlotIndices(gameState)
+            : <int>{};
+        final winningSlotIndex = winningSlotIndices.isEmpty
+            ? null
+            : winningSlotIndices.first;
         final activeSlots = isVersus
             ? _versusBetSlotsFor(_partySnapshot?.round)
             : (isShowdown || isPoll)
@@ -5554,7 +5580,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             : null,
                         child: _buildCodedBetSlot(
                           spec: spec,
-                          isWinningReveal: activeRevealSlotIndex == spec.index,
+                          isWinningReveal: activeRevealSlotIndex == spec.index ||
+                              (isReveal &&
+                                  _showWinnerBadge &&
+                                  winningSlotIndices.contains(spec.index)),
                           isChoiceSelected:
                               canChoose &&
                               (_optimisticChoiceIndex ??
@@ -5562,16 +5591,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   spec.index,
                           boundaries:
                               usesTwoOptionBoard ||
-                                  isAttempt ||
-                                  isShowdown ||
-                                  isPoll
+                                      isAttempt ||
+                                      isShowdown ||
+                                      isPoll
                               ? const <int>[]
                               : boundaryValues,
                         ),
                       ),
                     ),
-                  if (_showWinnerBadge && winningSlotIndex != null)
-                    ..._buildWinParticles(size, winningSlotIndex),
+                  if (_showWinnerBadge && winningSlotIndices.isNotEmpty)
+                    for (final winIdx in winningSlotIndices)
+                      ..._buildWinParticles(size, winIdx),
                   if (!usesTwoOptionBoard &&
                       !isAttempt &&
                       !isShowdown &&
@@ -6334,10 +6364,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const RadialGradient(
-                colors: [
-                  PartyPalette.surfaceRaised,
-                  PartyPalette.nightDeep,
-                ],
+                colors: [PartyPalette.surfaceRaised, PartyPalette.nightDeep],
               ),
               border: Border.all(
                 color: PartyPalette.orangeSoft.withValues(alpha: 0.8),
@@ -7419,8 +7446,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         height: 38,
                         child: CircularProgressIndicator(
                           strokeWidth: 3,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(PartyPalette.orangeSoft),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            PartyPalette.orangeSoft,
+                          ),
                         ),
                       ),
                       SizedBox(height: 18),
