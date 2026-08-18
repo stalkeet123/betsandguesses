@@ -1828,24 +1828,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (gameState.phase != RoundPhase.betting) return false;
     final room = ref.read(currentRoomProvider);
     if (room == null) return false;
-    if (room.gameMode != GameMode.party) return true;
-
-    final player = ref.read(currentPlayerProvider);
-    if (player == null) return false;
-    final challenge = _partySnapshot?.round.challenge;
-    if (challenge?.isShowdown == true || challenge?.isVersus == true) {
-      return true;
-    }
-    return _partySnapshot?.round.performer.id != player.id;
+    return true;
   }
 
   bool _canCurrentPerformerChoose(GameState gameState) {
-    if (gameState.phase != RoundPhase.betting) return false;
-    final snapshot = _partySnapshot;
-    final player = ref.read(currentPlayerProvider);
-    return snapshot?.round.challenge.isChoice == true &&
-        player != null &&
-        snapshot!.round.performer.id == player.id;
+    return false;
   }
 
   void _lockBettingWindow() {
@@ -2128,16 +2115,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
     if (!_canCurrentPlayerEditBets(gameState)) {
       _lockBettingWindow();
-      return;
-    }
-    if (room.gameMode == GameMode.party &&
-        _partySnapshot?.round.performer.id == player.id &&
-        _partySnapshot?.round.challenge.isPoll != true &&
-        _partySnapshot?.round.challenge.isShowdown != true &&
-        _partySnapshot?.round.challenge.isVersus != true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('The performer does not bet this round.')),
-      );
       return;
     }
 
@@ -2841,18 +2818,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     required PartyRoundSnapshot? round,
     required bool isPerformer,
   }) {
-    if (round == null) return 'PARTY CHALLENGE';
-    if (round.challenge.isPoll) return 'GROUP POLL · EVERYONE VOTES';
-    if (round.challenge.isShowdown) return 'ALL-PLAY SHOWDOWN';
-    if (round.challenge.isVersus) return '1V1 DUEL SHOWDOWN';
-    if (round.challenge.isChoice &&
-        round.phase == PartyRoundPhase.resultEntry) {
-      return 'MAKE YOUR CHOICE';
-    }
-    if (round.challenge.isChoice) return 'THIS ONE IS ABOUT YOU';
-    if (!isPerformer) return '${round.performer.name.toUpperCase()} IS UP';
-    if (round.phase == PartyRoundPhase.action) return 'YOU’RE LIVE';
-    return 'YOU’RE UP';
+    return 'GROUP POLL · EVERYONE VOTES';
   }
 
   String _partyQuestionForViewer({
@@ -2860,22 +2826,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     required PartyRoundSnapshot? round,
     required bool isPerformer,
   }) {
-    var resolved = text;
-    if (round != null) {
-      final witnessName = round.witness?.name.trim() ?? 'Opponent';
-      resolved = resolved
-          .replaceAll('{witness}', witnessName)
-          .replaceAll('(witness)', witnessName)
-          .replaceAll('{opponent}', witnessName);
-    }
-    if (!isPerformer || round == null) return resolved;
-    final performerName = round.performer.name.trim();
-    if (performerName.isEmpty) return resolved;
-
-    final escapedName = RegExp.escape(performerName);
-    final possessive = RegExp("$escapedName(?:'s|’s)", caseSensitive: false);
-    final subject = RegExp('\\b$escapedName\\b', caseSensitive: false);
-    return resolved.replaceAll(possessive, 'your').replaceAll(subject, 'you');
+    return text;
   }
 
   Widget _buildPartyQuestionCard(GameState gameState) {
@@ -3007,8 +2958,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final isBinary = challenge?.isBinary == true;
     final isChoice = challenge?.isChoice == true;
     final isAttempt = challenge?.isAttempt == true;
+    final isPoll = challenge?.isPoll == true || challenge?.isShowdown == true;
     final answerText = answer == null
         ? '--'
+        : isPoll
+        ? (answer >= 0 && answer < _players.length
+              ? _players[answer].name.toUpperCase()
+              : 'MAJORITY PICK')
         : isChoice
         ? (challenge?.choiceLabel(answer) ?? 'CHOICE')
         : isBinary
@@ -3214,156 +3170,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Widget _buildChipPicker(Player? currentPlayer, GameState gameState) {
-    final partyRound = _partySnapshot?.round;
     final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
-    if (isParty &&
-        gameState.phase == RoundPhase.betting &&
-        currentPlayer?.id == partyRound?.performer.id) {
-      final isChoice = partyRound?.challenge.isChoice == true;
-      final selectedChoice = partyRound?.proposedResult;
-      final timerSeconds = ref.watch(gameTimerProvider);
-      final isTimeoutWaiting =
-          isChoice && selectedChoice == null && timerSeconds <= 0;
-
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: PartyPalette.surface.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isTimeoutWaiting
-                ? PartyPalette.orange
-                : PartyPalette.orangeSoft.withValues(alpha: 0.35),
-            width: isTimeoutWaiting ? 1.8 : 1.0,
-          ),
-          boxShadow: [
-            if (isTimeoutWaiting)
-              BoxShadow(
-                color: PartyPalette.orange.withValues(alpha: 0.3),
-                blurRadius: 14,
-                spreadRadius: 1,
-              ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isChoice
-                  ? selectedChoice == null
-                        ? (isTimeoutWaiting
-                              ? Icons.warning_amber_rounded
-                              : Icons.touch_app_rounded)
-                        : Icons.check_circle_rounded
-                  : Icons.sports_gymnastics_rounded,
-              color: isChoice && selectedChoice != null
-                  ? const Color(0xFF4ADE80)
-                  : PartyPalette.orangeSoft,
-              size: 23,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              isChoice
-                  ? selectedChoice == null
-                        ? (isTimeoutWaiting
-                              ? 'MAKE YOUR CHOICE!'
-                              : 'PICK YOUR OPTION')
-                        : 'YOUR CHOICE IS RECORDED'
-                  : 'FRIENDS ARE BETTING',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                color: isTimeoutWaiting
-                    ? PartyPalette.orangeSoft
-                    : AppColors.ivory,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.8,
-              ),
-            ),
-            const SizedBox(height: 1),
-            Text(
-              isChoice
-                  ? selectedChoice == null
-                        ? (isTimeoutWaiting
-                              ? 'Time is up! Tap Option A or B to reveal results.'
-                              : 'Tap Option A or B. Your choice stays private.')
-                        : 'You can tap the other option anytime to change.'
-                  : 'Your performance starts after the betting timer.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                color: AppColors.ivory.withValues(alpha: 0.7),
-                fontSize: 9.5,
-                fontWeight: FontWeight.w600,
-                height: 1.1,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (isParty &&
-        gameState.phase == RoundPhase.betting &&
-        partyRound?.challenge.isChoice == true &&
-        (!_canCurrentPlayerEditBets(gameState) ||
-            partyRound?.proposedResult == null)) {
-      final timerSeconds = ref.watch(gameTimerProvider);
-      final isTimeout = timerSeconds <= 0;
-      final isChoiceDone = partyRound?.proposedResult != null;
-
-      if (isTimeout && !isChoiceDone) {
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          decoration: BoxDecoration(
-            color: PartyPalette.surface.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: PartyPalette.orangeSoft.withValues(alpha: 0.4),
-              width: 1.2,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: PartyPalette.orangeSoft,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                'WAITING FOR ${partyRound!.performer.name.toUpperCase()}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
-                  color: PartyPalette.cream,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.7,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                'Betting is closed. Results will reveal once the performer picks an option.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
-                  color: AppColors.ivory.withValues(alpha: 0.65),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-    }
-
     final myBets = currentPlayer == null
         ? const <Bet>[]
         : gameState.bets
@@ -3786,20 +3593,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildPartyRoundTransitionOverlay(PartySnapshot snapshot) {
     final round = snapshot.round;
-    final performerName = round.performer.name.toUpperCase();
-    final initial = performerName.isEmpty ? '?' : performerName.substring(0, 1);
-    final challengeTypeLabel = round.challenge.isVersus
-        ? '🥊 1V1 DUEL SHOWDOWN'
-        : round.challenge.isShowdown
-        ? '👑 ALL-PLAY SHOWDOWN'
-        : round.challenge.isPoll
-        ? '🗳️ GROUP POLL · VOTE'
-        : round.challenge.isChoice
-        ? '⚖️ CHOICE CHALLENGE'
-        : round.challenge.isAttempt
-        ? '🎯 5 TRIES CHALLENGE'
-        : '⏱️ ${round.challenge.durationSeconds}s COUNTDOWN';
-
     final content = IgnorePointer(
       child: ColoredBox(
         color: PartyPalette.nightDeep.withValues(alpha: 0.97),
@@ -3897,8 +3690,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            width: 54,
-                            height: 54,
+                            width: 52,
+                            height: 52,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: const RadialGradient(
@@ -3921,21 +3714,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               ],
                             ),
                             alignment: Alignment.center,
-                            child: round.challenge.isPoll
-                                ? const Icon(
-                                    Icons.how_to_vote_rounded,
-                                    color: PartyPalette.cream,
-                                    size: 28,
-                                  )
-                                : Text(
-                                    initial,
-                                    style: const TextStyle(
-                                      fontFamily: 'RehnCondensed',
-                                      color: PartyPalette.cream,
-                                      fontSize: 34,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
+                            child: const Icon(
+                              Icons.how_to_vote_rounded,
+                              color: PartyPalette.cream,
+                              size: 28,
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Flexible(
@@ -3944,24 +3727,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  round.challenge.isPoll
-                                      ? 'GROUP POLL'
-                                      : 'PERFORMER ON STAGE',
+                                  'GROUP POLL',
                                   style: GoogleFonts.outfit(
                                     color: PartyPalette.orangeSoft,
-                                    fontSize: 10,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.8,
+                                    letterSpacing: 1.0,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  round.challenge.isPoll
-                                      ? 'EVERYONE VOTES'
-                                      : performerName,
+                                const Text(
+                                  'EVERYONE VOTES',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontFamily: 'RehnCondensed',
                                     color: PartyPalette.cream,
                                     fontSize: 32,
@@ -3971,10 +3750,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  challengeTypeLabel,
+                                  'Majority Rules · Pick who fits best!',
                                   style: GoogleFonts.outfit(
                                     color: PartyPalette.blueMuted,
-                                    fontSize: 10.5,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -6351,103 +6130,93 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildPartyPlayerSlotTitle(_BetSlotSpec slot) {
     final playerName = slot.title;
-    final initial = playerName.isNotEmpty
-        ? playerName.substring(0, 1).toUpperCase()
-        : '?';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 4,
+            height: 28,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const RadialGradient(
-                colors: [PartyPalette.surfaceRaised, PartyPalette.nightDeep],
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.brassLight,
+                  AppColors.chipGold,
+                  AppColors.brassLight.withValues(alpha: 0.35),
+                ],
               ),
-              border: Border.all(
-                color: PartyPalette.orangeSoft.withValues(alpha: 0.8),
-                width: 1.5,
-              ),
+              borderRadius: BorderRadius.circular(2),
               boxShadow: [
                 BoxShadow(
-                  color: PartyPalette.orange.withValues(alpha: 0.25),
-                  blurRadius: 8,
+                  color: AppColors.brassLight.withValues(alpha: 0.4),
+                  blurRadius: 6,
                 ),
               ],
             ),
-            alignment: Alignment.center,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
             child: Text(
-              initial,
+              playerName.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontFamily: 'RehnCondensed',
-                color: PartyPalette.cream,
-                fontSize: 22,
+                color: AppColors.ivory,
+                fontSize: 32,
                 fontWeight: FontWeight.w900,
+                letterSpacing: 1.0,
+                height: 0.95,
+                shadows: [
+                  Shadow(
+                    color: Colors.black87,
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                  Shadow(
+                    color: Colors.black54,
+                    blurRadius: 16,
+                    offset: Offset(0, 4),
+                  ),
+                ],
               ),
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'VOTE TARGET',
-                  style: GoogleFonts.outfit(
-                    color: PartyPalette.cream.withValues(alpha: 0.65),
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                    height: 1,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  playerName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'RehnCondensed',
-                    color: PartyPalette.cream,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    height: 0.95,
-                    letterSpacing: 0.5,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black,
-                        blurRadius: 6,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF2A1C0E),
+                  Color(0xFF140D07),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppColors.brassLight.withValues(alpha: 0.75),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              color: PartyPalette.nightDeep.withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: PartyPalette.orangeSoft.withValues(alpha: 0.45),
-                width: 1,
-              ),
             ),
             child: Text(
               '2X',
               style: GoogleFonts.outfit(
-                color: PartyPalette.orangeSoft,
-                fontSize: 11.5,
+                color: AppColors.brassLight,
+                fontSize: 13,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 0.5,
+                letterSpacing: 0.8,
               ),
             ),
           ),
@@ -8002,14 +7771,14 @@ List<_BetSlotSpec> _showdownBetSlotsFor(List<Player> players) {
   final count = players.isEmpty ? 4 : players.length.clamp(2, 8);
   const odds = 2;
   final tones = const [
-    _BetSlotTone.choiceA,
-    _BetSlotTone.choiceB,
-    _BetSlotTone.gold,
     _BetSlotTone.green,
-    _BetSlotTone.red,
-    _BetSlotTone.choiceA,
-    _BetSlotTone.choiceB,
+    _BetSlotTone.black,
     _BetSlotTone.gold,
+    _BetSlotTone.red,
+    _BetSlotTone.green,
+    _BetSlotTone.black,
+    _BetSlotTone.gold,
+    _BetSlotTone.red,
   ];
 
   final gap = count <= 4 ? 0.020 : (count <= 6 ? 0.014 : 0.010);
@@ -8022,7 +7791,7 @@ List<_BetSlotSpec> _showdownBetSlotsFor(List<Player> players) {
       i < players.length ? players[i].name : 'PLAYER ${i + 1}',
       odds,
       tones[i % tones.length],
-      Rect.fromLTWH(0.055, 0.020 + i * (slotHeight + gap), 0.890, slotHeight),
+      Rect.fromLTWH(0.040, 0.015 + i * (slotHeight + gap), 0.920, slotHeight),
     ),
   );
 }
@@ -8313,7 +8082,6 @@ class _BetSlotSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(spec.isSweetSpot ? 18 : 10);
-    if (isPartyMode) return _buildPartySurface(radius);
 
     Widget surface = DecoratedBox(
       decoration: BoxDecoration(
@@ -8407,112 +8175,6 @@ class _BetSlotSurface extends StatelessWidget {
         .shimmer(
           color: Colors.white.withValues(alpha: 0.38),
           duration: 1800.ms,
-        );
-  }
-
-  Widget _buildPartySurface(BorderRadius radius) {
-    final colors = switch (spec.tone) {
-      _BetSlotTone.green => const [Color(0xFF5A8461), Color(0xFF294E3B)],
-      _BetSlotTone.black => const [Color(0xFF294B43), Color(0xFF12332B)],
-      _BetSlotTone.gold => const [Color(0xFFC38A4D), Color(0xFF8D5A35)],
-      _BetSlotTone.red => const [Color(0xFF91554A), Color(0xFF633932)],
-      _BetSlotTone.choiceA => const [Color(0xFF48657A), Color(0xFF263E50)],
-      _BetSlotTone.choiceB => const [Color(0xFF76566B), Color(0xFF493545)],
-    };
-    final innerRadius = BorderRadius.circular(spec.isSweetSpot ? 12 : 6);
-    final railRadius = BorderRadius.circular(spec.isSweetSpot ? 18 : 10);
-    final borderColor = spec.isSweetSpot
-        ? PartyPalette.cream.withValues(alpha: 0.72)
-        : PartyPalette.cream.withValues(alpha: 0.26);
-
-    Widget surface = Container(
-      padding: EdgeInsets.all(spec.isSweetSpot ? 3.4 : 2.6),
-      decoration: BoxDecoration(
-        borderRadius: railRadius,
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF7F0E0),
-            Color(0xFF53634C),
-            Color(0xFFFFFBF1),
-            Color(0xFF615041),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.34),
-            blurRadius: isWinningReveal ? 20 : 11,
-            offset: Offset(0, isWinningReveal ? 9 : 6),
-          ),
-          if (isWinningReveal)
-            BoxShadow(
-              color: PartyPalette.orangeSoft.withValues(alpha: 0.38),
-              blurRadius: 28,
-              spreadRadius: 2,
-            ),
-        ],
-      ),
-      child: Container(
-        padding: EdgeInsets.all(spec.isSweetSpot ? 2.4 : 1.8),
-        decoration: BoxDecoration(
-          color: borderColor,
-          borderRadius: BorderRadius.circular(spec.isSweetSpot ? 15 : 8),
-        ),
-        child: ClipRRect(
-          borderRadius: innerRadius,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              CachedAssetImage(
-                _textureAsset(spec.tone),
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colors.first.withValues(alpha: 0.80),
-                      colors.last.withValues(alpha: 0.84),
-                    ],
-                  ),
-                ),
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white.withValues(alpha: 0.10),
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.16),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: isWinningReveal
-                        ? PartyPalette.cream.withValues(alpha: 0.92)
-                        : Colors.white.withValues(alpha: 0.16),
-                    width: isWinningReveal ? 2 : 1,
-                  ),
-                  borderRadius: innerRadius,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (!isWinningReveal) return surface;
-    return surface
-        .animate(onPlay: (controller) => controller.repeat(reverse: true))
-        .shimmer(
-          color: PartyPalette.cream.withValues(alpha: 0.34),
-          duration: 1600.ms,
         );
   }
 
