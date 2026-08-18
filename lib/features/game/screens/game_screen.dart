@@ -1107,11 +1107,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
             playerId: bet.playerId ?? 'hidden-${bet.id}',
             slotIndex: bet.slotIndex,
             chips: bet.chips,
-            payoutMultiplier: round.challenge.usesTwoOptionBoard
+            payoutMultiplier: (round.challenge.usesTwoOptionBoard ||
+                    round.challenge.isPoll ||
+                    round.challenge.isShowdown)
                 ? 2
-                : round.challenge.isShowdown
-                ? max(2, _players.length)
-                : GameConstants.boardOdds[bet.slotIndex],
+                : (bet.slotIndex >= 0 &&
+                        bet.slotIndex < GameConstants.boardOdds.length
+                    ? GameConstants.boardOdds[bet.slotIndex]
+                    : 2),
             won: winningPartySlot == bet.slotIndex,
             playerName: player?.name,
             playerColor: player?.avatarColor,
@@ -1121,7 +1124,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         })
         .toList(growable: false);
 
-    final currentPlayer = ref.read(currentPlayerProvider);
     final existingBets = ref.read(gameStateProvider).bets;
     final serverBetIds = bets.map((b) => b.id).toSet();
     final retainedLocalBets = existingBets
@@ -1129,7 +1131,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           (b) =>
               b.roundNumber == round.number &&
               !serverBetIds.contains(b.id) &&
-              (b.id.startsWith('local-') || b.playerId == currentPlayer?.id),
+              b.id.startsWith('local-'),
         )
         .toList();
     final allBets = [...bets, ...retainedLocalBets];
@@ -1235,6 +1237,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         break;
     }
     _schedulePartySnapshotWatchdog(snapshot);
+    final currentPlayer = ref.read(currentPlayerProvider);
     if (currentPlayer?.id == round.performer.id &&
         round.phase != PartyRoundPhase.betting) {
       _selectedChipValue = null;
@@ -2173,7 +2176,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   _partySnapshot?.round.challenge.isPoll == true ||
                   _partySnapshot?.round.challenge.isShowdown == true)
           ? 2
-          : GameConstants.boardOdds[slotIndex],
+          : (slotIndex >= 0 && slotIndex < GameConstants.boardOdds.length
+              ? GameConstants.boardOdds[slotIndex]
+              : 2),
       playerName: player.name,
       playerColor: player.avatarColor,
       positionX: safeDx,
@@ -2215,7 +2220,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           playerColor: player.avatarColor,
         );
         gameNotifier.replaceBet(optimisticId, mappedBet);
-        _partySnapshot = snapshot;
+        _applyPartySnapshot(snapshot);
         unawaited(
           realtimeService
               .broadcast(widget.roomCode, 'bet_placed', {
@@ -2372,7 +2377,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   _partySnapshot?.round.challenge.isPoll == true ||
                   _partySnapshot?.round.challenge.isShowdown == true)
           ? 2
-          : GameConstants.boardOdds[targetSlotIndex],
+          : (targetSlotIndex >= 0 &&
+                  targetSlotIndex < GameConstants.boardOdds.length
+              ? GameConstants.boardOdds[targetSlotIndex]
+              : 2),
       positionX: safeDx,
       positionY: safeDy,
     );
@@ -2399,7 +2407,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           playerColor: sourceBet.playerColor ?? player.avatarColor,
         );
         gameNotifier.addBet(movedBet);
-        _partySnapshot = snapshot;
+        _applyPartySnapshot(snapshot);
         unawaited(
           realtimeService
               .broadcast(widget.roomCode, 'bet_placed', {
@@ -2498,7 +2506,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             betId: bet.id,
           );
           if (!_canUseRef) return;
-          _partySnapshot = snapshot;
+          _applyPartySnapshot(snapshot);
           unawaited(
             realtimeService
                 .broadcast(widget.roomCode, 'bet_removed', {
@@ -6827,6 +6835,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         : _betSlots;
     for (final spec in slots) {
       if (spec.index == slotIndex) return spec;
+    }
+    if (slots.isNotEmpty) {
+      return slots[slotIndex.clamp(0, slots.length - 1)];
     }
     return null;
   }
