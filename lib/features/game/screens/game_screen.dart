@@ -542,8 +542,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _payloadMatchesCurrentRound(Map<String, dynamic> payload) {
     final eventRound = _eventRound(payload);
     if (eventRound == null) return true;
+    final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
+    final currentRound = isParty
+        ? (_partySnapshot?.round.number ?? ref.read(gameStateProvider).currentRound)
+        : ref.read(gameStateProvider).currentRound;
     return GameSyncPolicy.isCurrentRound(
-      currentRound: ref.read(gameStateProvider).currentRound,
+      currentRound: currentRound,
       eventRound: eventRound,
     );
   }
@@ -1779,13 +1783,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final currentPlayer = ref.read(currentPlayerProvider);
     if (currentPlayer == null) return 0;
 
+    final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
+    final activeRound = isParty
+        ? (_partySnapshot?.round.number ?? gameState.currentRound)
+        : gameState.currentRound;
+    final roundBets = gameState.bets.where(
+      (b) => b.playerId == currentPlayer.id && b.roundNumber == activeRound,
+    );
+
     final partyRound = _partySnapshot?.round;
     if (partyRound?.challenge.isPoll == true) {
       final winIndices = _winningBetSlotIndices(gameState);
       var payout = 0;
-      for (final bet in gameState.bets) {
-        if (bet.playerId == currentPlayer.id &&
-            (bet.won || winIndices.contains(bet.slotIndex))) {
+      for (final bet in roundBets) {
+        if (bet.won || winIndices.contains(bet.slotIndex)) {
           payout += bet.chips * 2;
         }
       }
@@ -1796,9 +1807,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (winningSlotIndex == null) return 0;
 
     var payout = 0;
-    for (final bet in gameState.bets) {
-      if (bet.playerId == currentPlayer.id &&
-          bet.slotIndex == winningSlotIndex) {
+    for (final bet in roundBets) {
+      if (bet.slotIndex == winningSlotIndex) {
         payout += bet.chips * bet.payoutMultiplier;
       }
     }
@@ -1822,8 +1832,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
   int _currentPlayerTotalBets(GameState gameState) {
     final currentPlayer = ref.read(currentPlayerProvider);
     if (currentPlayer == null) return 0;
+    final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
+    final activeRound = isParty
+        ? (_partySnapshot?.round.number ?? gameState.currentRound)
+        : gameState.currentRound;
     return gameState.bets
-        .where((b) => b.playerId == currentPlayer.id)
+        .where(
+          (b) => b.playerId == currentPlayer.id && b.roundNumber == activeRound,
+        )
         .fold(0, (sum, bet) => sum + bet.chips);
   }
 
@@ -2121,9 +2137,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
 
+    final activeRound = room.gameMode == GameMode.party
+        ? (_partySnapshot?.round.number ?? gameState.currentRound)
+        : gameState.currentRound;
+
     if (room.gameMode == GameMode.party &&
         _partySnapshot?.round.challenge.isPoll == true) {
-      final currentBets = gameState.bets.where((b) => b.playerId == player.id);
+      final currentBets = gameState.bets
+          .where((b) => b.playerId == player.id && b.roundNumber == activeRound);
       final distinctSlots = currentBets.map((b) => b.slotIndex).toSet();
       if (distinctSlots.length >= 2 && !distinctSlots.contains(slotIndex)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2338,10 +2359,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
 
+    final activeRound = room.gameMode == GameMode.party
+        ? (_partySnapshot?.round.number ?? gameState.currentRound)
+        : gameState.currentRound;
+
     if (room.gameMode == GameMode.party &&
         _partySnapshot?.round.challenge.isPoll == true) {
       final currentBets = gameState.bets.where(
-        (b) => b.playerId == player.id && b.id != sourceBet.id,
+        (b) =>
+            b.playerId == player.id &&
+            b.id != sourceBet.id &&
+            b.roundNumber == activeRound,
       );
       final distinctSlots = currentBets.map((b) => b.slotIndex).toSet();
       if (distinctSlots.length >= 2 &&
@@ -3164,10 +3192,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildChipPicker(Player? currentPlayer, GameState gameState) {
     final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
+    final activeRound = isParty
+        ? (_partySnapshot?.round.number ?? gameState.currentRound)
+        : gameState.currentRound;
     final myBets = currentPlayer == null
         ? const <Bet>[]
         : gameState.bets
-              .where((bet) => bet.playerId == currentPlayer.id)
+              .where(
+                (bet) =>
+                    bet.playerId == currentPlayer.id &&
+                    bet.roundNumber == activeRound,
+              )
               .toList();
     final totalOnTable = myBets.fold<int>(0, (sum, bet) => sum + bet.chips);
     final bank = currentPlayer == null
@@ -5320,6 +5355,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ...activeSlots.where((slot) => !slot.isSweetSpot),
           ...activeSlots.where((slot) => slot.isSweetSpot),
         ];
+        final activeRound = ref.read(currentRoomProvider)?.gameMode == GameMode.party
+            ? (_partySnapshot?.round.number ?? gameState.currentRound)
+            : gameState.currentRound;
+        final activeRoundBets = gameState.bets
+            .where((bet) => bet.roundNumber == activeRound)
+            .toList();
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -5384,7 +5425,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   if (!(_showWinnerBadge && winningSlotIndex != null))
                     Positioned.fill(
                       child: _buildAllPlacedChips(
-                        gameState.bets,
+                        activeRoundBets,
                         size,
                         currentPlayerId,
                         canEdit: canEdit,
@@ -5397,7 +5438,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ..._buildPayoutFlightChips(
                       size,
                       winningSlotIndex,
-                      gameState.bets,
+                      activeRoundBets,
                     ),
                   if (_showWinnerBadge && winningSlotIndex != null)
                     _buildWinnerOverlayCard(size, winningSlotIndex),
