@@ -6136,37 +6136,48 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildPartyPlayerSlotTitle(_BetSlotSpec slot) {
     final playerName = slot.title;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.center,
-          child: Text(
-            playerName.toUpperCase(),
-            maxLines: 1,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'RehnCondensed',
-              color: PartyPalette.cream,
-              fontSize: 34,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 50, 4),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'VOTE TARGET',
+            style: GoogleFonts.outfit(
+              color: PartyPalette.cream.withValues(alpha: 0.60),
+              fontSize: 8,
               fontWeight: FontWeight.w900,
+              letterSpacing: 1.3,
               height: 1,
-              letterSpacing: 0.5,
-              shadows: [
-                Shadow(
-                  color: Colors.black.withValues(alpha: 0.80),
-                  blurRadius: 7,
-                  offset: const Offset(0, 2),
-                ),
-                Shadow(
-                  color: PartyPalette.orange.withValues(alpha: 0.20),
-                  blurRadius: 12,
-                ),
-              ],
             ),
           ),
-        ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              playerName.toUpperCase(),
+              maxLines: 1,
+              style: TextStyle(
+                fontFamily: 'RehnCondensed',
+                color: PartyPalette.cream,
+                fontSize: 32,
+                fontWeight: FontWeight.w900,
+                height: 0.90,
+                letterSpacing: 0.5,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
