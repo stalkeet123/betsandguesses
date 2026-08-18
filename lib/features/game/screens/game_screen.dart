@@ -1128,17 +1128,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         })
         .toList(growable: false);
 
-    final existingBets = ref.read(gameStateProvider).bets;
-    final serverBetIds = bets.map((b) => b.id).toSet();
-    final retainedLocalBets = existingBets
-        .where(
-          (b) =>
-              b.roundNumber == round.number &&
-              !serverBetIds.contains(b.id) &&
-              b.id.startsWith('local-'),
-        )
-        .toList();
-    final allBets = [...bets, ...retainedLocalBets];
+    final allBets = bets;
     ref.read(currentRoomProvider.notifier).set(snapshot.room);
     ref
         .read(gameStateProvider.notifier)
