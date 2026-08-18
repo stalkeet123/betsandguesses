@@ -174,7 +174,8 @@ class RealtimeService {
     }
     final channel = _channels[channelName];
     if (channel != null) {
-      await channel.sendBroadcastMessage(event: event, payload: payload);
+      final mutablePayload = Map<String, dynamic>.of(payload);
+      await channel.sendBroadcastMessage(event: event, payload: mutablePayload);
     }
   }
 
