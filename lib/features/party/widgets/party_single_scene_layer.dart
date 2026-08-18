@@ -510,6 +510,10 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       PartyRoundPhase.resultEntry =>
         round.challenge.isChoice ? 'MAKE YOUR CHOICE' : 'RECORD THE RESULT',
       PartyRoundPhase.resultConfirm => 'VERIFY RESULT',
+      PartyRoundPhase.betting =>
+        round.challenge.isPoll
+            ? '🤫 SECRET VOTE · NO TALKING'
+            : 'PLACE YOUR BETS',
       _ => 'PARTY STAGE',
     };
 

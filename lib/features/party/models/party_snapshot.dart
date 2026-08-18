@@ -24,7 +24,8 @@ enum PartyChallengeType {
   attempt,
   choice,
   versus,
-  showdown;
+  showdown,
+  poll;
 
   static PartyChallengeType fromString(String? value) {
     return PartyChallengeType.values.firstWhere(
@@ -44,7 +45,10 @@ enum PartyChallengeCategory {
   physical,
   dare,
   skill,
-  social;
+  social,
+  versus,
+  showdown,
+  poll;
 
   static PartyChallengeCategory fromString(String? value) {
     return PartyChallengeCategory.values.firstWhere(
@@ -125,7 +129,8 @@ class PartyChallenge {
   bool get isChoice => type == PartyChallengeType.choice;
   bool get isVersus => type == PartyChallengeType.versus;
   bool get isShowdown => type == PartyChallengeType.showdown;
-  bool get isPlayerSlotType => isVersus || isShowdown;
+  bool get isPoll => type == PartyChallengeType.poll;
+  bool get isPlayerSlotType => isVersus || isShowdown || isPoll;
   bool get usesTwoOptionBoard => isBinary || isChoice || isVersus;
 
   String? choiceLabel(int value) => switch (value) {
@@ -138,7 +143,7 @@ class PartyChallenge {
     if (usesTwoOptionBoard) {
       return (result == 0 || result == 1) ? result : null;
     }
-    if (isShowdown) {
+    if (isShowdown || isPoll) {
       return (result >= 0 && result < 8) ? result : null;
     }
     if (!isAttempt) return null;

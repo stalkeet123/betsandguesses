@@ -335,16 +335,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ] else ...[
                 const SizedBox(height: 10),
-                _partyItemsPicker(
-                  selectedIds: selectedPartyItemIds,
-                  onToggle: (id) {
-                    setModalState(() {
-                      if (!selectedPartyItemIds.add(id)) {
-                        selectedPartyItemIds.remove(id);
-                      }
-                    });
-                  },
-                ),
+                _partyModeGuideCard(),
               ],
               const SizedBox(height: 14),
               SizedBox(
@@ -366,14 +357,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       gameMode: selectedMode,
                       partyChallengesPerPlayer:
                           selectedPartyChallengesPerPlayer,
-                      partyAvailableItems: {
-                        ..._partyItemOptions
-                            .where(
-                              (option) =>
-                                  selectedPartyItemIds.contains(option.id),
-                            )
-                            .expand((option) => option.values),
-                      }.toList(growable: false),
+                      partyAvailableItems: const <String>[],
                     );
                   },
                   icon: Icon(
@@ -869,18 +853,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _partyItemsPicker({
-    required Set<String> selectedIds,
-    required ValueChanged<String> onToggle,
-  }) {
+  Widget _partyModeGuideCard() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
       decoration: BoxDecoration(
-        color: PartyPalette.nightDeep.withValues(alpha: 0.58),
+        color: PartyPalette.nightDeep.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: PartyPalette.orangeSoft.withValues(alpha: 0.32),
+          color: PartyPalette.orangeSoft.withValues(alpha: 0.38),
+          width: 1.2,
         ),
       ),
       child: Column(
@@ -888,18 +870,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.inventory_2_outlined,
-                color: PartyPalette.orangeSoft,
-                size: 22,
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: PartyPalette.orange.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.how_to_vote_rounded,
+                  color: PartyPalette.orangeSoft,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  'WHAT DO YOU HAVE NEARBY?',
+                  'HOW TO PLAY PARTY MODE',
                   style: GoogleFonts.outfit(
                     color: PartyPalette.cream,
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0.7,
                   ),
@@ -907,60 +896,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          Text(
-            selectedIds.isEmpty
-                ? 'No problem. You will only get challenges that need no special props.'
-                : 'We will only use these items. Pick everything within easy reach.',
-            style: GoogleFonts.outfit(
-              color: PartyPalette.creamMuted.withValues(alpha: 0.82),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              height: 1.25,
-            ),
+          const SizedBox(height: 10),
+          _partyGuideBullet(
+            icon: Icons.groups_rounded,
+            title: 'Group Poll',
+            description:
+                'A spicy question appears. Bet your chips on who in the room fits best!',
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: [
-              for (final option in _partyItemOptions)
-                FilterChip(
-                  selected: selectedIds.contains(option.id),
-                  onSelected: (_) => onToggle(option.id),
-                  avatar: Icon(
-                    option.icon,
-                    size: 17,
-                    color: selectedIds.contains(option.id)
-                        ? PartyPalette.nightDeep
-                        : PartyPalette.orangeSoft,
-                  ),
-                  label: Text(option.label),
-                  labelStyle: GoogleFonts.outfit(
-                    color: selectedIds.contains(option.id)
-                        ? PartyPalette.nightDeep
-                        : PartyPalette.cream,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                  showCheckmark: false,
-                  selectedColor: PartyPalette.orangeSoft,
-                  backgroundColor: PartyPalette.surface.withValues(alpha: 0.56),
-                  side: BorderSide(
-                    color: selectedIds.contains(option.id)
-                        ? PartyPalette.orangeSoft
-                        : PartyPalette.creamMuted.withValues(alpha: 0.22),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 5,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
+          const SizedBox(height: 8),
+          _partyGuideBullet(
+            icon: Icons.local_fire_department_rounded,
+            title: 'Confidence Voting',
+            description:
+                'Bet all chips on 1 person for 2x vote weight! Split across 2 to hedge risk.',
+          ),
+          const SizedBox(height: 8),
+          _partyGuideBullet(
+            icon: Icons.emoji_events_rounded,
+            title: 'Majority Wins',
+            description:
+                'The person with the most votes wins the round. Correct bets pay 2x!',
           ),
         ],
       ),
+    );
+  }
+
+  Widget _partyGuideBullet({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 15,
+          color: PartyPalette.orangeSoft,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '$title: ',
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.cream,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                TextSpan(
+                  text: description,
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.creamMuted.withValues(alpha: 0.85),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
