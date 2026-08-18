@@ -186,7 +186,8 @@ class PartyChallenge {
               PartyChallengeType.versus => 'binary',
               PartyChallengeType.attempt => 'lower',
               PartyChallengeType.count ||
-              PartyChallengeType.showdown => 'higher',
+              PartyChallengeType.showdown ||
+              PartyChallengeType.poll => 'higher',
             },
       ),
       requiredItems: (json['required_items'] as List? ?? const [])

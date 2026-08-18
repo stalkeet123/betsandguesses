@@ -34,49 +34,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   String? _prefilledRoomCode;
   bool _showQrJoinGuide = false;
 
-  static const _partyItemOptions = <_PartyItemOption>[
-    _PartyItemOption('phone', 'Phone', Icons.smartphone_rounded, ['phone']),
-    _PartyItemOption('chair', 'Chair', Icons.chair_rounded, ['chair']),
-    _PartyItemOption('paper', 'Paper', Icons.description_rounded, ['paper']),
-    _PartyItemOption('cup', 'Cup / mug', Icons.local_cafe_rounded, [
-      'cup',
-      'plastic cup',
-      'sturdy mug',
-    ]),
-    _PartyItemOption('bottle', 'Bottle + water', Icons.water_drop_rounded, [
-      'plastic bottle',
-      'water',
-    ]),
-    _PartyItemOption('coins', 'Coins', Icons.paid_rounded, [
-      'coin',
-      'three coins',
-    ]),
-    _PartyItemOption('pen', 'Pen', Icons.edit_rounded, ['pen']),
-    _PartyItemOption('spoon', 'Spoon', Icons.restaurant_rounded, ['spoon']),
-    _PartyItemOption('cards', 'Playing cards', Icons.style_rounded, [
-      'playing card',
-    ]),
-    _PartyItemOption('socks', 'Socks + basket', Icons.shopping_basket_rounded, [
-      'rolled-up socks',
-      'basket',
-    ]),
-    _PartyItemOption('bin', 'Trash can', Icons.delete_outline_rounded, [
-      'trash can',
-    ]),
-    _PartyItemOption('table', 'Table', Icons.table_restaurant_rounded, [
-      'table',
-    ]),
-    _PartyItemOption('room', 'Wall + clear floor', Icons.meeting_room_rounded, [
-      'wall',
-      'clear wall',
-      'clear floor',
-    ]),
-    _PartyItemOption('extras', 'Coaster / bottle cap', Icons.circle_outlined, [
-      'coaster',
-      'bottle cap',
-    ]),
-    _PartyItemOption('shoe', 'Shoe', Icons.ice_skating_rounded, ['shoe']),
-  ];
 
   @override
   void initState() {
@@ -178,7 +135,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     var selectedMaxPlayers = GameConstants.freeMaxPlayers;
     var selectedCategory = GameConstants.defaultCategory;
     var selectedMode = GameMode.classic;
-    final selectedPartyItemIds = <String>{};
     final setupThemeMode = ValueNotifier<GameMode>(selectedMode);
 
     _showHomeSheet(
@@ -2240,13 +2196,4 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           : null,
     );
   }
-}
-
-class _PartyItemOption {
-  final String id;
-  final String label;
-  final IconData icon;
-  final List<String> values;
-
-  const _PartyItemOption(this.id, this.label, this.icon, this.values);
 }
