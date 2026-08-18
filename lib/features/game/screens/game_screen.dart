@@ -102,10 +102,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _audioService = ref.read(audioServiceProvider);
     _realtimeService = ref.read(realtimeServiceProvider);
     WidgetsBinding.instance.addObserver(this);
-    _bootstrapVisibleGameState();
-    _initializeGame();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _bootstrapVisibleGameState();
+      _initializeGame();
       AppAssetPaths.warmUpBoardImages(context).catchError((_) {});
     });
   }
@@ -5580,7 +5580,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             : null,
                         child: _buildCodedBetSlot(
                           spec: spec,
-                          isWinningReveal: activeRevealSlotIndex == spec.index ||
+                          isWinningReveal:
+                              activeRevealSlotIndex == spec.index ||
                               (isReveal &&
                                   _showWinnerBadge &&
                                   winningSlotIndices.contains(spec.index)),
@@ -5591,9 +5592,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   spec.index,
                           boundaries:
                               usesTwoOptionBoard ||
-                                      isAttempt ||
-                                      isShowdown ||
-                                      isPoll
+                                  isAttempt ||
+                                  isShowdown ||
+                                  isPoll
                               ? const <int>[]
                               : boundaryValues,
                         ),

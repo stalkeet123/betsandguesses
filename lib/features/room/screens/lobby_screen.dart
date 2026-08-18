@@ -90,7 +90,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     _playerRefreshDebounce?.cancel();
     _playerRefreshDebounce = Timer(
       const Duration(milliseconds: 180),
-      () => unawaited(_loadPlayers()),
+      () {
+        if (!mounted) return;
+        unawaited(_loadPlayers());
+      },
     );
   }
 
@@ -173,6 +176,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Future<void> _loadPlayers() async {
+    if (!mounted) return;
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
 
