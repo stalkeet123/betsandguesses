@@ -6144,7 +6144,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'VOTE TARGET',
+            'BET ON',
             style: GoogleFonts.outfit(
               color: PartyPalette.cream.withValues(alpha: 0.60),
               fontSize: 8,
@@ -8138,11 +8138,11 @@ class _BetSlotSurface extends StatelessWidget {
 
   Widget _buildPartySurface(BorderRadius radius) {
     final colors = switch (spec.tone) {
-      _BetSlotTone.green => const [Color(0xFF243B30), Color(0xFF16251E)],
-      _BetSlotTone.black => const [Color(0xFF282337), Color(0xFF181423)],
-      _BetSlotTone.gold => const [Color(0xFF382A1E), Color(0xFF221710)],
-      _BetSlotTone.red => const [Color(0xFF382026), Color(0xFF221217)],
-      _BetSlotTone.choiceA => const [Color(0xFF202E3C), Color(0xFF121B24)],
+      _BetSlotTone.green => const [Color(0xFF2E4D3D), Color(0xFF1E3328)],
+      _BetSlotTone.black => const [Color(0xFF332E42), Color(0xFF211D2E)],
+      _BetSlotTone.gold => const [Color(0xFF43362A), Color(0xFF2C2118)],
+      _BetSlotTone.red => const [Color(0xFF442B31), Color(0xFF2C1B20)],
+      _BetSlotTone.choiceA => const [Color(0xFF2A3A4A), Color(0xFF1A2530)],
       _BetSlotTone.choiceB => const [Color(0xFF301E32), Color(0xFF1E1120)],
     };
 
