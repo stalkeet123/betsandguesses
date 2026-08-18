@@ -2165,7 +2165,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final optimisticBet = Bet(
       id: optimisticId,
       roomId: room.id,
-      roundNumber: gameState.currentRound,
+      roundNumber: room.gameMode == GameMode.party
+          ? (_partySnapshot?.round.number ?? gameState.currentRound)
+          : gameState.currentRound,
       playerId: player.id,
       targetGuessId: targetGuessId,
       slotIndex: slotIndex,
@@ -2369,6 +2371,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     final oldBet = sourceBet;
     final optimisticBet = sourceBet.copyWith(
+      roundNumber: room.gameMode == GameMode.party
+          ? (_partySnapshot?.round.number ?? sourceBet.roundNumber)
+          : sourceBet.roundNumber,
       slotIndex: targetSlotIndex,
       targetGuessId: targetGuessId,
       payoutMultiplier:
@@ -2843,9 +2848,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final isPerformer =
         round != null && currentPlayer?.id == round.performer.id;
     final requiredItems = round?.challenge.requiredItems ?? const <String>[];
-    final canReroll =
-        round?.phase == PartyRoundPhase.betting &&
-        currentPlayer?.isHost == true;
     final heading = _partyQuestionHeading(
       round: round,
       isPerformer: isPerformer,
@@ -2895,23 +2897,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
               ),
-              if (canReroll)
-                Tooltip(
-                  message: 'Different challenge',
-                  child: IconButton(
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: PartyPalette.creamMuted,
-                    onPressed: _isPartyCommandInFlight || round == null
-                        ? null
-                        : () => _runPartyCommand(
-                            () => ref
-                                .read(partyGameServiceProvider)
-                                .rerollChallenge(_partySnapshot!.room.id),
-                          ),
-                    icon: const Icon(Icons.refresh_rounded),
-                  ),
-                ),
             ],
           ),
           if (requiredItems.isNotEmpty) ...[
@@ -3789,7 +3774,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           end: const Offset(1, 1),
           duration: 450.ms,
           curve: Curves.easeOutCubic,
-        );
+        )
+        .fadeOut(delay: 1600.ms, duration: 450.ms, curve: Curves.easeIn);
   }
 
   Widget _buildGuessQuestionCard(GameState gameState) {
@@ -6446,7 +6432,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
       clipBehavior: Clip.none,
       fit: StackFit.expand,
       children: [
-        if (otherBets.isNotEmpty)
+        if (otherBets.isNotEmpty &&
+            (ref.read(currentRoomProvider)?.gameMode != GameMode.party ||
+                isReveal ||
+                emphasizeWinners))
           _buildOtherBetMarkersGlobal(
             otherBets,
             boardSize,
