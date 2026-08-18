@@ -103,6 +103,14 @@ class PartyGameService {
     return _snapshot(response);
   }
 
+  Future<PartySnapshot> beginPoll(String roomId) async {
+    final response = await _client.rpc(
+      'begin_party_poll_v1',
+      params: {'p_room_id': roomId},
+    );
+    return _snapshot(response);
+  }
+
   Future<PartySnapshot> beginChoice(String roomId) async {
     final response = await _client.rpc(
       'begin_party_choice_v1',

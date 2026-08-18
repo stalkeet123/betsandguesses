@@ -1372,13 +1372,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
             await _revealAnswer();
             break;
           case PartyRoundPhase.action:
-            await _runPartyCommand(
-              () => ref.read(partyGameServiceProvider).openResultEntry(roomId),
-            );
-            break;
           case PartyRoundPhase.ready:
           case PartyRoundPhase.resultEntry:
           case PartyRoundPhase.resultConfirm:
+            await _runPartyCommand(
+              () => ref.read(partyGameServiceProvider).beginPoll(roomId),
+            );
+            break;
           case PartyRoundPhase.reveal:
             break;
         }
@@ -1392,16 +1392,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final room = ref.read(currentRoomProvider);
     if (room?.gameMode == GameMode.party) {
       final isHost = ref.read(isHostProvider);
-      if (gameState.phase == RoundPhase.guessing) {
-        if (isHost) {
-          _revealGuesses();
-        } else {
-          _schedulePartyTransitionFallback(
-            roomId: room!.id,
-            expectedPhase: PartyRoundPhase.guessing,
-          );
-        }
-      } else if (gameState.phase == RoundPhase.betting) {
+      if (gameState.phase == RoundPhase.betting) {
         _lockBettingWindow();
         if (isHost) {
           _revealAnswer();
@@ -1411,15 +1402,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
             expectedPhase: PartyRoundPhase.betting,
           );
         }
-      } else if (gameState.phase == RoundPhase.partyAction) {
+      } else {
         if (isHost) {
           _runPartyCommand(
-            () => ref.read(partyGameServiceProvider).openResultEntry(room!.id),
-          );
-        } else {
-          _schedulePartyTransitionFallback(
-            roomId: room!.id,
-            expectedPhase: PartyRoundPhase.action,
+            () => ref.read(partyGameServiceProvider).beginPoll(room!.id),
           );
         }
       }
@@ -1575,11 +1561,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     if (room.gameMode == GameMode.party) {
       _stopTimer();
-      final challenge = _partySnapshot?.round.challenge;
       await _runPartyCommand(
-        () => challenge?.isChoice == true
-            ? ref.read(partyGameServiceProvider).beginChoice(room.id)
-            : ref.read(partyGameServiceProvider).beginReady(room.id),
+        () => ref.read(partyGameServiceProvider).beginPoll(room.id),
       );
       return;
     }

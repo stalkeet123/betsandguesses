@@ -76,13 +76,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
   int? _myReviewVote;
 
   bool get _isPerformancePhase {
-    final round = widget.snapshot.round;
-    if (round.challenge.isChoice) return false;
-    final phase = round.phase;
-    return phase == PartyRoundPhase.ready ||
-        phase == PartyRoundPhase.action ||
-        phase == PartyRoundPhase.resultEntry ||
-        phase == PartyRoundPhase.resultConfirm;
+    // In this release, Party Mode is strictly Poll Mode. No performer/camera stage under any circumstances.
+    return false;
   }
 
   bool get _isPerformer =>
