@@ -20,12 +20,10 @@ class GameConstants {
   static const int freeChipsPerRound = 2;
   static const int startingScore = 15;
 
-  /// The bank score represents net profit/loss. Every player starts with 15 chips 
-  /// worth of credit. If they lose those 15 chips, their bank score becomes -15 
-  /// and their betting limit becomes 0 (they are out of chips).
+  /// Party players may carry a negative bank, but every round still gives them
+  /// a 15-chip minimum stake budget so they can always cast their two votes.
   static int bettingLimitForBank(int bank) {
-    final limit = startingScore + bank;
-    return limit < 0 ? 0 : limit;
+    return bank < startingScore ? startingScore : bank;
   }
 
   // Visual slot layout: [Smaller] [Low range] [Sweet spot] [High range] [Larger]

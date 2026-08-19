@@ -2159,7 +2159,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (distinctSlots.length >= 2 && !distinctSlots.contains(slotIndex)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('You can bet on at most 2 people!'),
+            content: Text('You have 2 votes: pick up to 2 people.'),
             duration: Duration(seconds: 2),
           ),
         );
@@ -3224,6 +3224,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final availableChips = max(0, bettingLimit - totalOnTable);
     final bankLabel = '$bank';
     final selectedBet = _selectedBet(gameState);
+    final isPoll = isParty && _partySnapshot?.round.challenge.isPoll == true;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3245,8 +3246,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
             : selectedBet != null
             ? 'TAP CHIP TO RECALL'
             : _selectedChipValue == null
-            ? 'SELECT A CHIP'
-            : 'TAP A BET AREA';
+            ? (isPoll ? 'PICK A STAKE · 1 PICK = 2 VOTES' : 'SELECT A CHIP')
+            : (isPoll ? 'TAP A PLAYER · 1 PICK = 2 VOTES' : 'TAP A BET AREA');
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
@@ -5396,8 +5397,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         onTapDown: (details) {
                           if (!canEdit && !canChoose) {
                             if (ref.read(gameStateProvider).phase !=
-                                RoundPhase.betting)
+                                RoundPhase.betting) {
                               return;
+                            }
                             final partyRound = _partySnapshot?.round;
                             if (partyRound != null) {
                               final isPerformer =

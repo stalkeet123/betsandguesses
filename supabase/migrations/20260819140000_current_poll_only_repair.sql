@@ -405,7 +405,10 @@ begin
 
   update public.party_rounds
   set phase = 'reveal',
-      proposed_result = v_winning_slots[1],
+      -- A poll can time out without a vote. Keep the settlement shape valid
+      -- without awarding anybody: slot 0 is only a neutral placeholder here,
+      -- because there are no bets to settle.
+      proposed_result = coalesce(v_winning_slots[1], 0),
       result_submitted_by = coalesce(result_submitted_by, v_round.performer_id),
       settled_at = statement_timestamp(),
       result_confirmed_by = coalesce(v_round.performer_id, (select id from public.players where room_id = p_room_id limit 1)),
