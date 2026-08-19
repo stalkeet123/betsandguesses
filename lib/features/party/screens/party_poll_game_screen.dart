@@ -448,13 +448,15 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     Size size,
     bool isBetting,
   ) {
-    final ownBets = snapshot.round.bets
-        .where(
-          (bet) =>
-              bet.playerId == snapshot.me.playerId &&
-              bet.targetPlayerId == target.id,
-        )
+    final targetBets = snapshot.round.bets
+        .where((bet) => bet.targetPlayerId == target.id)
         .toList();
+    final ownBets = targetBets
+        .where((bet) => bet.playerId == snapshot.me.playerId)
+        .toList();
+    final visibleBets = snapshot.round.phase == PartyPollPhase.reveal
+        ? targetBets
+        : ownBets;
     final hasTwoTargets =
         snapshot.round.bets
             .where((bet) => bet.playerId == snapshot.me.playerId)
@@ -523,7 +525,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                     right: 18,
                     child: _winnerBadge(),
                   ),
-                ..._placedChips(ownBets, winner),
+                ..._placedChips(visibleBets, winner),
               ],
             ),
           ),
