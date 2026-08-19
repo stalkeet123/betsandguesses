@@ -242,7 +242,7 @@ class PartyPollProductionView extends StatelessWidget {
     ),
   );
   Widget _chipPicker() {
-    final chips = _dynamicChips(score);
+    final chips = _dynamicChips(betLimit);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
@@ -316,10 +316,10 @@ class PartyPollProductionView extends StatelessWidget {
   Widget _selectableChip(int value, bool available) => GestureDetector(
     onTap: available ? () => onChipSelected(value) : null,
     child: AnimatedScale(
-      duration: const Duration(milliseconds: 140),
-      scale: selectedChipValue == value ? 1.13 : 1,
+      duration: const Duration(milliseconds: 120),
+      scale: selectedChipValue == value ? 1.14 : 1,
       child: Opacity(
-        opacity: available ? 1 : .35,
+        opacity: available ? 1 : .2,
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
