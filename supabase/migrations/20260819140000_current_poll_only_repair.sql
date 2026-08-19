@@ -467,9 +467,11 @@ begin
         'advance_party_round_v2',
         'get_party_recap_v1',
         'reset_party_to_lobby_v1'
-      ]);
-  loop
+      ]) loop
     execute format('grant execute on function %s to authenticated', v_function);
+  end loop;
+end
+$$;
 
 notify pgrst, 'reload schema';
 

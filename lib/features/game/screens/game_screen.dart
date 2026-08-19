@@ -1136,6 +1136,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final allBets = <Bet>[...bets];
     for (final existingBet in ref.read(gameStateProvider).bets) {
       final isAwaitingAuthoritativeBet =
+          existingBet.roundNumber == round.number &&
           existingBet.id.startsWith('local-') &&
           !bets.any(
             (bet) =>
@@ -3246,8 +3247,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
             : selectedBet != null
             ? 'TAP CHIP TO RECALL'
             : _selectedChipValue == null
-            ? (isPoll ? 'PICK A STAKE · 1 PICK = 2 VOTES' : 'SELECT A CHIP')
-            : (isPoll ? 'TAP A PLAYER · 1 PICK = 2 VOTES' : 'TAP A BET AREA');
+            ? 'SELECT A CHIP'
+            : 'TAP A BET AREA';
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),

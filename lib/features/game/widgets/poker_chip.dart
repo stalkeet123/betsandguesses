@@ -51,7 +51,9 @@ class PokerChip extends StatelessWidget {
                     ? const Color(0xFFFFE8A6).withValues(alpha: 0.9)
                     : color.darken(0.18).withValues(alpha: 0.78),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: isScoreChip ? 0.46 : 0.24),
+                  color: Colors.white.withValues(
+                    alpha: isScoreChip ? 0.46 : 0.24,
+                  ),
                   width: max(1, size * 0.035),
                 ),
               ),
@@ -61,6 +63,8 @@ class PokerChip extends StatelessWidget {
                   padding: EdgeInsets.all(size * 0.07),
                   child: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: labelColor,
                       fontWeight: FontWeight.w900,
@@ -68,7 +72,9 @@ class PokerChip extends StatelessWidget {
                       height: 1,
                       shadows: [
                         Shadow(
-                          color: Colors.black.withValues(alpha: isScoreChip ? 0.08 : 0.7),
+                          color: Colors.black.withValues(
+                            alpha: isScoreChip ? 0.08 : 0.7,
+                          ),
                           blurRadius: 2,
                           offset: const Offset(0, 1),
                         ),
@@ -89,10 +95,7 @@ class _PokerChipPainter extends CustomPainter {
   final Color color;
   final bool isScoreChip;
 
-  const _PokerChipPainter({
-    required this.color,
-    required this.isScoreChip,
-  });
+  const _PokerChipPainter({required this.color, required this.isScoreChip});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -104,16 +107,8 @@ class _PokerChipPainter extends CustomPainter {
         center: const Alignment(-0.38, -0.42),
         radius: 1.05,
         colors: isScoreChip
-            ? const [
-                Color(0xFFFFF4B8),
-                Color(0xFFFFC84D),
-                Color(0xFF9B641A),
-              ]
-            : [
-                color.lighten(0.22),
-                color,
-                color.darken(0.46),
-              ],
+            ? const [Color(0xFFFFF4B8), Color(0xFFFFC84D), Color(0xFF9B641A)]
+            : [color.lighten(0.22), color, color.darken(0.46)],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
 
     canvas.drawCircle(center, radius, base);
