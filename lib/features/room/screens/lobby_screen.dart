@@ -14,8 +14,7 @@ import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/providers/game_providers.dart';
-import '../../../features/party/models/party_snapshot.dart';
-import '../../../features/party/providers/party_session_provider.dart';
+import '../../../features/party/providers/party_poll_session_provider.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
@@ -88,13 +87,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   void _schedulePlayerRefresh() {
     _playerRefreshDebounce?.cancel();
-    _playerRefreshDebounce = Timer(
-      const Duration(milliseconds: 180),
-      () {
-        if (!mounted) return;
-        unawaited(_loadPlayers());
-      },
-    );
+    _playerRefreshDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted) return;
+      unawaited(_loadPlayers());
+    });
   }
 
   void _setupRealtimeListener() {
@@ -300,29 +296,34 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
       if (room.gameMode == GameMode.party) {
         final snapshot = await ref
-            .read(partyGameServiceProvider)
+            .read(partyPollSessionProvider.notifier)
             .startGame(
-              roomId: room.id,
+              room.id,
               bettingDurationSeconds: GameConstants.partyBetTimerSeconds,
             );
-        ref.read(partySessionProvider.notifier).setSnapshot(snapshot);
+        if (snapshot == null) {
+          final message =
+              ref.read(partyPollSessionProvider).errorMessage ??
+              'Party game could not start.';
+          throw StateError(message);
+        }
         ref.read(currentRoomProvider.notifier).set(snapshot.room);
 
         final partyQuestion = Question(
-          id: snapshot.round.challenge.id,
-          textTr: snapshot.round.challenge.text,
-          textEn: snapshot.round.challenge.text,
+          id: snapshot.round.question.id,
+          textTr: snapshot.round.question.text,
+          textEn: snapshot.round.question.text,
           answer: null,
-          answerUnit: snapshot.round.challenge.answerUnit,
-          category: 'Party Challenge',
-          source: snapshot.round.challenge.rules,
+          answerUnit: 'player',
+          category: 'Party Poll',
+          source: snapshot.round.question.rules,
         );
         final partyScores = Map<String, int>.from(snapshot.scores);
         _seedGameState(
           snapshot.room,
           partyQuestion,
           round: snapshot.round.number,
-          phase: snapshot.round.phase.gamePhase,
+          phase: RoundPhase.betting,
           scores: partyScores,
         );
 
@@ -330,10 +331,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ref
               .read(realtimeServiceProvider)
               .broadcast(widget.roomCode, 'game_started', {
-                'room_id': room.id,
+                'room_id': snapshot.room.id,
                 'mode': GameMode.party.name,
                 'round': snapshot.round.number,
-                'phase': snapshot.round.phase.gamePhase.name,
+                'phase': RoundPhase.betting.name,
                 'state_version': snapshot.stateVersion,
                 'question': partyQuestion.toJson(),
                 'scores': partyScores,
@@ -498,7 +499,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
     if (kIsWeb) {
       final uri = Uri.base;
-      final isLocalhost = uri.host == 'localhost' ||
+      final isLocalhost =
+          uri.host == 'localhost' ||
           uri.host == '127.0.0.1' ||
           uri.host == '0.0.0.0' ||
           uri.host.isEmpty;
@@ -1061,8 +1063,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         : (isPlayerReady ? 'READY' : 'MARK READY');
     final primaryIcon = isHost
         ? (exceedsLimit
-            ? Icons.workspace_premium_rounded
-            : Icons.play_arrow_rounded)
+              ? Icons.workspace_premium_rounded
+              : Icons.play_arrow_rounded)
         : (isPlayerReady ? Icons.check_rounded : Icons.circle_outlined);
 
     return Container(
@@ -1139,9 +1141,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryEnabled
-                    ? (exceedsLimit
-                        ? AppColors.brassLight
-                        : AppColors.brass)
+                    ? (exceedsLimit ? AppColors.brassLight : AppColors.brass)
                     : AppColors.surfaceLight,
                 foregroundColor: primaryEnabled
                     ? AppColors.ink
