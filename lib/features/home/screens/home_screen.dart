@@ -150,7 +150,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       selectedCategory != GameConstants.defaultCategory));
 
           return Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.max,
             children: [
               Container(
                 padding: const EdgeInsets.all(4),
@@ -191,7 +191,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 20),
               if (selectedMode == GameMode.classic) ...[
                 _setupSlider(
                   icon: Icons.casino_rounded,
@@ -207,7 +207,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     setModalState(() => selectedRounds = value);
                   },
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 20),
                 _setupSlider(
                   icon: Icons.groups_rounded,
                   label: 'PLAYERS',
@@ -247,7 +247,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ],
               if (selectedMode == GameMode.classic) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 20),
                 FutureBuilder<List<String>>(
                   future: categoriesFuture,
                   builder: (context, snapshot) {
@@ -266,9 +266,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   },
                 ),
               ] else ...[
-                const SizedBox(height: 10),
-                _partyModeGuideCard(),
+                const SizedBox(height: 18),
+                Expanded(child: _partyModeGuideCard()),
               ],
+              if (selectedMode == GameMode.classic) const Spacer(),
               const SizedBox(height: 14),
               SizedBox(
                 width: double.infinity,
@@ -710,6 +711,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                     alignment: Alignment.center,
                                     child: SizedBox(
                                       width: constraints.maxWidth,
+                                      height: constraints.maxHeight,
                                       child: child,
                                     ),
                                   ),
@@ -773,7 +775,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 mode.displayName,
                 style: GoogleFonts.outfit(
                   color: selected ? AppColors.ink : AppColors.ivory,
-                  fontSize: 13,
+                  fontSize: 16,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 0.8,
                 ),
@@ -788,7 +790,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _partyModeGuideCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
       decoration: BoxDecoration(
         color: PartyPalette.nightDeep.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(18),
@@ -798,6 +800,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -820,7 +823,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   'PARTY POLL — READ THE ROOM',
                   style: GoogleFonts.outfit(
                     color: PartyPalette.cream,
-                    fontSize: 13,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0.7,
                   ),
@@ -828,21 +831,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 20),
           _partyGuideBullet(
             icon: Icons.groups_rounded,
             title: 'ONE QUESTION, EVERYONE PLAYS',
             description:
                 'Pick the player who fits the prompt. Your chips are your vote and your confidence.',
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 18),
           _partyGuideBullet(
             icon: Icons.local_fire_department_rounded,
             title: 'SPLIT OR COMMIT',
             description:
                 'Put your stake on one player for two votes, or split it across two players for one vote each.',
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 18),
           _partyGuideBullet(
             icon: Icons.emoji_events_rounded,
             title: 'REVEAL, THEN SETTLE',
@@ -862,7 +865,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 15, color: PartyPalette.orangeSoft),
+        Icon(icon, size: 19, color: PartyPalette.orangeSoft),
         const SizedBox(width: 8),
         Expanded(
           child: RichText(
@@ -872,7 +875,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   text: '$title: ',
                   style: GoogleFonts.outfit(
                     color: PartyPalette.cream,
-                    fontSize: 11.5,
+                    fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -880,9 +883,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   text: description,
                   style: GoogleFonts.outfit(
                     color: PartyPalette.creamMuted.withValues(alpha: 0.85),
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    height: 1.25,
+                    height: 1.42,
                   ),
                 ),
               ],
@@ -1108,6 +1111,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ],
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1177,7 +1181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 20),
           LayoutBuilder(
             builder: (context, constraints) {
               const gap = 8.0;
@@ -1252,7 +1256,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                           ? AppColors.ink
                                           : AppColors.ivory,
                                       fontWeight: FontWeight.w900,
-                                      fontSize: 13,
+                                      fontSize: 16,
                                     ),
                                   ),
                                 ),
@@ -1331,10 +1335,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               SizedBox(height: kIsWeb ? 12 : 18),
                               if (kIsWeb) ...[
                                 _dimIfGuide(child: _buildWebPlayerBadge()),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 20),
                               ],
                               _buildNamePanel(),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 20),
                               if (!kIsWeb) ...[
                                 _dimIfGuide(
                                   child: _buildHeroActionButton(
@@ -1346,11 +1350,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                         : _showCreateLobbySetup,
                                   ),
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 20),
                               ],
                               _buildJoinLobbyPanel(),
                               if (!kIsWeb) ...[
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 20),
                                 _dimIfGuide(child: _buildPremiumButton()),
                               ],
                               SizedBox(height: kIsWeb ? 10 : 16),
@@ -1961,7 +1965,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(icon, color: AppColors.brassLight, size: 30),
-                const SizedBox(height: 8),
+                const SizedBox(height: 18),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(

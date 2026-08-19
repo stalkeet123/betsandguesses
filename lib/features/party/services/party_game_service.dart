@@ -4,6 +4,13 @@ import '../../room/models/room_model.dart';
 import '../models/party_moment.dart';
 import '../models/party_snapshot.dart';
 
+class PartyBetPlacement {
+  final PartySnapshot snapshot;
+  final PartyBetSnapshot bet;
+
+  const PartyBetPlacement({required this.snapshot, required this.bet});
+}
+
 class PartyGameService {
   final SupabaseClient _client;
 
@@ -42,7 +49,7 @@ class PartyGameService {
     return _snapshot(response);
   }
 
-  Future<PartySnapshot> placeBet({
+  Future<PartyBetPlacement> placeBet({
     required String roomId,
     required int slotIndex,
     required int chips,
@@ -50,7 +57,7 @@ class PartyGameService {
     double? positionX,
     double? positionY,
   }) async {
-    await _client.rpc(
+    final response = await _client.rpc(
       'place_party_bet_v1',
       params: {
         'p_room_id': roomId,
@@ -61,7 +68,10 @@ class PartyGameService {
         'p_position_y': positionY,
       },
     );
-    return getSnapshot(roomId);
+    final bet = PartyBetSnapshot.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    return PartyBetPlacement(snapshot: await getSnapshot(roomId), bet: bet);
   }
 
   Future<PartySnapshot> moveBet({

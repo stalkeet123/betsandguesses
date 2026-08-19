@@ -72,6 +72,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _resyncRequested = false;
   DateTime? _phaseDeadline;
   final List<_PendingBetEvent> _pendingBetEvents = [];
+  final Map<int, List<Bet>> _partyOwnBetsByRound = {};
   PartySnapshot? _partySnapshot;
   int? _optimisticChoiceIndex;
   bool _isPartyCommandInFlight = false;
@@ -1135,32 +1136,45 @@ class _GameScreenState extends ConsumerState<GameScreen>
         })
         .toList(growable: false);
 
-    // A database change or a reconnect can arrive just before the RPC snapshot
-    // includes the player's new bet. Keep that optimistic chip only for that
-    // short gap; once the authoritative row is present, it must replace it.
-    final allBets = <Bet>[...bets];
-    final currentPlayerId = ref.read(currentPlayerProvider)?.id;
-    final hideOtherBets = round.phase != PartyRoundPhase.reveal;
-    for (final existingBet in ref.read(gameStateProvider).bets) {
-      if (hideOtherBets &&
-          existingBet.roundNumber == round.number &&
-          existingBet.playerId != currentPlayerId)
-        continue;
-      final isAwaitingAuthoritativeBet =
-          existingBet.roundNumber == round.number &&
-          (existingBet.playerId == currentPlayerId ||
-              existingBet.id.startsWith('local-')) &&
-          !bets.any(
+    // The RPC hides bets while voting is open. Cache only our confirmed chips
+    // locally, and render everyone else only after the server starts reveal.
+    final currentPlayerId =
+        ref.read(currentPlayerProvider)?.id ??
+        _restoreCurrentPlayer(snapshot.room.id)?.id;
+    final isReveal = round.phase == PartyRoundPhase.reveal;
+    final visibleBets = isReveal || currentPlayerId == null
+        ? bets
+        : bets.where((bet) => bet.playerId == currentPlayerId).toList();
+    final cachedOwnBets = <Bet>[
+      ...?_partyOwnBetsByRound[round.number],
+      ...ref
+          .read(gameStateProvider)
+          .bets
+          .where(
             (bet) =>
-                bet.playerId == existingBet.playerId &&
-                bet.roundNumber == existingBet.roundNumber &&
-                bet.slotIndex == existingBet.slotIndex &&
-                bet.chips == existingBet.chips,
-          );
-      if (isAwaitingAuthoritativeBet) {
-        allBets.add(existingBet);
-      }
+                bet.roundNumber == round.number &&
+                bet.playerId == currentPlayerId,
+          ),
+    ];
+    final allBets = <Bet>[...visibleBets];
+    for (final ownBet in cachedOwnBets) {
+      final alreadyPresent = allBets.any(
+        (bet) =>
+            bet.id == ownBet.id ||
+            (bet.playerId == ownBet.playerId &&
+                bet.slotIndex == ownBet.slotIndex &&
+                bet.chips == ownBet.chips),
+      );
+      if (!alreadyPresent) allBets.add(ownBet);
     }
+    _partyOwnBetsByRound
+      ..removeWhere((roundNumber, _) => roundNumber != round.number)
+      ..[round.number] = List.unmodifiable(
+        allBets
+            .where((bet) => bet.playerId == currentPlayerId)
+            .toList(growable: false),
+      );
+
     ref.read(currentRoomProvider.notifier).set(snapshot.room);
     ref
         .read(gameStateProvider.notifier)
@@ -2238,7 +2252,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     try {
       if (room.gameMode == GameMode.party) {
         final partyService = ref.read(partyGameServiceProvider);
-        final snapshot = await partyService.placeBet(
+        final placement = await partyService.placeBet(
           roomId: room.id,
           slotIndex: slotIndex,
           chips: chips,
@@ -2247,32 +2261,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
           positionY: safeDy,
         );
         if (!_canUseRef) return;
-        final placedPartyBet = snapshot.round.bets
-            .cast<PartyBetSnapshot?>()
-            .firstWhere(
-              (b) =>
-                  b != null &&
-                  b.slotIndex == slotIndex &&
-                  b.playerId == player.id &&
-                  b.chips == chips,
-              orElse: () => snapshot.round.bets.isNotEmpty
-                  ? snapshot.round.bets.last
-                  : null,
-            );
-        final assignedId = placedPartyBet?.id ?? const Uuid().v4();
         final mappedBet = optimisticBet.copyWith(
-          id: assignedId,
+          id: placement.bet.id,
           playerName: player.name,
           playerColor: player.avatarColor,
         );
         gameNotifier.replaceBet(optimisticId, mappedBet);
-        _applyPartySnapshot(snapshot);
+        _applyPartySnapshot(placement.snapshot);
         unawaited(
           realtimeService
               .broadcast(widget.roomCode, 'bet_placed', {
                 'bet': {
                   ...mappedBet.toJson(),
-                  'id': assignedId,
+                  'id': placement.bet.id,
                   'player_name': player.name,
                   'player_color': player.avatarColor,
                 },
@@ -2550,6 +2551,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     ref.read(audioServiceProvider).playClick();
     if (_selectedBetId == bet.id) _selectedBetId = null;
     gameNotifier.removeBetById(bet.id);
+    final cachedRoundBets = _partyOwnBetsByRound[bet.roundNumber];
+    if (cachedRoundBets != null) {
+      _partyOwnBetsByRound[bet.roundNumber] = cachedRoundBets
+          .where((cachedBet) => cachedBet.id != bet.id)
+          .toList(growable: false);
+    }
     if (_canUseRef) setState(() {});
 
     try {
