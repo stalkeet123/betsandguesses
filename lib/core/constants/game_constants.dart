@@ -20,10 +20,13 @@ class GameConstants {
   static const int freeChipsPerRound = 2;
   static const int startingScore = 15;
 
-  /// The bank is the competitive score and may be negative. The betting limit
-  /// stays at least 15 so a losing player is never removed from the game.
-  static int bettingLimitForBank(int bank) =>
-      bank < startingScore ? startingScore : bank;
+  /// The bank score represents net profit/loss. Every player starts with 15 chips 
+  /// worth of credit. If they lose those 15 chips, their bank score becomes -15 
+  /// and their betting limit becomes 0 (they are out of chips).
+  static int bettingLimitForBank(int bank) {
+    final limit = startingScore + bank;
+    return limit < 0 ? 0 : limit;
+  }
 
   // Visual slot layout: [Smaller] [Low range] [Sweet spot] [High range] [Larger]
   static const List<int> boardOdds = [4, 3, 2, 3, 4];

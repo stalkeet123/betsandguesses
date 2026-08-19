@@ -763,15 +763,20 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: PartyPalette.orange.withValues(alpha: 0.18),
+                                color: PartyPalette.orange.withValues(
+                                  alpha: 0.18,
+                                ),
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: PartyPalette.orangeSoft
-                                      .withValues(alpha: 0.4),
+                                  color: PartyPalette.orangeSoft.withValues(
+                                    alpha: 0.4,
+                                  ),
                                 ),
                               ),
                               child: Text(
-                                _isPerformer ? 'YOU ARE UP' : 'UP NEXT ON STAGE',
+                                _isPerformer
+                                    ? 'YOU ARE UP'
+                                    : 'UP NEXT ON STAGE',
                                 style: GoogleFonts.outfit(
                                   color: PartyPalette.orangeSoft,
                                   fontSize: 8.5,
@@ -801,7 +806,9 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                           alignment: Alignment.centerLeft,
                           child: Text(
                             performerName,
-                            style: _stageTitleStyle(fontSize: compact ? 30 : 36),
+                            style: _stageTitleStyle(
+                              fontSize: compact ? 30 : 36,
+                            ),
                           ),
                         ),
                       ],
@@ -828,11 +835,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      roleIcon,
-                      color: PartyPalette.orangeSoft,
-                      size: 19,
-                    ),
+                    Icon(roleIcon, color: PartyPalette.orangeSoft, size: 19),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -929,7 +932,9 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: PartyPalette.orange.withValues(alpha: 0.3),
+                                  color: PartyPalette.orange.withValues(
+                                    alpha: 0.3,
+                                  ),
                                   blurRadius: 10,
                                 ),
                               ],
@@ -976,8 +981,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                                 color: urgent
                                     ? PartyPalette.terracotta
                                     : PartyPalette.orange,
-                                backgroundColor:
-                                    PartyPalette.nightDeep.withValues(alpha: 0.6),
+                                backgroundColor: PartyPalette.nightDeep
+                                    .withValues(alpha: 0.6),
                               ),
                               Center(
                                 child: Text(
@@ -1036,11 +1041,15 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: PartyPalette.nightDeep.withValues(alpha: 0.4),
+                            color: PartyPalette.nightDeep.withValues(
+                              alpha: 0.4,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: ownBet != null
-                                  ? PartyPalette.orangeSoft.withValues(alpha: 0.3)
+                                  ? PartyPalette.orangeSoft.withValues(
+                                      alpha: 0.3,
+                                    )
                                   : PartyPalette.cream.withValues(alpha: 0.06),
                             ),
                           ),
@@ -1050,8 +1059,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                               Icon(
                                 ownBet == null
                                     ? (_isPerformer
-                                        ? Icons.bolt_rounded
-                                        : Icons.visibility_rounded)
+                                          ? Icons.bolt_rounded
+                                          : Icons.visibility_rounded)
                                     : Icons.casino_rounded,
                                 color: PartyPalette.orangeSoft,
                                 size: 14,
@@ -1203,9 +1212,10 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       if (slotIndex == 0) {
         return widget.snapshot.round.performer.name.toUpperCase();
       }
-      return (widget.snapshot.round.witness?.name ?? 'CHALLENGER').toUpperCase();
+      return (widget.snapshot.round.witness?.name ?? 'CHALLENGER')
+          .toUpperCase();
     }
-    if (challenge.isShowdown) {
+    if (challenge.isShowdown || challenge.isPoll) {
       if (slotIndex >= 0 && slotIndex < widget.players.length) {
         return widget.players[slotIndex].name.toUpperCase();
       }
@@ -1246,7 +1256,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       return _centeredStage(
         kicker: 'BETS ARE LOCKED',
         title: '${round.performer.name.toUpperCase()} IS CHOOSING',
-        subtitle: 'No hints allowed! Their secret choice will decide the payout.',
+        subtitle:
+            'No hints allowed! Their secret choice will decide the payout.',
       );
     }
     if (optionA == null || optionB == null) {
@@ -1385,7 +1396,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       return _centeredStage(
         kicker: 'CHALLENGE COMPLETE',
         title: 'RECORDING RESULT',
-        subtitle: 'The host is entering the final score. Results will be shown shortly!',
+        subtitle:
+            'The host is entering the final score. Results will be shown shortly!',
       );
     }
 
@@ -1563,7 +1575,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
       return _centeredStage(
         kicker: 'SHOWDOWN COMPLETE',
         title: 'SELECTING WINNER',
-        subtitle: 'The host is selecting the winning player with the best result!',
+        subtitle:
+            'The host is selecting the winning player with the best result!',
       );
     }
 
@@ -1925,7 +1938,9 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                           gradient: LinearGradient(
                             colors: attempt.value == 0
                                 ? [
-                                    PartyPalette.terracotta.withValues(alpha: 0.35),
+                                    PartyPalette.terracotta.withValues(
+                                      alpha: 0.35,
+                                    ),
                                     PartyPalette.nightDeep,
                                   ]
                                 : [
@@ -1989,9 +2004,9 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
               child: Text(
                 result.toUpperCase(),
                 textAlign: TextAlign.center,
-                style: _stageTitleStyle(fontSize: compact ? 36 : 44).copyWith(
-                  color: PartyPalette.orangeSoft,
-                ),
+                style: _stageTitleStyle(
+                  fontSize: compact ? 36 : 44,
+                ).copyWith(color: PartyPalette.orangeSoft),
               ),
             ),
             SizedBox(height: compact ? 4 : 8),
@@ -2040,7 +2055,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                 ],
               ),
             ),
-              if (!round.challenge.isChoice) ...[
+            if (!round.challenge.isChoice) ...[
               SizedBox(height: compact ? 10 : 16),
               if (_isHost)
                 Padding(
@@ -2064,7 +2079,8 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            onTap: _consensusSeconds > 0 && !widget.commandInFlight
+                            onTap:
+                                _consensusSeconds > 0 && !widget.commandInFlight
                                 ? () async {
                                     HapticFeedback.heavyImpact();
                                     setState(() => _myReviewVote = 0);
@@ -2082,100 +2098,111 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
                                           const Color(0xFF991B1B),
                                         ]
                                       : [
-                                          PartyPalette.terracotta.withValues(alpha: 0.3),
+                                          PartyPalette.terracotta.withValues(
+                                            alpha: 0.3,
+                                          ),
                                           PartyPalette.nightDeep,
                                         ],
                                 ),
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(
-                                  color: const Color(0xFFEF4444).withValues(alpha: 0.7),
+                                  color: const Color(
+                                    0xFFEF4444,
+                                  ).withValues(alpha: 0.7),
                                   width: 1.4,
                                 ),
-
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.close_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _myReviewVote == 0 ? 'OBJECTED' : 'NO / OBJECT',
-                                  style: GoogleFonts.outfit(
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.close_rounded,
                                     color: Colors.white,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.5,
+                                    size: 20,
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _myReviewVote == 0
+                                        ? 'OBJECTED'
+                                        : 'NO / OBJECT',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _consensusSeconds > 0
-                              ? () {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _myReviewVote = 1);
-                                }
-                              : null,
-                          borderRadius: BorderRadius.circular(14),
-                          child: Container(
-                            height: compact ? 44 : 50,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: _myReviewVote == 1
-                                    ? [
-                                        const Color(0xFF22C55E),
-                                        const Color(0xFF15803D),
-                                      ]
-                                    : [
-                                        const Color(0xFF22C55E).withValues(alpha: 0.25),
-                                        PartyPalette.nightDeep,
-                                      ],
-                              ),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: const Color(0xFF22C55E).withValues(alpha: 0.7),
-                                width: 1.4,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.check_rounded,
-                                  color: Colors.white,
-                                  size: 20,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _consensusSeconds > 0
+                                ? () {
+                                    HapticFeedback.lightImpact();
+                                    setState(() => _myReviewVote = 1);
+                                  }
+                                : null,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              height: compact ? 44 : 50,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: _myReviewVote == 1
+                                      ? [
+                                          const Color(0xFF22C55E),
+                                          const Color(0xFF15803D),
+                                        ]
+                                      : [
+                                          const Color(
+                                            0xFF22C55E,
+                                          ).withValues(alpha: 0.25),
+                                          PartyPalette.nightDeep,
+                                        ],
                                 ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _myReviewVote == 1 ? 'APPROVED' : 'YES / APPROVE',
-                                  style: GoogleFonts.outfit(
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFF22C55E,
+                                  ).withValues(alpha: 0.7),
+                                  width: 1.4,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.check_rounded,
                                     color: Colors.white,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.5,
+                                    size: 20,
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _myReviewVote == 1
+                                        ? 'APPROVED'
+                                        : 'YES / APPROVE',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
             ],
           ],
         );
@@ -2201,10 +2228,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: const RadialGradient(
-                  colors: [
-                    PartyPalette.surfaceRaised,
-                    PartyPalette.nightDeep,
-                  ],
+                  colors: [PartyPalette.surfaceRaised, PartyPalette.nightDeep],
                 ),
                 border: Border.all(
                   color: PartyPalette.orangeSoft.withValues(alpha: 0.45),
@@ -2319,7 +2343,9 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
           disabledBackgroundColor: PartyPalette.surfaceRaised,
           disabledForegroundColor: PartyPalette.blueMuted,
           minimumSize: const Size(190, 52),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           textStyle: GoogleFonts.outfit(
             fontSize: 12.5,
             fontWeight: FontWeight.w900,

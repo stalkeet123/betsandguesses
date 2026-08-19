@@ -34,7 +34,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   String? _prefilledRoomCode;
   bool _showQrJoinGuide = false;
 
-
   @override
   void initState() {
     super.initState();
@@ -886,11 +885,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          size: 15,
-          color: PartyPalette.orangeSoft,
-        ),
+        Icon(icon, size: 15, color: PartyPalette.orangeSoft),
         const SizedBox(width: 8),
         Expanded(
           child: RichText(

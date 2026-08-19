@@ -118,6 +118,31 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('poll bet summary names the selected player', (tester) async {
+    final spectator = _player(id: 'spectator');
+    final alex = _player(id: 'alex', name: 'Alex');
+    final bea = _player(id: 'bea', name: 'Bea');
+    await _pumpScene(
+      tester,
+      snapshot: _snapshot(
+        phase: PartyRoundPhase.action,
+        challengeType: PartyChallengeType.poll,
+        bets: const [
+          PartyBetSnapshot(
+            id: 'poll-bet',
+            slotIndex: 1,
+            chips: 20,
+            playerId: 'spectator',
+          ),
+        ],
+      ),
+      player: spectator,
+      players: [alex, bea, spectator],
+    );
+
+    expect(find.text('YOUR BET - BEA - 20 CHIPS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
     'count result uses an embedded numpad without opening a keyboard',
     (tester) async {
@@ -392,6 +417,7 @@ PartySnapshot _snapshot({
           PartyChallengeType.count => 'How many push-ups can Alex do?',
           PartyChallengeType.versus => 'Who will win the duel?',
           PartyChallengeType.showdown => 'Who has the highest screen time?',
+          PartyChallengeType.poll => 'Who is most likely to win?',
         },
         rules: 'One clean attempt.',
         answerUnit: switch (challengeType) {
@@ -400,7 +426,7 @@ PartySnapshot _snapshot({
           PartyChallengeType.versus => 'choice',
           PartyChallengeType.attempt => 'attempt',
           PartyChallengeType.count => 'push-ups',
-          PartyChallengeType.showdown => 'player',
+          PartyChallengeType.showdown || PartyChallengeType.poll => 'player',
         },
         durationSeconds: durationSeconds,
         maxResult: challengeType == PartyChallengeType.attempt ? 5 : 100,

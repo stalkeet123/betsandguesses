@@ -544,7 +544,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (eventRound == null) return true;
     final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
     final currentRound = isParty
-        ? (_partySnapshot?.round.number ?? ref.read(gameStateProvider).currentRound)
+        ? (_partySnapshot?.round.number ??
+              ref.read(gameStateProvider).currentRound)
         : ref.read(gameStateProvider).currentRound;
     return GameSyncPolicy.isCurrentRound(
       currentRound: currentRound,
@@ -1111,14 +1112,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
             playerId: bet.playerId ?? 'hidden-${bet.id}',
             slotIndex: bet.slotIndex,
             chips: bet.chips,
-            payoutMultiplier: (round.challenge.usesTwoOptionBoard ||
+            payoutMultiplier:
+                (round.challenge.usesTwoOptionBoard ||
                     round.challenge.isPoll ||
                     round.challenge.isShowdown)
                 ? 2
                 : (bet.slotIndex >= 0 &&
-                        bet.slotIndex < GameConstants.boardOdds.length
-                    ? GameConstants.boardOdds[bet.slotIndex]
-                    : 2),
+                          bet.slotIndex < GameConstants.boardOdds.length
+                      ? GameConstants.boardOdds[bet.slotIndex]
+                      : 2),
             won: winningPartySlot == bet.slotIndex,
             playerName: player?.name,
             playerColor: player?.avatarColor,
@@ -1128,7 +1130,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
         })
         .toList(growable: false);
 
-    final allBets = bets;
+    // A database change or a reconnect can arrive just before the RPC snapshot
+    // includes the player's new bet. Keep that optimistic chip only for that
+    // short gap; once the authoritative row is present, it must replace it.
+    final allBets = <Bet>[...bets];
+    for (final existingBet in ref.read(gameStateProvider).bets) {
+      final isAwaitingAuthoritativeBet =
+          existingBet.id.startsWith('local-') &&
+          !bets.any(
+            (bet) =>
+                bet.playerId == existingBet.playerId &&
+                bet.roundNumber == existingBet.roundNumber &&
+                bet.slotIndex == existingBet.slotIndex &&
+                bet.chips == existingBet.chips,
+          );
+      if (isAwaitingAuthoritativeBet) {
+        allBets.add(existingBet);
+      }
+    }
     ref.read(currentRoomProvider.notifier).set(snapshot.room);
     ref
         .read(gameStateProvider.notifier)
@@ -2133,8 +2152,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
     if (room.gameMode == GameMode.party &&
         _partySnapshot?.round.challenge.isPoll == true) {
-      final currentBets = gameState.bets
-          .where((b) => b.playerId == player.id && b.roundNumber == activeRound);
+      final currentBets = gameState.bets.where(
+        (b) => b.playerId == player.id && b.roundNumber == activeRound,
+      );
       final distinctSlots = currentBets.map((b) => b.slotIndex).toSet();
       if (distinctSlots.length >= 2 && !distinctSlots.contains(slotIndex)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2190,8 +2210,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   _partySnapshot?.round.challenge.isShowdown == true)
           ? 2
           : (slotIndex >= 0 && slotIndex < GameConstants.boardOdds.length
-              ? GameConstants.boardOdds[slotIndex]
-              : 2),
+                ? GameConstants.boardOdds[slotIndex]
+                : 2),
       playerName: player.name,
       playerColor: player.avatarColor,
       positionX: safeDx,
@@ -2401,9 +2421,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   _partySnapshot?.round.challenge.isShowdown == true)
           ? 2
           : (targetSlotIndex >= 0 &&
-                  targetSlotIndex < GameConstants.boardOdds.length
-              ? GameConstants.boardOdds[targetSlotIndex]
-              : 2),
+                    targetSlotIndex < GameConstants.boardOdds.length
+                ? GameConstants.boardOdds[targetSlotIndex]
+                : 2),
       positionX: safeDx,
       positionY: safeDy,
     );
@@ -5345,7 +5365,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ...activeSlots.where((slot) => !slot.isSweetSpot),
           ...activeSlots.where((slot) => slot.isSweetSpot),
         ];
-        final activeRound = ref.read(currentRoomProvider)?.gameMode == GameMode.party
+        final activeRound =
+            ref.read(currentRoomProvider)?.gameMode == GameMode.party
             ? (_partySnapshot?.round.number ?? gameState.currentRound)
             : gameState.currentRound;
         final activeRoundBets = gameState.bets
@@ -5372,16 +5393,39 @@ class _GameScreenState extends ConsumerState<GameScreen>
                       height: spec.rect.height * size.height,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTapDown: canEdit || canChoose
-                            ? (details) => _handleBetSlotTap(
-                                spec,
-                                details.localPosition,
-                                Size(
-                                  spec.rect.width * size.width,
-                                  spec.rect.height * size.height,
-                                ),
-                              )
-                            : null,
+                        onTapDown: (details) {
+                          if (!canEdit && !canChoose) {
+                            if (ref.read(gameStateProvider).phase !=
+                                RoundPhase.betting)
+                              return;
+                            final partyRound = _partySnapshot?.round;
+                            if (partyRound != null) {
+                              final isPerformer =
+                                  partyRound.performer.id ==
+                                  ref.read(currentPlayerProvider)?.id;
+                              final challenge = partyRound.challenge;
+                              if (isPerformer &&
+                                  !(challenge.isShowdown ||
+                                      challenge.isVersus ||
+                                      challenge.isPoll)) {
+                                _showGameMessage(
+                                  'Performers cannot bet in this challenge!',
+                                );
+                                return;
+                              }
+                            }
+                            _showGameMessage('Betting is closed!');
+                            return;
+                          }
+                          _handleBetSlotTap(
+                            spec,
+                            details.localPosition,
+                            Size(
+                              spec.rect.width * size.width,
+                              spec.rect.height * size.height,
+                            ),
+                          );
+                        },
                         child: _buildCodedBetSlot(
                           spec: spec,
                           isWinningReveal:
@@ -5493,6 +5537,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
           : (gameState.scores[player.id] ?? player.bankScore);
       final limit = GameConstants.bettingLimitForBank(bank);
       final available = limit - totalBets;
+
+      if (available <= 0) {
+        if (limit <= 0) {
+          _showGameMessage(
+            'You have 0 chips left. You are eliminated from betting!',
+          );
+        } else {
+          _showGameMessage('You reached your betting limit of $limit chips!');
+        }
+        return;
+      }
+
       final dynamicChips = _getDynamicChips(limit);
       for (final chip in dynamicChips) {
         if (chip <= available) {

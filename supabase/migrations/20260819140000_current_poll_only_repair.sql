@@ -430,6 +430,44 @@ $$;
 revoke all on function public.begin_party_poll_v1(uuid) from public, anon, authenticated;
 grant execute on function public.begin_party_poll_v1(uuid) to authenticated;
 
+-- The legacy security migration revoked this existing RPC. The client starts
+-- every Party match through it, so restore access for signed-in players.
+grant execute on function public.start_party_game_v2(uuid, integer) to authenticated;
+
+-- Restore all Party RPC grants without assuming an argument signature.
+do $$
+declare
+  v_function regprocedure;
+begin
+  for v_function in
+    select p.oid::regprocedure
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = any (array[
+        'start_party_game_v2',
+        'get_party_snapshot_v1',
+        'advance_party_to_betting_v1',
+        'place_party_bet_v1',
+        'move_party_bet_v1',
+        'remove_party_bet_v1',
+        'reroll_party_challenge_v1',
+        'begin_party_poll_v1',
+        'begin_party_choice_v1',
+        'submit_party_choice_v1',
+        'begin_party_ready_v1',
+        'start_party_action_v1',
+        'open_party_result_entry_v1',
+        'submit_party_result_v1',
+        'confirm_party_result_v1',
+        'dispute_party_result_v1',
+        'advance_party_round_v2',
+        'get_party_recap_v1',
+        'reset_party_to_lobby_v1'
+      ]);
+  loop
+    execute format('grant execute on function %s to authenticated', v_function);
+
 notify pgrst, 'reload schema';
 
 commit;
