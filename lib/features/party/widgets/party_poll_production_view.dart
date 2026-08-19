@@ -176,7 +176,7 @@ class PartyPollProductionView extends StatelessWidget {
                         top: 0,
                         width: boardWidth,
                         height: height,
-                        child: const SizedBox.expand(),
+                        child: _partyPollBoard(),
                       ),
                     ],
                   );
@@ -502,6 +502,196 @@ class PartyPollProductionView extends StatelessWidget {
     );
   }
 
+  Widget _partyPollBoard() {
+    final boardPlayers = [...players]
+      ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+    final specs = _partyPollSlotsFor(boardPlayers);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final boardSize = Size(constraints.maxWidth, constraints.maxHeight);
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final spec in specs)
+              Positioned(
+                left: spec.rect.left * boardSize.width,
+                top: spec.rect.top * boardSize.height,
+                width: spec.rect.width * boardSize.width,
+                height: spec.rect.height * boardSize.height,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (details) => _handlePollSlotTap(
+                    spec,
+                    details.localPosition,
+                    Size(
+                      spec.rect.width * boardSize.width,
+                      spec.rect.height * boardSize.height,
+                    ),
+                  ),
+                  child: _PartyPollBetSlotSurface(
+                    spec: spec,
+                    isWinningReveal:
+                        isReveal &&
+                        winningPlayerIds.contains(spec.targetPlayerId),
+                  ),
+                ),
+              ),
+            Positioned.fill(
+              child: IgnorePointer(child: _placedPollChips(specs, boardSize)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  List<_PartyPollSlotSpec> _partyPollSlotsFor(
+    List<PartyPollViewPlayer> boardPlayers,
+  ) {
+    final count = boardPlayers.isEmpty ? 4 : boardPlayers.length.clamp(2, 8);
+    const tones = [
+      _PartyPollSlotTone.green,
+      _PartyPollSlotTone.black,
+      _PartyPollSlotTone.gold,
+      _PartyPollSlotTone.red,
+      _PartyPollSlotTone.green,
+      _PartyPollSlotTone.black,
+      _PartyPollSlotTone.gold,
+      _PartyPollSlotTone.red,
+    ];
+    final gap = count <= 4 ? .020 : (count <= 6 ? .014 : .010);
+    final slotHeight = (.960 - (count - 1) * gap) / count;
+
+    return List.generate(count, (rowIndex) {
+      final player = rowIndex < boardPlayers.length
+          ? boardPlayers[rowIndex]
+          : null;
+      return _PartyPollSlotSpec(
+        rowIndex: rowIndex,
+        targetPlayerId: player?.id ?? '',
+        targetSlotIndex: player?.slotIndex ?? rowIndex,
+        title: player?.name ?? 'PLAYER ${rowIndex + 1}',
+        odds: 2,
+        tone: tones[rowIndex % tones.length],
+        rect: Rect.fromLTWH(
+          .040,
+          .015 + rowIndex * (slotHeight + gap),
+          .920,
+          slotHeight,
+        ),
+      );
+    });
+  }
+
+  void _handlePollSlotTap(
+    _PartyPollSlotSpec spec,
+    Offset localPosition,
+    Size slotSize,
+  ) {
+    if (isReveal ||
+        selectedChipValue == null ||
+        selectedChipValue! > availableChips) {
+      return;
+    }
+    if (spec.targetPlayerId.isEmpty ||
+        slotSize.width <= 0 ||
+        slotSize.height <= 0) {
+      return;
+    }
+    final positionX = (localPosition.dx / slotSize.width)
+        .clamp(.12, .88)
+        .toDouble();
+    final positionY = (localPosition.dy / slotSize.height)
+        .clamp(.18, .82)
+        .toDouble();
+    onBetRequested(
+      spec.targetPlayerId,
+      spec.targetSlotIndex,
+      positionX,
+      positionY,
+    );
+  }
+
+  Widget _placedPollChips(List<_PartyPollSlotSpec> specs, Size boardSize) {
+    if (bets.isEmpty) return const SizedBox.shrink();
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.expand,
+      children: [
+        for (var index = 0; index < bets.length; index++)
+          _positionedPollChip(bets[index], index, specs, boardSize),
+      ],
+    );
+  }
+
+  Widget _positionedPollChip(
+    PartyPollViewBet bet,
+    int index,
+    List<_PartyPollSlotSpec> specs,
+    Size boardSize,
+  ) {
+    _PartyPollSlotSpec? spec;
+    for (final candidate in specs) {
+      if (candidate.targetSlotIndex == bet.targetSlotIndex) {
+        spec = candidate;
+        break;
+      }
+    }
+    if (spec == null ||
+        (spec.targetPlayerId.isNotEmpty &&
+            spec.targetPlayerId != bet.targetPlayerId)) {
+      return const SizedBox.shrink();
+    }
+    const chipSize = 42.0;
+    final fallbackX = .5 + ((index % 3) - 1) * .14;
+    final fallbackY = .52 + ((index ~/ 3) % 2) * .16;
+    final slotLocalX = bet.positionX ?? fallbackX;
+    final slotLocalY = bet.positionY ?? fallbackY;
+    final slotWidth = spec.rect.width * boardSize.width;
+    final slotHeight = spec.rect.height * boardSize.height;
+    // No clamping so the chip stays physically exactly where dropped.
+    final globalLeft =
+        spec.rect.left * boardSize.width +
+        (slotLocalX * slotWidth - chipSize / 2);
+    final globalTop =
+        spec.rect.top * boardSize.height +
+        (slotLocalY * slotHeight - chipSize / 2);
+    final won = isReveal && bet.won == true;
+
+    Widget chip = PokerChip(
+      label: '${bet.chips}',
+      color: _chipColor(bet.chips),
+      size: chipSize,
+      isScoreChip: false,
+    );
+    if (won) {
+      chip = AnimatedScale(
+        duration: const Duration(milliseconds: 150),
+        scale: 1.12,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: PartyPalette.orangeSoft.withValues(alpha: .62),
+                blurRadius: 16,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: chip,
+        ),
+      );
+    }
+    return Positioned(
+      key: ValueKey('poll-placed-bet-${bet.id}'),
+      left: globalLeft,
+      top: globalTop,
+      child: chip,
+    );
+  }
+
   Widget _questionCard() => AnimatedContainer(
     duration: const Duration(milliseconds: 260),
     width: double.infinity,
@@ -577,6 +767,221 @@ class PartyPollProductionView extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _PartyPollSlotSpec {
+  final int rowIndex;
+  final String targetPlayerId;
+  final int targetSlotIndex;
+  final String title;
+  final int odds;
+  final _PartyPollSlotTone tone;
+  final Rect rect;
+
+  const _PartyPollSlotSpec({
+    required this.rowIndex,
+    required this.targetPlayerId,
+    required this.targetSlotIndex,
+    required this.title,
+    required this.odds,
+    required this.tone,
+    required this.rect,
+  });
+
+  bool get isGold => tone == _PartyPollSlotTone.gold;
+}
+
+enum _PartyPollSlotTone { green, black, gold, red }
+
+class _PartyPollBetSlotSurface extends StatelessWidget {
+  final _PartyPollSlotSpec spec;
+  final bool isWinningReveal;
+
+  const _PartyPollBetSlotSurface({
+    required this.spec,
+    required this.isWinningReveal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(spec.isGold ? 18 : 12);
+    final colors = switch (spec.tone) {
+      _PartyPollSlotTone.green => const [Color(0xFF2E4D3D), Color(0xFF1E3328)],
+      _PartyPollSlotTone.black => const [Color(0xFF332E42), Color(0xFF211D2E)],
+      _PartyPollSlotTone.gold => const [Color(0xFF43362A), Color(0xFF2C2118)],
+      _PartyPollSlotTone.red => const [Color(0xFF442B31), Color(0xFF2C1B20)],
+    };
+    final borderColor = isWinningReveal
+        ? PartyPalette.orange
+        : (spec.isGold
+              ? PartyPalette.orangeSoft.withValues(alpha: .55)
+              : PartyPalette.orangeSoft.withValues(alpha: .25));
+
+    return AnimatedScale(
+      duration: const Duration(milliseconds: 210),
+      curve: Curves.easeOutCubic,
+      scale: isWinningReveal ? 1.026 : 1,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+          ),
+          border: Border.all(
+            color: borderColor,
+            width: isWinningReveal ? 2.2 : (spec.isGold ? 1.4 : 1.1),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .40),
+              blurRadius: isWinningReveal ? 20 : 10,
+              offset: Offset(0, isWinningReveal ? 8 : 4),
+            ),
+            if (isWinningReveal)
+              BoxShadow(
+                color: PartyPalette.orange.withValues(alpha: .50),
+                blurRadius: 28,
+                spreadRadius: 3,
+              ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(max(4, radius.topLeft.x - 1)),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 1,
+                child: Container(color: Colors.white.withValues(alpha: .10)),
+              ),
+              if (isWinningReveal)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      colors: [
+                        PartyPalette.orangeSoft.withValues(alpha: .45),
+                        PartyPalette.orange.withValues(alpha: .25),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              _PartyPollSlotLabel(spec: spec),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PartyPollSlotLabel extends StatelessWidget {
+  final _PartyPollSlotSpec spec;
+
+  const _PartyPollSlotLabel({required this.spec});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = spec.isGold ? PartyPalette.cream : PartyPalette.orangeSoft;
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 50, 4),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'BET ON',
+                    style: GoogleFonts.outfit(
+                      color: PartyPalette.cream.withValues(alpha: .60),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.3,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      spec.title.toUpperCase(),
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontFamily: 'RehnCondensed',
+                        color: PartyPalette.cream,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        height: .90,
+                        letterSpacing: .5,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withValues(alpha: .75),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            bottom: 0,
+            right: 10,
+            child: Center(
+              child: Container(
+                height: 26,
+                constraints: const BoxConstraints(minWidth: 36),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: PartyPalette.nightDeep.withValues(alpha: .85),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: accent.withValues(alpha: .50),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: .35),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '${spec.odds}X',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontFamily: 'RehnCondensed',
+                    color: accent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    height: .86,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PartyTableBackground extends StatelessWidget {
