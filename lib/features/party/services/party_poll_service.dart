@@ -57,6 +57,27 @@ class PartyPollService {
     return PartyPollBetPlacement(bet: bet, snapshot: snapshot);
   }
 
+  Future<PartyPollSnapshot> moveBet({
+    required String roomId,
+    required String betId,
+    required String targetPlayerId,
+    double? positionX,
+    double? positionY,
+  }) => _snapshotRpc('move_party_poll_bet_v1', {
+    'p_room_id': roomId,
+    'p_bet_id': betId,
+    'p_target_player_id': targetPlayerId,
+    'p_position_x': positionX,
+    'p_position_y': positionY,
+  });
+
+  Future<PartyPollSnapshot> removeBet({
+    required String roomId,
+    required String betId,
+  }) => _snapshotRpc('remove_party_poll_bet_v1', {
+    'p_room_id': roomId,
+    'p_bet_id': betId,
+  });
   Future<PartyPollSnapshot> settleRound(String roomId) =>
       _snapshotRpc('settle_party_poll_round_v1', {'p_room_id': roomId});
 

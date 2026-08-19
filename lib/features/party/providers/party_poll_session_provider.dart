@@ -112,6 +112,26 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     }
   }
 
+  Future<PartyPollSnapshot?> moveBet({
+    required String roomId,
+    required String betId,
+    required String targetPlayerId,
+    double? positionX,
+    double? positionY,
+  }) => _run(
+    () => _service.moveBet(
+      roomId: roomId,
+      betId: betId,
+      targetPlayerId: targetPlayerId,
+      positionX: positionX,
+      positionY: positionY,
+    ),
+  );
+
+  Future<PartyPollSnapshot?> removeBet({
+    required String roomId,
+    required String betId,
+  }) => _run(() => _service.removeBet(roomId: roomId, betId: betId));
   Future<PartyPollSnapshot?> settleRound(String roomId) =>
       _run(() => _service.settleRound(roomId));
 
