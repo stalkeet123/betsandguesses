@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/game_constants.dart';
+import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../game/widgets/poker_chip.dart';
 import '../../room/providers/room_providers.dart';
@@ -207,62 +209,168 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   Widget build(BuildContext context) {
     final state = ref.watch(partyPollSessionProvider);
     final snapshot = state.snapshot;
-    if (state.errorMessage != null && state.errorMessage != _lastErrorMessage) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _showMessage(state.errorMessage!),
-      );
-    }
     if (_isFinished) return _finishedView(snapshot);
     if (snapshot == null) return _loadingOrError(state);
-
-    final round = snapshot.round;
-    final isReveal = round.phase == PartyPollPhase.reveal;
-    final isBetting = !isReveal;
-    final remaining = round.phaseEndsAt?.difference(DateTime.now().toUtc());
-    final orderedPlayers = [...round.players]
-      ..sort((left, right) => left.slotIndex.compareTo(right.slotIndex));
-
+    final isBetting = snapshot.round.phase == PartyPollPhase.betting;
+    final remaining = snapshot.round.phaseEndsAt?.difference(
+      DateTime.now().toUtc(),
+    );
+    final players = [...snapshot.round.players]
+      ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
     return Scaffold(
-      backgroundColor: PartyPalette.nightDeep,
-      body: SafeArea(
-        child: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: PartyPalette.backgroundGradient,
-          ),
-          child: Column(
-            children: [
-              _roundTimerPills(snapshot, remaining, isBetting),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-                  children: [
-                    _questionCard(snapshot),
-                    const SizedBox(height: 16),
-                    const SizedBox(height: 20),
-                    Text(
-                      isBetting ? 'PLACE YOUR BET' : 'ROUND RESULTS',
-                      style: const TextStyle(
-                        color: PartyPalette.cream,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _pollBettingBoard(snapshot, orderedPlayers, isBetting),
-                    if (isBetting) ...[
-                      const SizedBox(height: 22),
-                      _chipPicker(snapshot),
-                    ],
-                  ],
+      body: Stack(
+        children: [
+          const Positioned.fill(child: _PollPartyTableBackground()),
+          Positioned.fill(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final height = constraints.maxHeight;
+                    final compact = height < 700;
+                    final gap = compact ? 8.0 : 10.0;
+                    final logoTop = 6.0;
+                    final logoHeight = compact ? 76.0 : 92.0;
+                    final timerHeight = compact ? 39.0 : 42.0;
+                    final leftColumnWidth = (width - 4) / 2;
+                    final left = 6.0;
+                    final leftWidth = leftColumnWidth - 12;
+                    final boardLeft = leftColumnWidth + 4;
+                    final boardWidth = width - boardLeft;
+                    final timerBetTop = logoTop + logoHeight + 4;
+                    final questionBetTop = timerBetTop + timerHeight + gap;
+                    final chipHeight = compact ? 96.0 : 102.0;
+                    final rawQuestionHeight =
+                        height -
+                        questionBetTop -
+                        chipHeight -
+                        (gap * 2) -
+                        (compact ? 100 : 120) -
+                        8;
+                    final questionBetHeight = min(
+                      height * (compact ? .28 : .29),
+                      max(compact ? 112.0 : 132.0, rawQuestionHeight),
+                    );
+                    final chipTop = questionBetTop + questionBetHeight + gap;
+                    final playersTop = chipTop + chipHeight + gap;
+                    final playersHeight = max(72.0, height - playersTop - 8);
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          left: left,
+                          top: logoTop,
+                          width: leftWidth,
+                          height: logoHeight,
+                          child: _partyModeMark(),
+                        ),
+                        Positioned(
+                          left: left,
+                          top: timerBetTop,
+                          width: leftWidth,
+                          height: timerHeight,
+                          child: _roundTimerPills(
+                            snapshot,
+                            remaining,
+                            isBetting,
+                          ),
+                        ),
+                        Positioned(
+                          left: left,
+                          top: questionBetTop,
+                          width: leftWidth,
+                          height: questionBetHeight,
+                          child: _questionCard(snapshot),
+                        ),
+                        Positioned(
+                          left: left,
+                          top: chipTop,
+                          width: leftWidth,
+                          height: chipHeight,
+                          child: _chipPicker(snapshot),
+                        ),
+                        Positioned(
+                          left: left,
+                          top: playersTop,
+                          width: leftWidth,
+                          height: playersHeight,
+                          child: _playersStrip(snapshot, players),
+                        ),
+                        Positioned(
+                          left: boardLeft,
+                          top: 0,
+                          width: boardWidth,
+                          height: height,
+                          child: _pollBettingBoard(
+                            snapshot,
+                            players,
+                            isBetting,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
+  Widget _partyModeMark() => const Padding(
+    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    child: CachedAssetImage(AppAssetPaths.logo, fit: BoxFit.contain),
+  );
+
+  Widget _playersStrip(
+    PartyPollSnapshot snapshot,
+    List<PartyPollPlayer> players,
+  ) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+    decoration: BoxDecoration(
+      color: PartyPalette.surface.withValues(alpha: .72),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: PartyPalette.orangeSoft.withValues(alpha: .20)),
+    ),
+    child: Row(
+      children: [
+        for (final player in players.take(5))
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    player.name.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.outfit(
+                      color: PartyPalette.creamMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${snapshot.scores[player.id] ?? 0}',
+                    style: GoogleFonts.outfit(
+                      color: PartyPalette.cream,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
   Widget _loadingOrError(PartyPollSessionState state) {
     return Scaffold(
       backgroundColor: PartyPalette.nightDeep,
@@ -784,4 +892,61 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     1000 => PartyPalette.orangeSoft,
     _ => PartyPalette.orange,
   };
+}
+
+class _PollPartyTableBackground extends StatelessWidget {
+  const _PollPartyTableBackground();
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(gradient: PartyPalette.backgroundGradient),
+    child: Stack(
+      children: [
+        Positioned(
+          top: -120,
+          left: -80,
+          child: _PollSoftOrb(
+            size: 310,
+            color: PartyPalette.orange,
+            opacity: .11,
+          ),
+        ),
+        Positioned(
+          right: -90,
+          bottom: -130,
+          child: _PollSoftOrb(
+            size: 360,
+            color: PartyPalette.sage,
+            opacity: .12,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PollSoftOrb extends StatelessWidget {
+  final double size;
+  final Color color;
+  final double opacity;
+  const _PollSoftOrb({
+    required this.size,
+    required this.color,
+    required this.opacity,
+  });
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: color.withValues(alpha: opacity),
+      boxShadow: [
+        BoxShadow(
+          color: color.withValues(alpha: opacity),
+          blurRadius: 80,
+          spreadRadius: 28,
+        ),
+      ],
+    ),
+  );
 }
