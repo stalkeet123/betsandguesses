@@ -144,8 +144,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           final usesPremiumSetup =
               !isPremium &&
               (selectedMaxPlayers > GameConstants.freeMaxPlayers ||
-                  (selectedMode == GameMode.classic &&
-                      selectedRounds > GameConstants.freeMaxRounds) ||
+                  selectedRounds > GameConstants.freeMaxRounds ||
                   (selectedMode == GameMode.classic &&
                       selectedCategory != GameConstants.defaultCategory));
 
@@ -245,6 +244,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     setModalState(() => selectedMaxPlayers = value);
                   },
                 ),
+                const SizedBox(height: 10),
+                _setupSlider(
+                  icon: Icons.casino_rounded,
+                  label: 'ROUNDS',
+                  value: selectedRounds,
+                  min: GameConstants.minRounds,
+                  max: GameConstants.maxRounds,
+                  premiumStart: GameConstants.freeMaxRounds + 1,
+                  isPremiumLocked:
+                      !isPremium &&
+                      selectedRounds > GameConstants.freeMaxRounds,
+                  partyTheme: true,
+                  onChanged: (value) {
+                    setModalState(() => selectedRounds = value);
+                  },
+                ),
               ],
               if (selectedMode == GameMode.classic) ...[
                 const SizedBox(height: 10),
@@ -282,9 +297,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       return;
                     }
                     _createRoom(
-                      maxRounds: selectedMode == GameMode.classic
-                          ? selectedRounds
-                          : GameConstants.defaultRounds,
+                      maxRounds: selectedRounds,
                       maxPlayers: selectedMaxPlayers,
                       category: selectedCategory,
                       gameMode: selectedMode,
@@ -1771,13 +1784,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _buildJoinButton() {
-    final button = SizedBox(
-      width: 74,
+    final isQrJoin = _showQrJoinGuide;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+      width: isQrJoin ? 118 : 74,
       height: 60,
-      child: ElevatedButton(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: isQrJoin
+            ? [
+                BoxShadow(
+                  color: AppColors.brassLight.withValues(alpha: 0.55),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                ),
+              ]
+            : null,
+      ),
+      child: ElevatedButton.icon(
         onPressed: _isLoading ? null : _joinRoom,
         style: ElevatedButton.styleFrom(
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           backgroundColor: AppColors.brass,
           foregroundColor: AppColors.ink,
           elevation: 7,
@@ -1786,13 +1814,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             borderRadius: BorderRadius.circular(18),
           ),
         ),
-        child: const Icon(Icons.arrow_forward_rounded, size: 38),
+        icon: Icon(
+          isQrJoin ? Icons.login_rounded : Icons.arrow_forward_rounded,
+          size: 30,
+        ),
+        label: isQrJoin
+            ? const Text('JOIN', style: TextStyle(fontWeight: FontWeight.w900))
+            : const SizedBox.shrink(),
       ),
     );
-
-    if (!_showQrJoinGuide) return button;
-
-    return button;
   }
 
   Widget _buildRoomCodeField() {

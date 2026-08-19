@@ -1060,6 +1060,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     final round = snapshot.round;
+    if (snapshot.round.phase != PartyRoundPhase.reveal) {
+      _cancelRevealEffects();
+      _showWinnerBadge = false;
+    }
     if (previous == null ||
         previous.round.number != round.number ||
         previous.round.phase != round.phase) {
@@ -1136,44 +1140,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         })
         .toList(growable: false);
 
-    // The RPC hides bets while voting is open. Cache only our confirmed chips
-    // locally, and render everyone else only after the server starts reveal.
-    final currentPlayerId =
-        ref.read(currentPlayerProvider)?.id ??
-        _restoreCurrentPlayer(snapshot.room.id)?.id;
-    final isReveal = round.phase == PartyRoundPhase.reveal;
-    final visibleBets = isReveal || currentPlayerId == null
-        ? bets
-        : bets.where((bet) => bet.playerId == currentPlayerId).toList();
-    final cachedOwnBets = <Bet>[
-      ...?_partyOwnBetsByRound[round.number],
-      ...ref
-          .read(gameStateProvider)
-          .bets
-          .where(
-            (bet) =>
-                bet.roundNumber == round.number &&
-                bet.playerId == currentPlayerId,
-          ),
-    ];
-    final allBets = <Bet>[...visibleBets];
-    for (final ownBet in cachedOwnBets) {
-      final alreadyPresent = allBets.any(
-        (bet) =>
-            bet.id == ownBet.id ||
-            (bet.playerId == ownBet.playerId &&
-                bet.slotIndex == ownBet.slotIndex &&
-                bet.chips == ownBet.chips),
-      );
-      if (!alreadyPresent) allBets.add(ownBet);
-    }
-    _partyOwnBetsByRound
-      ..removeWhere((roundNumber, _) => roundNumber != round.number)
-      ..[round.number] = List.unmodifiable(
-        allBets
-            .where((bet) => bet.playerId == currentPlayerId)
-            .toList(growable: false),
-      );
+    final allBets = bets;
 
     ref.read(currentRoomProvider.notifier).set(snapshot.room);
     ref
@@ -5487,7 +5454,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                       child: _buildAllPlacedChips(
                         activeRoundBets,
                         size,
-                        currentPlayerId,
+                        ref.read(currentPlayerProvider)?.id,
                         canEdit: canEdit,
                         isReveal: isReveal,
                         winningSlotIndex: winningSlotIndex,
@@ -7458,14 +7425,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   ),
                                 ),
                               );
-                              final currentPlayerId = ref.watch(
-                                currentPlayerProvider.select(
-                                  (player) => player?.id,
-                                ),
-                              );
                               return _buildBettingBoardAsset(
                                 ref.read(gameStateProvider),
-                                currentPlayerId,
+                                ref.read(currentPlayerProvider)?.id,
                               );
                             },
                           ),
