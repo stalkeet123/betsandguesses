@@ -19,13 +19,14 @@ class PartyPollSessionState {
 
   PartyPollSessionState copyWith({
     PartyPollSnapshot? snapshot,
+    bool clearSnapshot = false,
     bool? isLoading,
     bool? isCommandRunning,
     String? errorMessage,
     bool clearError = false,
   }) {
     return PartyPollSessionState(
-      snapshot: snapshot ?? this.snapshot,
+      snapshot: clearSnapshot ? null : snapshot ?? this.snapshot,
       isLoading: isLoading ?? this.isLoading,
       isCommandRunning: isCommandRunning ?? this.isCommandRunning,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
@@ -125,7 +126,21 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
         roomId,
         bettingDurationSeconds: bettingDurationSeconds,
       );
-      state = state.copyWith(isCommandRunning: false, clearError: true);
+      final isSnapshot =
+          response['room'] is Map &&
+          response['round'] is Map &&
+          response['me'] is Map &&
+          response['state_version'] != null;
+      if (isSnapshot) {
+        final snapshot = PartyPollSnapshot.fromJson(response);
+        state = state.copyWith(
+          snapshot: snapshot,
+          isCommandRunning: false,
+          clearError: true,
+        );
+      } else {
+        state = state.copyWith(isCommandRunning: false, clearError: true);
+      }
       return response;
     } catch (error) {
       state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
