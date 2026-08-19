@@ -550,6 +550,14 @@ class PartyPollProductionView extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final boardSize = Size(constraints.maxWidth, constraints.maxHeight);
+          final winningSpecs = specs
+              .where(
+                (spec) =>
+                    spec.targetPlayerId.isNotEmpty &&
+                    winningPlayerIds.contains(spec.targetPlayerId),
+              )
+              .toList();
+          final showRevealEffects = isReveal && emphasizeWinners;
           return Stack(
             clipBehavior: Clip.none,
             children: [
@@ -578,10 +586,277 @@ class PartyPollProductionView extends StatelessWidget {
                   ),
                 ),
               Positioned.fill(child: _placedPollChips(specs, boardSize)),
+              if (showRevealEffects && winningSpecs.isNotEmpty)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (final spec in winningSpecs)
+                          ..._pollWinParticles(boardSize, spec),
+                      ],
+                    ),
+                  ),
+                ),
+              if (showRevealEffects && winningSpecs.isNotEmpty)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: _pollPayoutFlightChips(specs, boardSize),
+                    ),
+                  ),
+                ),
+              if (showRevealEffects && winningSpecs.isNotEmpty)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _pollWinnerOverlay(winningSpecs, boardSize),
+                  ),
+                ),
             ],
           );
         },
       ),
+    );
+  }
+
+  List<Widget> _pollWinParticles(Size boardSize, _PartyPollSlotSpec spec) {
+    final center = Offset(
+      (spec.rect.left + spec.rect.width * .5) * boardSize.width,
+      (spec.rect.top + spec.rect.height * .5) * boardSize.height,
+    );
+    return [
+      for (var i = 0; i < 12; i++)
+        Positioned(
+          left: center.dx + cos(i * pi / 6) * 12,
+          top: center.dy + sin(i * pi / 6) * 8,
+          child:
+              Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i.isEven ? AppColors.brassLight : Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.brassLight.withValues(alpha: .55),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  )
+                  .animate(delay: (i * 35).ms)
+                  .fadeOut(duration: 900.ms)
+                  .move(
+                    begin: Offset.zero,
+                    end: Offset(cos(i * pi / 6) * 34, sin(i * pi / 6) * 26),
+                    duration: 900.ms,
+                    curve: Curves.easeOutCubic,
+                  ),
+        ),
+    ];
+  }
+
+  List<Widget> _pollPayoutFlightChips(
+    List<_PartyPollSlotSpec> specs,
+    Size boardSize,
+  ) {
+    final tokens = <_PollPayoutToken>[];
+    var order = 0;
+    for (final bet in bets.where((bet) => bet.won == true)) {
+      _PartyPollSlotSpec? spec;
+      for (final candidate in specs) {
+        if (candidate.targetSlotIndex == bet.targetSlotIndex &&
+            (candidate.targetPlayerId.isEmpty ||
+                candidate.targetPlayerId == bet.targetPlayerId)) {
+          spec = candidate;
+          break;
+        }
+      }
+      if (spec == null) continue;
+      final visualChipCount = min(spec.odds, 4);
+      for (var token = 0; token < visualChipCount && order < 18; token++) {
+        tokens.add(
+          _PollPayoutToken(bet: bet, spec: spec, token: token, order: order),
+        );
+        order++;
+      }
+      if (order >= 18) break;
+    }
+    final chipSize = (boardSize.width * .095).clamp(28.0, 36.0).toDouble();
+    return [
+      for (final item in tokens)
+        _pollPayoutFlightChip(item, boardSize, chipSize),
+    ];
+  }
+
+  Widget _pollPayoutFlightChip(
+    _PollPayoutToken item,
+    Size boardSize,
+    double chipSize,
+  ) {
+    final center = Offset(
+      (item.spec.rect.left + item.spec.rect.width * .5) * boardSize.width,
+      (item.spec.rect.top + item.spec.rect.height * .5) * boardSize.height,
+    );
+    final angle = -pi / 2 + item.order * .72;
+    final radius = 14.0 + (item.order % 3) * 7.0;
+    final start = center + Offset(cos(angle) * radius, sin(angle) * radius);
+    final leaderboardTargetY = boardSize.height * .82;
+    final flyOffset = Offset(
+      -boardSize.width * 1.04 - (item.order % 4) * 12,
+      leaderboardTargetY - start.dy + ((item.order % 5) - 2) * 5,
+    );
+    final delayMs = 150 + item.order * 42;
+    final flightMs = 1040 + (item.order % 4) * 45;
+    final duration = Duration(milliseconds: delayMs + flightMs);
+
+    return Positioned(
+      left: start.dx - chipSize / 2,
+      top: start.dy - chipSize / 2,
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey(
+          'payout-flight-${item.bet.id}-${item.token}-${item.spec.odds}',
+        ),
+        tween: Tween<double>(begin: 0, end: 1),
+        duration: duration,
+        curve: Curves.linear,
+        builder: (context, rawProgress, child) {
+          final delayedProgress =
+              ((rawProgress * duration.inMilliseconds) - delayMs) / flightMs;
+          if (delayedProgress <= 0) return const SizedBox.shrink();
+          final progress = delayedProgress.clamp(0.0, 1.0).toDouble();
+          final launch = ((progress - .34) / .66).clamp(0.0, 1.0);
+          final pop = (progress / .30).clamp(0.0, 1.0);
+          final launchCurve = Curves.easeInOutCubic.transform(launch);
+          final popCurve = Curves.easeOutBack.transform(pop).clamp(0.0, 1.12);
+          final floatLift = sin(min(progress, .34) / .34 * pi) * -9;
+          final opacity = launch < .78
+              ? 1.0
+              : (1 - ((launch - .78) / .22)).clamp(0.0, 1.0);
+          final scale = launch == 0
+              ? .66 + .39 * popCurve
+              : (1.05 - .80 * Curves.easeInCubic.transform(launch)).clamp(
+                  .22,
+                  1.08,
+                );
+          return Opacity(
+            opacity: opacity.toDouble(),
+            child: Transform.translate(
+              offset: Offset(
+                flyOffset.dx * launchCurve,
+                floatLift + flyOffset.dy * launchCurve,
+              ),
+              child: Transform.scale(scale: scale.toDouble(), child: child),
+            ),
+          );
+        },
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.brassLight.withValues(alpha: .42),
+                blurRadius: 10,
+                spreadRadius: 1,
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: .30),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: PokerChip(
+            label: '${item.bet.chips}',
+            color: _chipColor(item.bet.chips),
+            size: chipSize,
+            isScoreChip: false,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pollWinnerOverlay(
+    List<_PartyPollSlotSpec> winningSpecs,
+    Size boardSize,
+  ) {
+    final winningPlayers = players
+        .where((player) => winningPlayerIds.contains(player.id))
+        .toList();
+    if (winningPlayers.isEmpty) return const SizedBox.shrink();
+    final names = winningPlayers.map((player) => player.name).join(' · ');
+    final isTie = winningPlayers.length > 1;
+    final slot = winningSpecs.length == 1 ? winningSpecs.single : null;
+    final overlay =
+        Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+              decoration: BoxDecoration(
+                color: AppColors.ivory.withValues(alpha: .96),
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(
+                  color: AppColors.brassLight.withValues(alpha: .9),
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .65),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isTie ? 'WINNERS' : 'WINNER',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      color: AppColors.mahoganyDark.withValues(alpha: .8),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      names,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.feltDark,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+            .animate(delay: 1100.ms)
+            .fadeIn(duration: 400.ms)
+            .scale(
+              begin: const Offset(.85, .85),
+              curve: Curves.easeOutBack,
+              duration: 500.ms,
+            );
+    if (slot == null) return Center(child: overlay);
+    return Stack(
+      children: [
+        Positioned(
+          left: slot.rect.left * boardSize.width,
+          width: slot.rect.width * boardSize.width,
+          top: slot.rect.top * boardSize.height,
+          height: slot.rect.height * boardSize.height,
+          child: Center(child: overlay),
+        ),
+      ],
     );
   }
 
@@ -971,6 +1246,20 @@ class PartyPollProductionView extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _PollPayoutToken {
+  final PartyPollViewBet bet;
+  final _PartyPollSlotSpec spec;
+  final int token;
+  final int order;
+
+  const _PollPayoutToken({
+    required this.bet,
+    required this.spec,
+    required this.token,
+    required this.order,
+  });
 }
 
 class _PartyPollSlotSpec {
