@@ -34,6 +34,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   bool _betCommandInFlight = false;
   bool _isFinished = false;
   int? _selectedChipValue;
+  String? _selectedBetId;
   String? _lastErrorMessage;
 
   @override
@@ -201,6 +202,116 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     }
   }
 
+  void _selectBet(PartyPollSnapshot snapshot, String betId) {
+    if (snapshot.round.phase != PartyPollPhase.betting) return;
+    final isOwnedCurrentBet = snapshot.round.bets.any(
+      (bet) => bet.id == betId && bet.playerId == snapshot.me.playerId,
+    );
+    if (!isOwnedCurrentBet) return;
+    ref.read(audioServiceProvider).playChip();
+    setState(() {
+      _selectedBetId = betId;
+      _selectedChipValue = null;
+    });
+  }
+
+  Future<void> _moveBet(
+    PartyPollSnapshot snapshot,
+    String betId,
+    String targetPlayerId,
+    double positionX,
+    double positionY,
+  ) async {
+    if (_betCommandInFlight || snapshot.round.phase != PartyPollPhase.betting) {
+      return;
+    }
+    PartyPollBet? sourceBet;
+    for (final bet in snapshot.round.bets) {
+      if (bet.id == betId && bet.playerId == snapshot.me.playerId) {
+        sourceBet = bet;
+        break;
+      }
+    }
+    if (sourceBet == null) {
+      if (mounted) setState(() => _selectedBetId = null);
+      return;
+    }
+    if (!snapshot.round.players.any((player) => player.id == targetPlayerId) ||
+        !positionX.isFinite ||
+        !positionY.isFinite) {
+      return;
+    }
+    final otherTargetIds = snapshot.round.bets
+        .where((bet) => bet.playerId == snapshot.me.playerId && bet.id != betId)
+        .map((bet) => bet.targetPlayerId)
+        .toSet();
+    if (otherTargetIds.length >= 2 &&
+        !otherTargetIds.contains(targetPlayerId)) {
+      _showMessage('You can back up to two players this round.');
+      return;
+    }
+
+    setState(() => _betCommandInFlight = true);
+    ref.read(audioServiceProvider).playDrop();
+    try {
+      final updated = await ref
+          .read(partyPollSessionProvider.notifier)
+          .moveBet(
+            roomId: snapshot.room.id,
+            betId: betId,
+            targetPlayerId: targetPlayerId,
+            positionX: positionX,
+            positionY: positionY,
+          );
+      if (updated == null && mounted) {
+        _showMessage(
+          ref.read(partyPollSessionProvider).errorMessage ??
+              'Bet could not be moved.',
+        );
+      } else if (updated != null && mounted) {
+        setState(() {
+          _selectedBetId = betId;
+          _selectedChipValue = null;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _betCommandInFlight = false);
+    }
+  }
+
+  Future<void> _removeBet(PartyPollSnapshot snapshot, String betId) async {
+    if (_betCommandInFlight || snapshot.round.phase != PartyPollPhase.betting) {
+      return;
+    }
+    final isOwnedCurrentBet = snapshot.round.bets.any(
+      (bet) => bet.id == betId && bet.playerId == snapshot.me.playerId,
+    );
+    if (!isOwnedCurrentBet) {
+      if (mounted) setState(() => _selectedBetId = null);
+      return;
+    }
+
+    setState(() {
+      _betCommandInFlight = true;
+      _selectedBetId = null;
+      _selectedChipValue = null;
+    });
+    ref.read(audioServiceProvider).playClick();
+    try {
+      final updated = await ref
+          .read(partyPollSessionProvider.notifier)
+          .removeBet(roomId: snapshot.room.id, betId: betId);
+      if (updated == null && mounted) {
+        _showMessage(
+          ref.read(partyPollSessionProvider).errorMessage ??
+              'Bet could not be removed.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _betCommandInFlight = false);
+    }
+  }
+
   void _showMessage(String message) {
     if (!mounted || message == _lastErrorMessage) return;
     _lastErrorMessage = message;
@@ -245,6 +356,16 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         )
         .toList(growable: false);
     final isReveal = snapshot.round.phase == PartyPollPhase.reveal;
+    final effectiveSelectedBetId =
+        !isReveal &&
+            _selectedBetId != null &&
+            snapshot.round.bets.any(
+              (bet) =>
+                  bet.id == _selectedBetId &&
+                  bet.playerId == snapshot.me.playerId,
+            )
+        ? _selectedBetId
+        : null;
     final deadline = snapshot.round.phaseEndsAt;
     final rawRemaining = deadline == null
         ? Duration.zero
@@ -268,20 +389,27 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         availableChips: snapshot.me.availableChips,
         selectedChipValue: _selectedChipValue,
         currentPlayerId: snapshot.me.playerId,
-        selectedBetId: null,
+        selectedBetId: effectiveSelectedBetId,
         emphasizeWinners: isReveal,
         onChipSelected: (value) {
           setState(() {
             _selectedChipValue = _selectedChipValue == value ? null : value;
+            _selectedBetId = null;
           });
           ref.read(audioServiceProvider).playChip();
         },
-        onBetSelected: (_) {},
+        onBetSelected: (betId) => _selectBet(snapshot, betId),
         onBetRequested: (targetPlayerId, _, positionX, positionY) {
           unawaited(_placeBet(snapshot, targetPlayerId, positionX, positionY));
         },
-        onBetMoveRequested: (_, _, _, _, _) {},
-        onBetRemoveRequested: (_) {},
+        onBetMoveRequested: (betId, targetPlayerId, _, positionX, positionY) {
+          unawaited(
+            _moveBet(snapshot, betId, targetPlayerId, positionX, positionY),
+          );
+        },
+        onBetRemoveRequested: (betId) {
+          unawaited(_removeBet(snapshot, betId));
+        },
       ),
     );
   }
