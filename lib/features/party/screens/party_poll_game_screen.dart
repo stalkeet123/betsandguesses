@@ -31,6 +31,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   Timer? _reloadDebounce;
   bool _transitionCommandInFlight = false;
   bool _snapshotLoadInFlight = false;
+  bool _betCommandInFlight = false;
   bool _isFinished = false;
   int? _selectedChipValue;
   String? _lastErrorMessage;
@@ -157,6 +158,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     double? positionX,
     double? positionY,
   ) async {
+    if (_betCommandInFlight) return;
     final chip = _selectedChipValue;
     if (chip == null || snapshot.round.phase != PartyPollPhase.betting) return;
     final targetExists = snapshot.round.players.any(
@@ -175,21 +177,27 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       _showMessage('That chip is not available.');
       return;
     }
-    final placement = await ref
-        .read(partyPollSessionProvider.notifier)
-        .placeBet(
-          roomId: snapshot.room.id,
-          targetPlayerId: targetPlayerId,
-          chips: chip,
-          clientActionId: const Uuid().v4(),
-          positionX: positionX,
-          positionY: positionY,
+    setState(() => _betCommandInFlight = true);
+    ref.read(audioServiceProvider).playDrop();
+    try {
+      final placement = await ref
+          .read(partyPollSessionProvider.notifier)
+          .placeBet(
+            roomId: snapshot.room.id,
+            targetPlayerId: targetPlayerId,
+            chips: chip,
+            clientActionId: const Uuid().v4(),
+            positionX: positionX,
+            positionY: positionY,
+          );
+      if (placement == null && mounted) {
+        _showMessage(
+          ref.read(partyPollSessionProvider).errorMessage ??
+              'Bet could not be placed.',
         );
-    if (placement == null && mounted) {
-      _showMessage(
-        ref.read(partyPollSessionProvider).errorMessage ??
-            'Bet could not be placed.',
-      );
+      }
+    } finally {
+      if (mounted) setState(() => _betCommandInFlight = false);
     }
   }
 
@@ -266,6 +274,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
           setState(() {
             _selectedChipValue = _selectedChipValue == value ? null : value;
           });
+          ref.read(audioServiceProvider).playChip();
         },
         onBetSelected: (_) {},
         onBetRequested: (targetPlayerId, _, positionX, positionY) {
