@@ -1,8 +1,10 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../theme/party_palette.dart';
 import '../../game/widgets/poker_chip.dart';
@@ -49,6 +51,15 @@ typedef PartyPollBetRequested =
       double? positionY,
     );
 
+typedef PartyPollBetMoveRequested =
+    void Function(
+      String betId,
+      String targetPlayerId,
+      int targetSlotIndex,
+      double positionX,
+      double positionY,
+    );
+
 class PartyPollProductionView extends StatelessWidget {
   final int roundNumber;
   final int maxRounds;
@@ -64,8 +75,14 @@ class PartyPollProductionView extends StatelessWidget {
   final int betLimit;
   final int availableChips;
   final int? selectedChipValue;
+  final String? currentPlayerId;
+  final String? selectedBetId;
+  final bool emphasizeWinners;
   final ValueChanged<int> onChipSelected;
+  final ValueChanged<String> onBetSelected;
   final PartyPollBetRequested onBetRequested;
+  final PartyPollBetMoveRequested onBetMoveRequested;
+  final ValueChanged<String> onBetRemoveRequested;
   const PartyPollProductionView({
     super.key,
     required this.roundNumber,
@@ -82,8 +99,14 @@ class PartyPollProductionView extends StatelessWidget {
     required this.betLimit,
     required this.availableChips,
     required this.selectedChipValue,
+    required this.currentPlayerId,
+    required this.selectedBetId,
+    required this.emphasizeWinners,
     required this.onChipSelected,
+    required this.onBetSelected,
     required this.onBetRequested,
+    required this.onBetMoveRequested,
+    required this.onBetRemoveRequested,
   });
   @override
   Widget build(BuildContext context) {
@@ -314,7 +337,9 @@ class PartyPollProductionView extends StatelessWidget {
   }
 
   Widget _selectableChip(int value, bool available) => GestureDetector(
-    onTap: available ? () => onChipSelected(value) : null,
+    onTap: _selectedOwnBetId != null
+        ? () => onBetRemoveRequested(_selectedOwnBetId!)
+        : (available ? () => onChipSelected(value) : null),
     child: AnimatedScale(
       duration: const Duration(milliseconds: 120),
       scale: selectedChipValue == value ? 1.14 : 1,
@@ -502,47 +527,61 @@ class PartyPollProductionView extends StatelessWidget {
     );
   }
 
+  String? get _selectedOwnBetId {
+    final id = selectedBetId;
+    if (id == null || currentPlayerId == null) return null;
+    for (final bet in bets) {
+      if (bet.id == id && bet.bettorPlayerId == currentPlayerId) return id;
+    }
+    return null;
+  }
+
   Widget _partyPollBoard() {
     final boardPlayers = [...players]
       ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
     final specs = _partyPollSlotsFor(boardPlayers);
+    final orderedSpecs = [
+      ...specs.where((slot) => !slot.isGold),
+      ...specs.where((slot) => slot.isGold),
+    ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final boardSize = Size(constraints.maxWidth, constraints.maxHeight);
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            for (final spec in specs)
-              Positioned(
-                left: spec.rect.left * boardSize.width,
-                top: spec.rect.top * boardSize.height,
-                width: spec.rect.width * boardSize.width,
-                height: spec.rect.height * boardSize.height,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapDown: (details) => _handlePollSlotTap(
-                    spec,
-                    details.localPosition,
-                    Size(
-                      spec.rect.width * boardSize.width,
-                      spec.rect.height * boardSize.height,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final boardSize = Size(constraints.maxWidth, constraints.maxHeight);
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (final spec in orderedSpecs)
+                Positioned(
+                  left: spec.rect.left * boardSize.width,
+                  top: spec.rect.top * boardSize.height,
+                  width: spec.rect.width * boardSize.width,
+                  height: spec.rect.height * boardSize.height,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (details) => _handlePollSlotTap(
+                      spec,
+                      details.localPosition,
+                      Size(
+                        spec.rect.width * boardSize.width,
+                        spec.rect.height * boardSize.height,
+                      ),
+                    ),
+                    child: _PartyPollBetSlotSurface(
+                      spec: spec,
+                      isWinningReveal:
+                          isReveal &&
+                          winningPlayerIds.contains(spec.targetPlayerId),
                     ),
                   ),
-                  child: _PartyPollBetSlotSurface(
-                    spec: spec,
-                    isWinningReveal:
-                        isReveal &&
-                        winningPlayerIds.contains(spec.targetPlayerId),
-                  ),
                 ),
-              ),
-            Positioned.fill(
-              child: IgnorePointer(child: _placedPollChips(specs, boardSize)),
-            ),
-          ],
-        );
-      },
+              Positioned.fill(child: _placedPollChips(specs, boardSize)),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -590,11 +629,7 @@ class PartyPollProductionView extends StatelessWidget {
     Size slotSize,
   ) {
     if (isReveal ||
-        selectedChipValue == null ||
-        selectedChipValue! > availableChips) {
-      return;
-    }
-    if (spec.targetPlayerId.isEmpty ||
+        spec.targetPlayerId.isEmpty ||
         slotSize.width <= 0 ||
         slotSize.height <= 0) {
       return;
@@ -605,6 +640,31 @@ class PartyPollProductionView extends StatelessWidget {
     final positionY = (localPosition.dy / slotSize.height)
         .clamp(.18, .82)
         .toDouble();
+    final selectedId = selectedBetId;
+    if (selectedId != null) {
+      PartyPollViewBet? selectedBet;
+      for (final bet in bets) {
+        if (bet.id == selectedId) {
+          selectedBet = bet;
+          break;
+        }
+      }
+      if (selectedBet == null ||
+          selectedBet.bettorPlayerId != currentPlayerId) {
+        return;
+      }
+      onBetMoveRequested(
+        selectedBet.id,
+        spec.targetPlayerId,
+        spec.targetSlotIndex,
+        positionX,
+        positionY,
+      );
+      return;
+    }
+    if (selectedChipValue == null || selectedChipValue! > availableChips) {
+      return;
+    }
     onBetRequested(
       spec.targetPlayerId,
       spec.targetSlotIndex,
@@ -657,38 +717,182 @@ class PartyPollProductionView extends StatelessWidget {
     final globalTop =
         spec.rect.top * boardSize.height +
         (slotLocalY * slotHeight - chipSize / 2);
-    final won = isReveal && bet.won == true;
+    final isOwnBet =
+        currentPlayerId != null && bet.bettorPlayerId == currentPlayerId;
+    final isSelected = isOwnBet && selectedBetId == bet.id;
+    final resultSettled = isReveal && emphasizeWinners;
+    final chip = _placedPollChipVisual(
+      bet,
+      chipSize,
+      isOwnBet: isOwnBet,
+      resultSettled: resultSettled,
+    );
+    final visual = AnimatedScale(
+      duration: const Duration(milliseconds: 150),
+      key: ValueKey('placed-bet-chip-${bet.id}'),
+      curve: Curves.easeOutCubic,
+      scale: isSelected ? 1.15 : 1,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            if (isSelected)
+              BoxShadow(
+                color: AppColors.brassLight.withValues(alpha: .95),
+                blurRadius: 22,
+                spreadRadius: 4,
+              ),
+          ],
+        ),
+        child: chip,
+      ),
+    );
+    final interactive = isOwnBet && !isReveal
+        ? GestureDetector(onTap: () => onBetSelected(bet.id), child: visual)
+        : IgnorePointer(child: visual);
+    return AnimatedPositioned(
+      key: ValueKey(bet.id),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      left: globalLeft,
+      top: globalTop,
+      child: interactive,
+    );
+  }
 
+  Widget _placedPollChipVisual(
+    PartyPollViewBet bet,
+    double chipSize, {
+    required bool isOwnBet,
+    required bool resultSettled,
+  }) {
     Widget chip = PokerChip(
       label: '${bet.chips}',
       color: _chipColor(bet.chips),
       size: chipSize,
       isScoreChip: false,
     );
-    if (won) {
-      chip = AnimatedScale(
-        duration: const Duration(milliseconds: 150),
-        scale: 1.12,
-        child: DecoratedBox(
+    if (isOwnBet) {
+      chip = Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          chip,
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: AppColors.neonRed,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.neonRed.withValues(alpha: .6),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    if (resultSettled && bet.won == false) {
+      return _dissolvingPollChipVisual(chip, bet.id, chipSize);
+    }
+    if (!(resultSettled && bet.won == true)) return chip;
+    return DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: PartyPalette.orangeSoft.withValues(alpha: .62),
+                color: AppColors.brassLight.withValues(alpha: .62),
                 blurRadius: 16,
                 spreadRadius: 2,
               ),
             ],
           ),
           child: chip,
-        ),
-      );
-    }
-    return Positioned(
-      key: ValueKey('poll-placed-bet-${bet.id}'),
-      left: globalLeft,
-      top: globalTop,
-      child: chip,
+        )
+        .animate(onPlay: (controller) => controller.repeat(reverse: true))
+        .scale(
+          end: const Offset(1.12, 1.12),
+          duration: 420.ms,
+          curve: Curves.easeInOut,
+        );
+  }
+
+  Widget _dissolvingPollChipVisual(Widget chip, String betId, double size) {
+    const particleColor = Color(0xFFFFE8A3);
+    const particleOffsets = [
+      Offset(-15, -14),
+      Offset(13, -18),
+      Offset(-18, 4),
+      Offset(17, 8),
+      Offset(-8, 18),
+      Offset(9, 15),
+    ];
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          chip
+              .animate(key: ValueKey('chip-dust-body-$betId'))
+              .fadeOut(delay: 260.ms, duration: 620.ms)
+              .scale(
+                end: const Offset(.62, .62),
+                delay: 180.ms,
+                duration: 700.ms,
+                curve: Curves.easeInCubic,
+              )
+              .moveY(
+                end: -9,
+                delay: 180.ms,
+                duration: 700.ms,
+                curve: Curves.easeOutCubic,
+              ),
+          for (var i = 0; i < particleOffsets.length; i++)
+            Positioned(
+              left: size / 2 - 3,
+              top: size / 2 - 3,
+              child:
+                  Container(
+                        width: i.isEven ? 5 : 4,
+                        height: i.isEven ? 5 : 4,
+                        decoration: BoxDecoration(
+                          color: particleColor.withValues(alpha: .72),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: particleColor.withValues(alpha: .35),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                      )
+                      .animate(key: ValueKey('chip-dust-$betId-$i'))
+                      .fadeIn(delay: (210 + i * 28).ms, duration: 70.ms)
+                      .fadeOut(delay: (330 + i * 28).ms, duration: 440.ms)
+                      .move(
+                        end: particleOffsets[i],
+                        delay: (230 + i * 28).ms,
+                        duration: 560.ms,
+                        curve: Curves.easeOutCubic,
+                      )
+                      .scale(
+                        end: const Offset(.2, .2),
+                        delay: (330 + i * 28).ms,
+                        duration: 460.ms,
+                      ),
+            ),
+        ],
+      ),
     );
   }
 
