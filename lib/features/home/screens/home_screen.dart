@@ -129,7 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     var selectedRounds = isPremium
         ? GameConstants.defaultRounds
         : GameConstants.freeMaxRounds;
-    var selectedPartyChallengesPerPlayer =
+    final selectedPartyChallengesPerPlayer =
         GameConstants.partyDefaultChallengesPerPlayer;
     var selectedMaxPlayers = GameConstants.freeMaxPlayers;
     var selectedCategory = GameConstants.defaultCategory;
@@ -146,9 +146,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               (selectedMaxPlayers > GameConstants.freeMaxPlayers ||
                   (selectedMode == GameMode.classic &&
                       selectedRounds > GameConstants.freeMaxRounds) ||
-                  (selectedMode == GameMode.party &&
-                      selectedPartyChallengesPerPlayer >
-                          GameConstants.partyFreeMaxChallengesPerPlayer) ||
                   (selectedMode == GameMode.classic &&
                       selectedCategory != GameConstants.defaultCategory));
 
@@ -246,26 +243,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   partyTheme: true,
                   onChanged: (value) {
                     setModalState(() => selectedMaxPlayers = value);
-                  },
-                ),
-                const SizedBox(height: 10),
-                _setupSlider(
-                  icon: Icons.person_pin_circle_rounded,
-                  label: 'CHALLENGES PER PLAYER',
-                  value: selectedPartyChallengesPerPlayer,
-                  min: GameConstants.partyMinChallengesPerPlayer,
-                  max: GameConstants.partyMaxChallengesPerPlayer,
-                  premiumStart:
-                      GameConstants.partyFreeMaxChallengesPerPlayer + 1,
-                  isPremiumLocked:
-                      !isPremium &&
-                      selectedPartyChallengesPerPlayer >
-                          GameConstants.partyFreeMaxChallengesPerPlayer,
-                  partyTheme: true,
-                  onChanged: (value) {
-                    setModalState(
-                      () => selectedPartyChallengesPerPlayer = value,
-                    );
                   },
                 ),
               ],
@@ -727,10 +704,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             builder: (context, constraints) {
                               return ClipRect(
                                 child: Align(
-                                  alignment: Alignment.topCenter,
+                                  alignment: Alignment.center,
                                   child: FittedBox(
                                     fit: BoxFit.scaleDown,
-                                    alignment: Alignment.topCenter,
+                                    alignment: Alignment.center,
                                     child: SizedBox(
                                       width: constraints.maxWidth,
                                       child: child,
@@ -840,7 +817,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  'HOW TO PLAY PARTY MODE',
+                  'PARTY POLL — READ THE ROOM',
                   style: GoogleFonts.outfit(
                     color: PartyPalette.cream,
                     fontSize: 13,
@@ -854,23 +831,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const SizedBox(height: 10),
           _partyGuideBullet(
             icon: Icons.groups_rounded,
-            title: 'Group Poll',
+            title: 'ONE QUESTION, EVERYONE PLAYS',
             description:
-                'A spicy question appears. Bet your chips on who in the room fits best!',
+                'Pick the player who fits the prompt. Your chips are your vote and your confidence.',
           ),
           const SizedBox(height: 8),
           _partyGuideBullet(
             icon: Icons.local_fire_department_rounded,
-            title: 'Confidence Voting',
+            title: 'SPLIT OR COMMIT',
             description:
-                'Bet all chips on 1 person for 2x vote weight! Split across 2 to hedge risk.',
+                'Put your stake on one player for two votes, or split it across two players for one vote each.',
           ),
           const SizedBox(height: 8),
           _partyGuideBullet(
             icon: Icons.emoji_events_rounded,
-            title: 'Majority Wins',
+            title: 'REVEAL, THEN SETTLE',
             description:
-                'The person with the most votes wins the round. Correct bets pay 2x!',
+                'Bets stay hidden until the reveal. Winning picks pay 2×; every losing stake is simply lost.',
           ),
         ],
       ),

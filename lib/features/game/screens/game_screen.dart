@@ -566,6 +566,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final bet = Bet.fromJson(betData);
       if (ignoreCurrentPlayer && bet.playerId == currentPlayer?.id) return;
 
+      final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
+      final partyIsReveal =
+          _partySnapshot?.round.phase == PartyRoundPhase.reveal;
+      if (isParty && bet.playerId != currentPlayer?.id && !partyIsReveal)
+        return;
       if (_isResyncing && recordDuringResync) {
         _pendingBetEvents.add(
           _PendingBetEvent(
@@ -1134,10 +1139,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
     // includes the player's new bet. Keep that optimistic chip only for that
     // short gap; once the authoritative row is present, it must replace it.
     final allBets = <Bet>[...bets];
+    final currentPlayerId = ref.read(currentPlayerProvider)?.id;
+    final hideOtherBets = round.phase != PartyRoundPhase.reveal;
     for (final existingBet in ref.read(gameStateProvider).bets) {
+      if (hideOtherBets &&
+          existingBet.roundNumber == round.number &&
+          existingBet.playerId != currentPlayerId)
+        continue;
       final isAwaitingAuthoritativeBet =
           existingBet.roundNumber == round.number &&
-          existingBet.id.startsWith('local-') &&
+          (existingBet.playerId == currentPlayerId ||
+              existingBet.id.startsWith('local-')) &&
           !bets.any(
             (bet) =>
                 bet.playerId == existingBet.playerId &&
