@@ -2246,6 +2246,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
 
     final gameNotifier = ref.read(gameStateProvider.notifier);
+    if (room.gameMode == GameMode.party &&
+        gameState.currentRound != activeRound) {
+      gameNotifier.setRound(activeRound);
+    }
     gameNotifier.addBet(optimisticBet);
     if (_canUseRef) setState(() {});
 

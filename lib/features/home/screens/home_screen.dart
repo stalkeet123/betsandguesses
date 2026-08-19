@@ -191,7 +191,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
               if (selectedMode == GameMode.classic) ...[
                 _setupSlider(
                   icon: Icons.casino_rounded,
@@ -207,7 +207,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     setModalState(() => selectedRounds = value);
                   },
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
                 _setupSlider(
                   icon: Icons.groups_rounded,
                   label: 'PLAYERS',
@@ -247,7 +247,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ],
               if (selectedMode == GameMode.classic) ...[
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
                 FutureBuilder<List<String>>(
                   future: categoriesFuture,
                   builder: (context, snapshot) {
@@ -1111,7 +1111,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ],
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1181,7 +1180,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
           LayoutBuilder(
             builder: (context, constraints) {
               const gap = 8.0;
@@ -1233,7 +1232,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                   : null,
                             ),
                             child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 if (locked) ...[
                                   Icon(
@@ -1335,10 +1333,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               SizedBox(height: kIsWeb ? 12 : 18),
                               if (kIsWeb) ...[
                                 _dimIfGuide(child: _buildWebPlayerBadge()),
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 10),
                               ],
                               _buildNamePanel(),
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 10),
                               if (!kIsWeb) ...[
                                 _dimIfGuide(
                                   child: _buildHeroActionButton(
@@ -1350,14 +1348,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                         : _showCreateLobbySetup,
                                   ),
                                 ),
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 10),
                               ],
                               _buildJoinLobbyPanel(),
                               if (!kIsWeb) ...[
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 10),
                                 _dimIfGuide(child: _buildPremiumButton()),
                               ],
-                              SizedBox(height: kIsWeb ? 10 : 16),
+                              SizedBox(height: kIsWeb ? 10 : 12),
                               _dimIfGuide(child: _buildBottomActions()),
                               if (kIsWeb) ...[
                                 const SizedBox(height: 12),
@@ -1759,7 +1757,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(child: _buildRoomCodeField()),
@@ -1965,7 +1963,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(icon, color: AppColors.brassLight, size: 30),
-                const SizedBox(height: 18),
+                const SizedBox(height: 8),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
