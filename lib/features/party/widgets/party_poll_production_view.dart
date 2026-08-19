@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/widgets/cached_asset_image.dart';
 import '../theme/party_palette.dart';
+import '../../game/widgets/poker_chip.dart';
 
 class PartyPollViewPlayer {
   final String id;
@@ -161,14 +162,14 @@ class PartyPollProductionView extends StatelessWidget {
                         top: chipTop,
                         width: leftWidth,
                         height: chipHeight,
-                        child: const SizedBox.expand(),
+                        child: _chipPicker(),
                       ),
                       Positioned(
                         left: left,
                         top: playersTop,
                         width: leftWidth,
                         height: playersHeight,
-                        child: const SizedBox.expand(),
+                        child: _playersStrip(),
                       ),
                       Positioned(
                         left: boardLeft,
@@ -240,6 +241,267 @@ class PartyPollProductionView extends StatelessWidget {
       ],
     ),
   );
+  Widget _chipPicker() {
+    final chips = _dynamicChips(score);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+      decoration: BoxDecoration(
+        color: PartyPalette.surface.withValues(alpha: .88),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: .07),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: PartyPalette.orangeSoft.withValues(alpha: .52),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                selectedChipValue == null ? 'SELECT A CHIP' : 'TAP A BET AREA',
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream.withValues(alpha: .78),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .7,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: PartyPalette.orangeSoft.withValues(alpha: .52),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final chip in chips)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 7),
+                    child: _selectableChip(chip, availableChips >= chip),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 26,
+            child: Row(
+              children: [
+                Expanded(child: _chipStatPill('BANK', '$score')),
+                const SizedBox(width: 8),
+                Expanded(child: _chipStatPill('ON TABLE', '$betTotal')),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectableChip(int value, bool available) => GestureDetector(
+    onTap: available ? () => onChipSelected(value) : null,
+    child: AnimatedScale(
+      duration: const Duration(milliseconds: 140),
+      scale: selectedChipValue == value ? 1.13 : 1,
+      child: Opacity(
+        opacity: available ? 1 : .35,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: selectedChipValue == value
+                ? [
+                    BoxShadow(
+                      color: PartyPalette.orangeSoft.withValues(alpha: .5),
+                      blurRadius: 14,
+                    ),
+                  ]
+                : null,
+          ),
+          child: PokerChip(label: '$value', color: _chipColor(value), size: 42),
+        ),
+      ),
+    ),
+  );
+  Widget _chipStatPill(String label, String value) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Colors.black.withValues(alpha: .22),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(
+        color: PartyPalette.orangeSoft.withValues(alpha: .28),
+        width: 1,
+      ),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.outfit(
+                color: PartyPalette.cream.withValues(alpha: .72),
+                fontSize: 8,
+                fontWeight: FontWeight.w900,
+                height: 1,
+                letterSpacing: .4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            value,
+            style: GoogleFonts.outfit(
+              color: PartyPalette.orangeSoft,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+  List<int> _dynamicChips(int bank) {
+    if (bank < 20) return const [1, 5, 10];
+    if (bank < 50) return const [5, 10, 25];
+    if (bank <= 150) return const [5, 10, 50];
+    if (bank <= 350) return const [10, 50, 100];
+    if (bank <= 1000) return const [50, 100, 500];
+    return const [100, 500, 1000];
+  }
+
+  Color _chipColor(int value) => switch (value) {
+    1 => PartyPalette.plum,
+    5 => PartyPalette.sage,
+    10 => const Color(0xFF48657A),
+    25 => PartyPalette.terracotta,
+    50 => const Color(0xFF81516A),
+    100 => const Color(0xFFB06F43),
+    500 => PartyPalette.orange,
+    1000 => PartyPalette.orangeSoft,
+    _ => PartyPalette.orange,
+  };
+  Widget _playersStrip() {
+    final sorted = [...players]..sort((a, b) => b.score.compareTo(a.score));
+    final visiblePlayers = sorted.take(3).toList();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: PartyPalette.surface.withValues(alpha: .88),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: PartyPalette.cream.withValues(alpha: .09)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(
+                'THE ROOM',
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.creamMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'CHIPS',
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.orangeSoft,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Expanded(
+            child: Column(
+              children: [
+                for (var i = 0; i < visiblePlayers.length; i++)
+                  Expanded(
+                    child: Container(
+                      margin: EdgeInsets.only(
+                        bottom: i == visiblePlayers.length - 1 ? 0 : 5,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: i == 0
+                            ? PartyPalette.orange.withValues(alpha: .12)
+                            : Colors.white.withValues(alpha: .035),
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: i == 0
+                              ? PartyPalette.orangeSoft.withValues(alpha: .24)
+                              : Colors.white.withValues(alpha: .05),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            '${i + 1}',
+                            style: GoogleFonts.outfit(
+                              color: i == 0
+                                  ? PartyPalette.orangeSoft
+                                  : PartyPalette.blueMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              visiblePlayers[i].name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.outfit(
+                                color: PartyPalette.cream,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${visiblePlayers[i].score}',
+                            style: GoogleFonts.outfit(
+                              color: PartyPalette.orangeSoft,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _questionCard() => AnimatedContainer(
     duration: const Duration(milliseconds: 260),
     width: double.infinity,
