@@ -910,6 +910,16 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         ),
       );
     }
+    final effectiveOwnBetTotal = viewBets
+        .where((bet) => bet.bettorPlayerId == snapshot.me.playerId)
+        .fold<int>(0, (total, bet) => total + bet.chips);
+    final presentationBetTotal = snapshot.round.phase == PartyPollPhase.betting
+        ? effectiveOwnBetTotal
+        : snapshot.me.betTotal;
+    final presentationAvailableChips =
+        snapshot.round.phase == PartyPollPhase.betting
+        ? max(0, 40 - effectiveOwnBetTotal)
+        : snapshot.me.availableChips;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _observePresentationSnapshot(snapshot);
     });
@@ -942,9 +952,9 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             bets: viewBets,
             winningPlayerIds: snapshot.round.winningPlayerIds.toSet(),
             score: snapshot.me.score,
-            betTotal: snapshot.me.betTotal,
+            betTotal: presentationBetTotal,
             betLimit: snapshot.me.betLimit,
-            availableChips: snapshot.me.availableChips,
+            availableChips: presentationAvailableChips,
             selectedChipValue: _selectedChipValue,
             currentPlayerId: snapshot.me.playerId,
             selectedBetId: effectiveSelectedBetId,
