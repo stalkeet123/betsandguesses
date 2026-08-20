@@ -37,6 +37,7 @@ class AudioService {
   String? _desiredBgmKey;
   int _bgmRequestId = 0;
   bool _isAppActive = true;
+  bool _bgmPausedForLifecycle = false;
   bool _disposed = false;
   bool _webEngineReady = false;
   bool _webUserGestureReceived = !kIsWeb;
@@ -504,12 +505,41 @@ class AudioService {
     if (_disposed || _isAppActive == active) return;
     _isAppActive = active;
     if (!active) {
-      await _stopBackgroundMusic(preserveDesired: true, immediate: true);
+      _bgmRequestId++;
+      _pendingBgmKey = null;
+      final handle = _bgmHandle;
+      if (handle != null && _engineReady) {
+        try {
+          SoLoud.instance.setPause(handle, true);
+          _bgmPausedForLifecycle = true;
+        } catch (_) {
+          _bgmHandle = null;
+          _currentBgmSource = null;
+          _currentBgmKey = null;
+          _bgmPausedForLifecycle = false;
+        }
+      }
       await stopTicking();
       await stopTransientEffects();
+      await _applyVolumes();
       return;
     }
-    if (!_isMuted) await _resumeDesiredBgm();
+    await _applyVolumes();
+    final pausedHandle = _bgmHandle;
+    if (!_isMuted && _bgmPausedForLifecycle && pausedHandle != null) {
+      try {
+        SoLoud.instance.setPause(pausedHandle, false);
+        _bgmPausedForLifecycle = false;
+      } catch (_) {
+        _bgmHandle = null;
+        _currentBgmSource = null;
+        _currentBgmKey = null;
+        _bgmPausedForLifecycle = false;
+      }
+    }
+    if (!_isMuted && (_currentBgmKey != _desiredBgmKey || _bgmHandle == null)) {
+      await _resumeDesiredBgm();
+    }
   }
 
   Future<void> _resumeDesiredBgm() async {
