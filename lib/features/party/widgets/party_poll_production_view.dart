@@ -122,10 +122,10 @@ class PartyPollProductionView extends StatelessWidget {
                   final width = constraints.maxWidth;
                   final height = constraints.maxHeight;
                   final compact = height < 700;
-                  final gap = compact ? 8.0 : 10.0;
+                  final gap = compact ? 6.0 : 8.0;
                   final logoTop = 6.0;
-                  final logoHeight = compact ? 76.0 : 92.0;
-                  final timerHeight = compact ? 39.0 : 42.0;
+                  final logoHeight = compact ? 64.0 : 78.0;
+                  final timerHeight = compact ? 38.0 : 40.0;
                   final leftColumnWidth = (width - 4) / 2;
                   final left = 6.0;
                   final leftWidth = leftColumnWidth - 12;
@@ -133,7 +133,7 @@ class PartyPollProductionView extends StatelessWidget {
                   final boardWidth = width - boardLeft;
                   final timerBetTop = logoTop + logoHeight + 4;
                   final questionBetTop = timerBetTop + timerHeight + gap;
-                  final chipHeight = compact ? 96.0 : 102.0;
+                  final chipHeight = compact ? 90.0 : 96.0;
                   final rawQuestionHeight =
                       height -
                       questionBetTop -
@@ -935,7 +935,7 @@ class PartyPollProductionView extends StatelessWidget {
       _PartyPollSlotTone.gold,
       _PartyPollSlotTone.red,
     ];
-    final gap = count <= 4 ? .020 : (count <= 6 ? .014 : .010);
+    final gap = count <= 4 ? .014 : (count <= 6 ? .010 : .008);
     final slotHeight = (.960 - (count - 1) * gap) / count;
 
     return List.generate(count, (rowIndex) {
@@ -1086,13 +1086,40 @@ class PartyPollProductionView extends StatelessWidget {
     final interactive = isOwnBet && !isReveal
         ? GestureDetector(onTap: () => onBetSelected(bet.id), child: visual)
         : IgnorePointer(child: visual);
+    final revealedOpponent =
+        isReveal &&
+            !isOwnBet &&
+            !WidgetsBinding
+                .instance
+                .platformDispatcher
+                .accessibilityFeatures
+                .disableAnimations
+        ? interactive
+              .animate(
+                key: ValueKey('reveal-chip-$roundNumber-${bet.id}'),
+                delay: Duration(milliseconds: min(200, index * 40)),
+              )
+              .fadeIn(duration: 350.ms, curve: Curves.easeOutCubic)
+              .moveX(
+                begin: -min(150.0, boardSize.width * .55),
+                end: 0,
+                duration: 350.ms,
+                curve: Curves.easeOutCubic,
+              )
+              .scale(
+                begin: const Offset(.76, .76),
+                end: const Offset(1, 1),
+                duration: 350.ms,
+                curve: Curves.easeOutCubic,
+              )
+        : interactive;
     return AnimatedPositioned(
       key: ValueKey(bet.id),
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOutCubic,
       left: globalLeft,
       top: globalTop,
-      child: interactive,
+      child: revealedOpponent,
     );
   }
 
@@ -1240,7 +1267,9 @@ class PartyPollProductionView extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
       decoration: BoxDecoration(
-        color: PartyPalette.surface.withValues(alpha: .96),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFF5DB), Color(0xFFEFD5A7)],
+        ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: PartyPalette.orangeSoft.withValues(alpha: .32),
@@ -1269,7 +1298,7 @@ class PartyPollProductionView extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'GROUP POLL · EVERYONE VOTES',
+                  'POLL',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.outfit(
@@ -1769,17 +1798,6 @@ class _PartyPollSlotLabel extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'BET ON',
-                    style: GoogleFonts.outfit(
-                      color: PartyPalette.cream.withValues(alpha: .60),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.3,
-                      height: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,

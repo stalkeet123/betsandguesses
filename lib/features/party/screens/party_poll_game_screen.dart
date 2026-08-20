@@ -209,6 +209,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       ...activeSlots,
       if (primaryWinningSlot != null) primaryWinningSlot,
     ];
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      await Future<void>.delayed(const Duration(milliseconds: 420));
+    }
+    if (!_isCurrentReveal(key)) return;
     await ref.read(audioServiceProvider).playResultReveal();
     if (!_isCurrentReveal(key) || scanOrder.isEmpty) return;
     final cadenceMs = min(maxCadenceMs, impactMs ~/ scanOrder.length);
