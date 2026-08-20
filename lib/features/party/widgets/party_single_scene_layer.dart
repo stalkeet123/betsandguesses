@@ -1997,7 +1997,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
         return Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const _StageKicker('RESULT CONFIRMATION · SONUÇ ONAYI'),
+            const _StageKicker('RESULT CONFIRMATION'),
             SizedBox(height: compact ? 4 : 8),
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -2011,7 +2011,7 @@ class _PartySingleSceneLayerState extends ConsumerState<PartySingleSceneLayer>
             ),
             SizedBox(height: compact ? 4 : 8),
             Text(
-              'Do you approve this result? / Sonucu onaylıyor musunuz?',
+              'Do you approve this result?',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 color: PartyPalette.cream,
