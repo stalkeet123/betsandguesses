@@ -24,6 +24,24 @@ class PartyPollGameScreen extends ConsumerStatefulWidget {
       _PartyPollGameScreenState();
 }
 
+class _PendingPartyPollBetVisual {
+  final String clientActionId;
+  final int roundNumber;
+  final String targetPlayerId;
+  final int chips;
+  final double? positionX;
+  final double? positionY;
+
+  const _PendingPartyPollBetVisual({
+    required this.clientActionId,
+    required this.roundNumber,
+    required this.targetPlayerId,
+    required this.chips,
+    required this.positionX,
+    required this.positionY,
+  });
+}
+
 class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     with WidgetsBindingObserver {
   Timer? _clockTimer;
@@ -34,6 +52,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   bool _transitionCommandInFlight = false;
   bool _snapshotLoadInFlight = false;
   bool _betCommandInFlight = false;
+  _PendingPartyPollBetVisual? _pendingBetVisual;
   bool _isFinished = false;
   int? _selectedChipValue;
   String? _selectedBetId;
@@ -277,6 +296,20 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     }
   }
 
+  void _clearStalePendingBetVisual(PartyPollSnapshot snapshot) {
+    final pending = _pendingBetVisual;
+    if (pending == null ||
+        (snapshot.round.phase == PartyPollPhase.betting &&
+            pending.roundNumber == snapshot.round.number)) {
+      return;
+    }
+    setState(() {
+      if (identical(_pendingBetVisual, pending)) {
+        _pendingBetVisual = null;
+      }
+    });
+  }
+
   Future<void> _placeBet(
     PartyPollSnapshot snapshot,
     String targetPlayerId,
@@ -302,8 +335,21 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       _showMessage('That chip is not available.');
       return;
     }
-    setState(() => _betCommandInFlight = true);
+
+    final clientActionId = const Uuid().v4();
+    setState(() {
+      _betCommandInFlight = true;
+      _pendingBetVisual = _PendingPartyPollBetVisual(
+        clientActionId: clientActionId,
+        roundNumber: snapshot.round.number,
+        targetPlayerId: targetPlayerId,
+        chips: chip,
+        positionX: positionX,
+        positionY: positionY,
+      );
+    });
     ref.read(audioServiceProvider).playDrop();
+
     try {
       final placement = await ref
           .read(partyPollSessionProvider.notifier)
@@ -311,7 +357,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             roomId: snapshot.room.id,
             targetPlayerId: targetPlayerId,
             chips: chip,
-            clientActionId: const Uuid().v4(),
+            clientActionId: clientActionId,
             positionX: positionX,
             positionY: positionY,
           );
@@ -322,7 +368,14 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         );
       }
     } finally {
-      if (mounted) setState(() => _betCommandInFlight = false);
+      if (mounted) {
+        setState(() {
+          _betCommandInFlight = false;
+          if (_pendingBetVisual?.clientActionId == clientActionId) {
+            _pendingBetVisual = null;
+          }
+        });
+      }
     }
   }
 
@@ -478,10 +531,39 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             won: bet.won,
           ),
         )
-        .toList(growable: false);
+        .toList();
     final isReveal = snapshot.round.phase == PartyPollPhase.reveal;
+    final pending = _pendingBetVisual;
+    final pendingIsAuthoritative =
+        pending != null &&
+        snapshot.round.bets.any(
+          (bet) => bet.clientActionId == pending.clientActionId,
+        );
+    final pendingSlotIndex = pending == null
+        ? null
+        : targetSlotByPlayerId[pending.targetPlayerId];
+    if (pending != null &&
+        snapshot.round.phase == PartyPollPhase.betting &&
+        pending.roundNumber == snapshot.round.number &&
+        !pendingIsAuthoritative &&
+        pendingSlotIndex != null) {
+      viewBets.add(
+        PartyPollViewBet(
+          id: 'pending:${pending.clientActionId}',
+          bettorPlayerId: snapshot.me.playerId,
+          targetPlayerId: pending.targetPlayerId,
+          targetSlotIndex: pendingSlotIndex,
+          chips: pending.chips,
+          positionX: pending.positionX,
+          positionY: pending.positionY,
+          won: null,
+        ),
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _observeRevealSnapshot(snapshot);
+      if (!mounted) return;
+      _clearStalePendingBetVisual(snapshot);
+      _observeRevealSnapshot(snapshot);
     });
     final effectiveSelectedBetId =
         !isReveal &&
