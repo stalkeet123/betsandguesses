@@ -153,6 +153,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         );
         final timer = Timer(delay, () {
           if (!_isCurrentReveal(key)) return;
+          unawaited(ref.read(audioServiceProvider).playClick());
           setState(() => _activeRevealSlotIndex = players[index].slotIndex);
         });
         _revealScanTimers.add(timer);
