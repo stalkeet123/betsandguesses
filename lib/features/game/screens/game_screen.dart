@@ -247,7 +247,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameNotifier = ref.read(gameStateProvider.notifier);
     final scores = <String, int>{};
     for (final player in _players) {
-      scores[player.id] = player.bankScore;
+      scores[player.id] = player.score;
     }
 
     final seededState = ref.read(gameStateProvider);
@@ -810,7 +810,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _players = await playerService.getPlayers(room.id);
       final currentPlayer = _restoreCurrentPlayer(room.id);
       final scores = <String, int>{
-        for (final player in _players) player.id: player.bankScore,
+        for (final player in _players) player.id: player.score,
       };
       final phase = room.roundPhase;
       final round = room.currentRound;
@@ -2162,7 +2162,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
 
     final totalBets = _currentPlayerTotalBets(gameState);
-    final currentBank = gameState.scores[player.id] ?? player.bankScore;
+    final currentBank =
+        gameState.scores[player.id] ?? _authoritativePlayerScore(player);
     final bettingLimit = GameConstants.bettingLimitForBank(currentBank);
     if (totalBets + chips > bettingLimit) {
       setState(() => _selectedChipValue = null);
@@ -2314,7 +2315,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (_selectedChipValue != null) {
       final updatedTotal = _currentPlayerTotalBets(ref.read(gameStateProvider));
       final updatedBank =
-          ref.read(gameStateProvider).scores[player.id] ?? player.bankScore;
+          ref.read(gameStateProvider).scores[player.id] ??
+          _authoritativePlayerScore(player);
       final updatedLimit = GameConstants.bettingLimitForBank(updatedBank);
       if (updatedTotal + _selectedChipValue! > updatedLimit) {
         _selectedChipValue = null;
@@ -2625,6 +2627,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return null;
   }
 
+  int _authoritativePlayerScore(Player player) {
+    final room = ref.read(currentRoomProvider);
+    return room?.gameMode == GameMode.party ? player.bankScore : player.score;
+  }
+
   List<_LeaderboardEntry> _leaderboardEntries(GameState gameState) {
     final playerIds = <String>{
       ..._players.map((player) => player.id),
@@ -2635,7 +2642,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final player = _playerById(playerId);
       return _LeaderboardEntry(
         name: player?.name ?? 'Player',
-        score: gameState.scores[playerId] ?? player?.bankScore ?? 0,
+        score:
+            gameState.scores[playerId] ??
+            (player == null ? 0 : _authoritativePlayerScore(player)),
       );
     }).toList();
 
@@ -3208,7 +3217,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final totalOnTable = myBets.fold<int>(0, (sum, bet) => sum + bet.chips);
     final bank = currentPlayer == null
         ? 0
-        : gameState.scores[currentPlayer.id] ?? currentPlayer.bankScore;
+        : gameState.scores[currentPlayer.id] ??
+              _authoritativePlayerScore(currentPlayer);
     final bettingLimit = currentPlayer == null
         ? 0
         : GameConstants.bettingLimitForBank(bank);
@@ -5527,7 +5537,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final player = ref.read(currentPlayerProvider);
       final bank = player == null
           ? 0
-          : (gameState.scores[player.id] ?? player.bankScore);
+          : (gameState.scores[player.id] ?? _authoritativePlayerScore(player));
       final limit = GameConstants.bettingLimitForBank(bank);
       final available = limit - totalBets;
 

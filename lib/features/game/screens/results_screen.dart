@@ -57,7 +57,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
     final players = await ref.read(playerServiceProvider).getPlayers(room.id);
     players.sort((a, b) {
-      final scoreOrder = b.bankScore.compareTo(a.bankScore);
+      final scoreOrder = _resultScore(b).compareTo(_resultScore(a));
       if (scoreOrder != 0) return scoreOrder;
       final nameOrder = a.name.toLowerCase().compareTo(b.name.toLowerCase());
       if (nameOrder != 0) return nameOrder;
@@ -71,17 +71,25 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     }
   }
 
+  int _resultScore(Player player) {
+    final room = ref.read(currentRoomProvider);
+    return room?.gameMode == GameMode.party ? player.bankScore : player.score;
+  }
+
   List<Player> get _winners {
     if (_sortedPlayers.isEmpty) return const [];
-    final winningScore = _sortedPlayers.first.bankScore;
+    final winningScore = _resultScore(_sortedPlayers.first);
     return _sortedPlayers
-        .where((player) => player.bankScore == winningScore)
+        .where((player) => _resultScore(player) == winningScore)
         .toList(growable: false);
   }
 
   int _rankForIndex(int index) {
-    final score = _sortedPlayers[index].bankScore;
-    return _sortedPlayers.indexWhere((player) => player.bankScore == score) + 1;
+    final score = _resultScore(_sortedPlayers[index]);
+    return _sortedPlayers.indexWhere(
+          (player) => _resultScore(player) == score,
+        ) +
+        1;
   }
 
   Future<void> _goHome() async {
@@ -426,7 +434,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                   child: Text(
                     isParty
                         ? _formatPartyProfit(winners.first.bankScore)
-                        : _formatScore(winners.first.bankScore),
+                        : _formatScore(_resultScore(winners.first)),
                     maxLines: 1,
                     style: TextStyle(
                       fontFamily: 'RehnCondensed',
@@ -585,7 +593,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               child: Text(
                 isParty
                     ? _formatPartyProfit(player.bankScore)
-                    : _formatScore(player.bankScore),
+                    : _formatScore(_resultScore(player)),
                 maxLines: 1,
                 style: TextStyle(
                   color: isWinner ? AppColors.feltDark : AppColors.ivory,

@@ -372,14 +372,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             ),
           )
           .toList();
-      final startingBankScores = <String, int>{
-        for (final player in _players) player.id: player.bankScore,
+      final startingScores = <String, int>{
+        for (final player in _players) player.id: player.score,
       };
       _seedGameState(
         startedRoom,
         question,
         phase: startedRoom.roundPhase,
-        scores: startingBankScores,
+        scores: startingScores,
       );
       ref.read(currentRoomProvider.notifier).set(startedRoom);
 
@@ -392,7 +392,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               'phase': startedRoom.roundPhase.name,
               'question': question.toJson(),
               'scores': legacyStartingScores,
-              'bank_scores': startingBankScores,
+              'bank_scores': startingScores,
               'phase_ends_at': deadline?.toIso8601String(),
             })
             .catchError((Object error, StackTrace stackTrace) {
@@ -467,7 +467,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           currentQuestion: question,
           scores:
               scores ??
-              {for (final player in _players) player.id: player.bankScore},
+              {for (final player in _players) player.id: player.score},
         );
   }
 
