@@ -365,6 +365,16 @@ class AudioService {
     ]);
   }
 
+  /// Preloads the Party Poll reveal cues without changing Classic playback.
+  Future<void> preparePartyPollRevealAudio() async {
+    await _ensureInitialized();
+    await Future.wait(<Future<AudioSource?>>[
+      _loadResultRevealSource(),
+      _loadPayoutWinSource(),
+      _loadChipLossSource(),
+    ]);
+  }
+
   Future<void> startTicking() {
     if (_isMuted || !_isAppActive || _isTickingPlaying || _disposed) {
       return Future<void>.value();

@@ -26,9 +26,14 @@ class PartyPollGameScreen extends ConsumerStatefulWidget {
 
 class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     with WidgetsBindingObserver {
+  // Measured from assets/sound/sonuç açıklanma.flac: dominant drum impact
+  // begins at 2050 ms from playback start.
+  static const _revealImpactOffset = Duration(milliseconds: 2050);
   Timer? _clockTimer;
   Timer? _refreshTimer;
   Timer? _reloadDebounce;
+  Timer? _revealImpactTimer;
+  final List<Timer> _revealScanTimers = [];
   bool _transitionCommandInFlight = false;
   bool _snapshotLoadInFlight = false;
   bool _betCommandInFlight = false;
@@ -36,6 +41,9 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   int? _selectedChipValue;
   String? _selectedBetId;
   String? _lastErrorMessage;
+  String? _startedRevealKey;
+  int? _activeRevealSlotIndex;
+  bool _emphasizeRevealWinners = false;
 
   @override
   void initState() {
@@ -59,6 +67,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     _clockTimer?.cancel();
     _refreshTimer?.cancel();
     _reloadDebounce?.cancel();
+    _cancelRevealChoreography(resetRevealKey: true);
     super.dispose();
   }
 
@@ -70,7 +79,112 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   Future<void> _initialLoad() async {
+    unawaited(ref.read(audioServiceProvider).preparePartyPollRevealAudio());
     await _loadSnapshot(connectRealtime: true);
+  }
+
+  String _revealKey(PartyPollSnapshot snapshot) =>
+      '${snapshot.round.number}:${snapshot.round.phaseStartedAt.toIso8601String()}';
+
+  bool _isCurrentReveal(String key) {
+    final snapshot = ref.read(partyPollSessionProvider).snapshot;
+    return mounted &&
+        _startedRevealKey == key &&
+        snapshot != null &&
+        snapshot.round.phase == PartyPollPhase.reveal &&
+        _revealKey(snapshot) == key;
+  }
+
+  void _cancelRevealChoreography({required bool resetRevealKey}) {
+    _revealImpactTimer?.cancel();
+    _revealImpactTimer = null;
+    for (final timer in _revealScanTimers) {
+      timer.cancel();
+    }
+    _revealScanTimers.clear();
+    if (resetRevealKey) _startedRevealKey = null;
+  }
+
+  void _observeRevealSnapshot(PartyPollSnapshot snapshot) {
+    if (snapshot.round.phase != PartyPollPhase.reveal) {
+      final needsClear =
+          _startedRevealKey != null ||
+          _activeRevealSlotIndex != null ||
+          _emphasizeRevealWinners;
+      _cancelRevealChoreography(resetRevealKey: true);
+      if (needsClear && mounted) {
+        setState(() {
+          _activeRevealSlotIndex = null;
+          _emphasizeRevealWinners = false;
+        });
+      }
+      return;
+    }
+
+    final key = _revealKey(snapshot);
+    if (_startedRevealKey == key) return;
+    _cancelRevealChoreography(resetRevealKey: false);
+    _startedRevealKey = key;
+    setState(() {
+      _selectedBetId = null;
+      _activeRevealSlotIndex = null;
+      _emphasizeRevealWinners = false;
+    });
+    unawaited(_startRevealChoreography(snapshot, key));
+  }
+
+  Future<void> _startRevealChoreography(
+    PartyPollSnapshot snapshot,
+    String key,
+  ) async {
+    final players = [...snapshot.round.players]
+      ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+
+    await ref.read(audioServiceProvider).playResultReveal();
+    if (!_isCurrentReveal(key)) return;
+
+    if (players.isNotEmpty) {
+      setState(() => _activeRevealSlotIndex = players.first.slotIndex);
+      for (var index = 1; index < players.length; index++) {
+        final delay = Duration(
+          milliseconds:
+              (_revealImpactOffset.inMilliseconds * index / players.length)
+                  .round(),
+        );
+        final timer = Timer(delay, () {
+          if (!_isCurrentReveal(key)) return;
+          setState(() => _activeRevealSlotIndex = players[index].slotIndex);
+        });
+        _revealScanTimers.add(timer);
+      }
+    }
+
+    _revealImpactTimer = Timer(_revealImpactOffset, () {
+      if (!_isCurrentReveal(key)) return;
+      setState(() {
+        _activeRevealSlotIndex = null;
+        _emphasizeRevealWinners = true;
+      });
+
+      final ownBets = snapshot.round.bets
+          .where((bet) => bet.playerId == snapshot.me.playerId)
+          .toList(growable: false);
+      if (ownBets.isNotEmpty) {
+        final net = ownBets.fold<int>(
+          0,
+          (total, bet) => total + (bet.won == true ? bet.chips : -bet.chips),
+        );
+        final audio = ref.read(audioServiceProvider);
+        unawaited(net > 0 ? audio.playPayout() : audio.playChipLoss());
+      }
+
+      final clinkTimer = Timer(const Duration(milliseconds: 240), () {
+        if (_isCurrentReveal(key)) {
+          unawaited(ref.read(audioServiceProvider).playClink());
+        }
+      });
+      _revealScanTimers.add(clinkTimer);
+    });
   }
 
   Future<void> _loadSnapshot({bool connectRealtime = false}) async {
@@ -356,6 +470,9 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         )
         .toList(growable: false);
     final isReveal = snapshot.round.phase == PartyPollPhase.reveal;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _observeRevealSnapshot(snapshot);
+    });
     final effectiveSelectedBetId =
         !isReveal &&
             _selectedBetId != null &&
@@ -390,7 +507,8 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         selectedChipValue: _selectedChipValue,
         currentPlayerId: snapshot.me.playerId,
         selectedBetId: effectiveSelectedBetId,
-        emphasizeWinners: isReveal,
+        emphasizeWinners: isReveal && _emphasizeRevealWinners,
+        activeRevealSlotIndex: isReveal ? _activeRevealSlotIndex : null,
         onChipSelected: (value) {
           setState(() {
             _selectedChipValue = _selectedChipValue == value ? null : value;

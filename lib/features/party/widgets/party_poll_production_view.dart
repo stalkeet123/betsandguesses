@@ -78,6 +78,7 @@ class PartyPollProductionView extends StatelessWidget {
   final String? currentPlayerId;
   final String? selectedBetId;
   final bool emphasizeWinners;
+  final int? activeRevealSlotIndex;
   final ValueChanged<int> onChipSelected;
   final ValueChanged<String> onBetSelected;
   final PartyPollBetRequested onBetRequested;
@@ -102,6 +103,7 @@ class PartyPollProductionView extends StatelessWidget {
     required this.currentPlayerId,
     required this.selectedBetId,
     required this.emphasizeWinners,
+    required this.activeRevealSlotIndex,
     required this.onChipSelected,
     required this.onBetSelected,
     required this.onBetRequested,
@@ -580,8 +582,11 @@ class PartyPollProductionView extends StatelessWidget {
                     child: _PartyPollBetSlotSurface(
                       spec: spec,
                       isWinningReveal:
-                          isReveal &&
-                          winningPlayerIds.contains(spec.targetPlayerId),
+                          (isReveal &&
+                              activeRevealSlotIndex == spec.targetSlotIndex) ||
+                          (isReveal &&
+                              emphasizeWinners &&
+                              winningPlayerIds.contains(spec.targetPlayerId)),
                     ),
                   ),
                 ),
