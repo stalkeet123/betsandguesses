@@ -77,6 +77,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   bool _snapshotLoadInFlight = false;
   bool _betCommandInFlight = false;
   _PendingPartyPollBetVisual? _pendingBetVisual;
+  final Set<String> _optimisticallyHiddenBetIds = <String>{};
   _PendingPartyPollMoveVisual? _pendingMoveVisual;
   bool _showPartyRoundTransition = false;
   int? _partyTransitionRound;
@@ -397,6 +398,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
 
   void _observePresentationSnapshot(PartyPollSnapshot snapshot) {
     _clearStalePendingBetVisual(snapshot);
+    _reconcileOptimisticallyHiddenBets(snapshot);
     _observeRevealSnapshot(snapshot);
     if (snapshot.round.phase == PartyPollPhase.betting) {
       _triggerPartyRoundTransition(snapshot);
@@ -611,6 +613,21 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     });
   }
 
+  void _reconcileOptimisticallyHiddenBets(PartyPollSnapshot snapshot) {
+    if (_optimisticallyHiddenBetIds.isEmpty) return;
+    final ids = snapshot.round.bets.map((bet) => bet.id).toSet();
+    final stale = _optimisticallyHiddenBetIds
+        .where(
+          (id) =>
+              snapshot.round.phase != PartyPollPhase.betting ||
+              !ids.contains(id),
+        )
+        .toSet();
+    if (stale.isNotEmpty && mounted) {
+      setState(() => _optimisticallyHiddenBetIds.removeAll(stale));
+    }
+  }
+
   Future<void> _placeBet(
     PartyPollSnapshot snapshot,
     String targetPlayerId,
@@ -758,6 +775,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             positionY: positionY,
           );
       if (updated == null && mounted) {
+        setState(() => _optimisticallyHiddenBetIds.remove(betId));
         _showMessage(
           ref.read(partyPollSessionProvider).errorMessage ??
               'Bet could not be moved.',
@@ -801,6 +819,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
           .read(partyPollSessionProvider.notifier)
           .removeBet(roomId: snapshot.room.id, betId: betId);
       if (updated == null && mounted) {
+        setState(() => _optimisticallyHiddenBetIds.remove(betId));
         _showMessage(
           ref.read(partyPollSessionProvider).errorMessage ??
               'Bet could not be removed.',
