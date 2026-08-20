@@ -632,8 +632,15 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       _showMessage('You can back up to two players this round.');
       return;
     }
-    if (chip > snapshot.me.availableChips) {
-      _showMessage('That chip is not available.');
+    final usedChips = snapshot.round.bets
+        .where((bet) => bet.playerId == snapshot.me.playerId)
+        .map((bet) => bet.chips)
+        .toSet();
+    final pendingChip = _pendingBetVisual?.roundNumber == snapshot.round.number
+        ? _pendingBetVisual?.chips
+        : null;
+    if (usedChips.contains(chip) || pendingChip == chip) {
+      _showMessage('That chip is already used this round.');
       return;
     }
 

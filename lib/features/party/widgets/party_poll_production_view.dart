@@ -270,7 +270,11 @@ class PartyPollProductionView extends StatelessWidget {
     ),
   );
   Widget _chipPicker() {
-    final chips = _dynamicChips(betLimit);
+    const chips = [5, 10, 25];
+    final usedChips = bets
+        .where((bet) => bet.bettorPlayerId == currentPlayerId)
+        .map((bet) => bet.chips)
+        .toSet();
     final selectedId = _selectedOwnBetId;
     PartyPollViewBet? selectedBet;
     if (selectedId != null) {
@@ -288,7 +292,7 @@ class PartyPollProductionView extends StatelessWidget {
         : selectedBet != null
         ? 'TAP CHIP TO RECALL'
         : selectedChipValue == null
-        ? 'SELECT A CHIP'
+        ? 'ONE OF EACH · PER ROUND'
         : 'TAP A BET AREA';
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
@@ -358,11 +362,12 @@ class PartyPollProductionView extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 7),
                       child: _selectableChip(
                         chip,
-                        canEdit && availableChips >= chip,
+                        canEdit && !usedChips.contains(chip),
                         isSelected: selectedBet != null
                             ? chip == selectedBetValue
                             : selectedChipValue == chip,
                         canEdit: canEdit,
+                        used: usedChips.contains(chip),
                       ),
                     ),
                 ],
@@ -395,6 +400,7 @@ class PartyPollProductionView extends StatelessWidget {
     bool available, {
     required bool isSelected,
     required bool canEdit,
+    required bool used,
   }) => GestureDetector(
     onTap: !canEdit
         ? null
@@ -418,7 +424,22 @@ class PartyPollProductionView extends StatelessWidget {
                   ]
                 : null,
           ),
-          child: PokerChip(label: '$value', color: _chipColor(value), size: 42),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              PokerChip(label: '$value', color: _chipColor(value), size: 42),
+              if (used)
+                const Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 13,
+                    color: PartyPalette.cream,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     ),
@@ -465,15 +486,6 @@ class PartyPollProductionView extends StatelessWidget {
       ),
     ),
   );
-  List<int> _dynamicChips(int bank) {
-    if (bank < 20) return const [1, 5, 10];
-    if (bank < 50) return const [5, 10, 25];
-    if (bank <= 150) return const [5, 10, 50];
-    if (bank <= 350) return const [10, 50, 100];
-    if (bank <= 1000) return const [50, 100, 500];
-    return const [100, 500, 1000];
-  }
-
   Color _chipColor(int value) => switch (value) {
     1 => PartyPalette.plum,
     5 => PartyPalette.sage,
