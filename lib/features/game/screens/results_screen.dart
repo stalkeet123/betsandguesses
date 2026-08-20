@@ -1,29 +1,18 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
-import '../../../features/party/models/party_moment.dart';
-import '../../../features/party/models/party_snapshot.dart';
-import '../../../features/party/providers/party_local_media_provider.dart';
 
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
-
-const _partyCardOrange = Color(0xFFE47A32);
-const _partyCardOrangeSoft = Color(0xFFF0A060);
+import '../../../features/party/providers/party_poll_session_provider.dart';
 
 class ResultsScreen extends ConsumerStatefulWidget {
   final String roomCode;
@@ -39,8 +28,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   List<Player> _sortedPlayers = [];
   bool _isReturningToLobby = false;
   bool _hasLeftResults = false;
-  List<PartyMoment> _partyMoments = const [];
-  List<PartyRecapRound> _partyRecap = const [];
 
   @override
   void initState() {
@@ -68,11 +55,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
 
-    final playersFuture = ref.read(playerServiceProvider).getPlayers(room.id);
-    final recapFuture = room.gameMode == GameMode.party
-        ? ref.read(partyGameServiceProvider).getRecap(room.id)
-        : Future.value(const <PartyRecapRound>[]);
-    final players = await playersFuture;
+    final players = await ref.read(playerServiceProvider).getPlayers(room.id);
     players.sort((a, b) {
       final scoreOrder = b.bankScore.compareTo(a.bankScore);
       if (scoreOrder != 0) return scoreOrder;
@@ -81,22 +64,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       return a.id.compareTo(b.id);
     });
 
-    final partyMoments = ref
-        .read(partyLocalMediaProvider)
-        .where((moment) => moment.roomId == room.id)
-        .toList(growable: false);
-    var partyRecap = const <PartyRecapRound>[];
-    try {
-      partyRecap = await recapFuture;
-    } catch (error, stackTrace) {
-      debugPrint('Party recap load failed: $error\n$stackTrace');
-    }
-
     if (mounted) {
       setState(() {
         _sortedPlayers = players;
-        _partyMoments = partyMoments;
-        _partyRecap = partyRecap;
       });
     }
   }
@@ -114,26 +84,45 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     return _sortedPlayers.indexWhere((player) => player.bankScore == score) + 1;
   }
 
-  void _goHome() {
+  Future<void> _goHome() async {
     if (_hasLeftResults) return;
     _hasLeftResults = true;
-    final roomId = ref.read(currentRoomProvider)?.id;
-    if (roomId != null) {
-      ref.read(partyLocalMediaProvider.notifier).clearRoom(roomId);
+    final player = ref.read(currentPlayerProvider);
+    ref.read(skipAutoJoinProvider.notifier).set(true);
+
+    try {
+      if (player != null) {
+        try {
+          await ref.read(realtimeServiceProvider).broadcast(
+            widget.roomCode,
+            'player_left',
+            {'player_id': player.id},
+          );
+        } catch (error, stackTrace) {
+          debugPrint(
+            'Results player-left broadcast failed: $error\n$stackTrace',
+          );
+        }
+        await ref.read(playerServiceProvider).leaveRoom(player.id);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Results leave room failed: $error\n$stackTrace');
+    } finally {
+      await ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
+      ref.read(currentRoomProvider.notifier).set(null);
+      ref.read(currentPlayerProvider.notifier).set(null);
+      ref.read(gameStateProvider.notifier).reset();
+      ref.read(partyPollSessionProvider.notifier).clear();
+      if (mounted) context.goNamed('home');
     }
-    ref.read(realtimeServiceProvider).leaveRoom(widget.roomCode);
-    ref.read(currentRoomProvider.notifier).set(null);
-    ref.read(currentPlayerProvider.notifier).set(null);
-    ref.read(gameStateProvider.notifier).reset();
-    context.goNamed('home');
   }
 
   void _openLobby(Room room) {
     if (!mounted || _hasLeftResults) return;
     _hasLeftResults = true;
-    ref.read(partyLocalMediaProvider.notifier).clearRoom(room.id);
     ref.read(currentRoomProvider.notifier).set(room);
     ref.read(gameStateProvider.notifier).reset();
+    ref.read(partyPollSessionProvider.notifier).clear();
     context.goNamed('lobby', pathParameters: {'roomCode': widget.roomCode});
   }
 
@@ -622,53 +611,33 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   }
 
   Widget _buildActions() {
-    final room = ref.read(currentRoomProvider);
+    final isHost = ref.watch(isHostProvider);
     return Column(
       children: [
-        if (room?.gameMode == GameMode.party && _partyRecap.isNotEmpty) ...[
-          SizedBox(
-            width: double.infinity,
-            child: _buildActionButton(
-              label: 'PARTY RECAP',
-              icon: Icons.photo_library_rounded,
-              isGold: false,
-              onTap: _openPartyRecap,
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
         SizedBox(
           width: double.infinity,
           child: _buildActionButton(
-            label: 'PLAY AGAIN',
-            icon: Icons.workspace_premium_rounded,
-            isGold: true,
-            onTap: () {
-              _backToLobby();
-            },
+            label: isHost
+                ? (_isReturningToLobby
+                      ? 'RETURNING TO LOBBY...'
+                      : 'BACK TO LOBBY')
+                : 'WAITING FOR HOST',
+            icon: isHost ? Icons.groups_rounded : Icons.hourglass_top_rounded,
+            isGold: isHost,
+            onTap: isHost && !_isReturningToLobby ? _backToLobby : null,
           ),
         ),
         const SizedBox(height: 8),
-        TextButton.icon(
-          onPressed: _goHome,
-          icon: const Icon(Icons.home_rounded, size: 18),
-          label: const Text('HOME'),
-          style: TextButton.styleFrom(
-            foregroundColor: AppColors.ivory.withValues(alpha: 0.82),
+        SizedBox(
+          width: double.infinity,
+          child: _buildActionButton(
+            label: 'BACK TO HOME',
+            icon: Icons.home_rounded,
+            isGold: false,
+            onTap: _hasLeftResults ? null : _goHome,
           ),
         ),
       ],
-    );
-  }
-
-  void _openPartyRecap() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: AppColors.ink,
-      builder: (_) =>
-          _PartyRecapSheet(rounds: _partyRecap, moments: _partyMoments),
     );
   }
 
@@ -724,7 +693,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     required String label,
     required IconData icon,
     required bool isGold,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
     bool compact = false,
   }) {
     return SizedBox(
@@ -799,462 +768,6 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           blurRadius: 18,
         ),
       ],
-    );
-  }
-}
-
-class _PartyRecapSheet extends StatefulWidget {
-  final List<PartyRecapRound> rounds;
-  final List<PartyMoment> moments;
-
-  const _PartyRecapSheet({required this.rounds, required this.moments});
-
-  @override
-  State<_PartyRecapSheet> createState() => _PartyRecapSheetState();
-}
-
-class _PartyRecapSheetState extends State<_PartyRecapSheet> {
-  late final PageController _pageController;
-  late final List<GlobalKey> _cardKeys;
-  int _index = 0;
-  bool _isSharing = false;
-  final Map<int, Uint8List> _renderedCards = {};
-  final Map<int, Future<Uint8List>> _renderJobs = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController(viewportFraction: 0.9);
-    _cardKeys = List.generate(widget.rounds.length, (_) => GlobalKey());
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.rounds.isNotEmpty) _prewarmCard(0);
-    });
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  PartyMoment? _momentForRound(int roundNumber) {
-    for (final moment in widget.moments) {
-      if (moment.roundNumber == roundNumber) return moment;
-    }
-    return null;
-  }
-
-  Future<Uint8List> _renderCard(int index) {
-    final cached = _renderedCards[index];
-    if (cached != null) return Future.value(cached);
-    return _renderJobs
-        .putIfAbsent(index, () async {
-          await WidgetsBinding.instance.endOfFrame;
-          final boundary =
-              _cardKeys[index].currentContext?.findRenderObject()
-                  as RenderRepaintBoundary?;
-          if (boundary == null) throw StateError('Recap card is not ready.');
-          final image = await boundary.toImage(pixelRatio: 2);
-          try {
-            final byteData = await image.toByteData(
-              format: ui.ImageByteFormat.png,
-            );
-            if (byteData == null) {
-              throw StateError('Recap image could not be made.');
-            }
-            final bytes = byteData.buffer.asUint8List();
-            _renderedCards[index] = bytes;
-            if (mounted) setState(() {});
-            return bytes;
-          } finally {
-            image.dispose();
-          }
-        })
-        .catchError((Object error) {
-          _renderJobs.remove(index);
-          throw error;
-        });
-  }
-
-  void _prewarmCard(int index) {
-    if (index < 0 ||
-        index >= widget.rounds.length ||
-        _renderedCards.containsKey(index)) {
-      return;
-    }
-    _renderCard(index).catchError((_) => Uint8List(0));
-  }
-
-  Future<void> _shareCurrentCard() async {
-    if (_isSharing) return;
-    final shareBox = context.findRenderObject() as RenderBox?;
-    setState(() => _isSharing = true);
-    try {
-      final bytes = await _renderCard(_index);
-      final recap = widget.rounds[_index];
-      final resultText = recap.challengeType == PartyChallengeType.choice
-          ? 'chose ${recap.choiceLabel(recap.result) ?? 'an option'}'
-          : recap.challengeType == PartyChallengeType.binary
-          ? (recap.result == 1
-                ? 'completed the challenge'
-                : 'missed the challenge')
-          : 'did ${recap.result} ${recap.answerUnit}';
-      await SharePlus.instance.share(
-        ShareParams(
-          text:
-              '${recap.performerName} $resultText — '
-              'Bets & Guesses Party Mode',
-          files: [
-            XFile.fromData(
-              bytes,
-              mimeType: 'image/png',
-              name: 'bets-and-guesses-round-${recap.roundNumber}.png',
-            ),
-          ],
-          fileNameOverrides: [
-            'bets-and-guesses-round-${recap.roundNumber}.png',
-          ],
-          sharePositionOrigin: shareBox == null
-              ? null
-              : shareBox.localToGlobal(Offset.zero) & shareBox.size,
-        ),
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not share: $error')));
-      }
-    } finally {
-      if (mounted) setState(() => _isSharing = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.ink,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 12, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'PARTY RECAP',
-                    style: const TextStyle(
-                      fontFamily: 'RehnCondensed',
-                      color: AppColors.brassLight,
-                      fontSize: 34,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                  color: AppColors.ivory,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: widget.rounds.length,
-              onPageChanged: (value) {
-                setState(() => _index = value);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _prewarmCard(value);
-                });
-              },
-              itemBuilder: (context, index) {
-                final recap = widget.rounds[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 8,
-                  ),
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 9 / 16,
-                      child: RepaintBoundary(
-                        key: _cardKeys[index],
-                        child: _PartyShareCard(
-                          recap: recap,
-                          moment: _momentForRound(recap.roundNumber),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${_index + 1}/${widget.rounds.length}',
-                    style: GoogleFonts.outfit(
-                      color: AppColors.ivory.withValues(alpha: 0.62),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                FilledButton.icon(
-                  onPressed: _isSharing ? null : _shareCurrentCard,
-                  icon: _isSharing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.ios_share_rounded),
-                  label: Text(_isSharing ? 'PREPARING…' : 'SHARE'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.brassLight,
-                    foregroundColor: AppColors.ink,
-                    minimumSize: const Size(150, 52),
-                    textStyle: GoogleFonts.outfit(fontWeight: FontWeight.w900),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PartyShareCard extends StatelessWidget {
-  final PartyRecapRound recap;
-  final PartyMoment? moment;
-
-  const _PartyShareCard({required this.recap, required this.moment});
-
-  @override
-  Widget build(BuildContext context) {
-    final isBinary = recap.challengeType == PartyChallengeType.binary;
-    final isChoice = recap.challengeType == PartyChallengeType.choice;
-    final headline = isChoice
-        ? (recap.choiceLabel(recap.result) ?? 'CHOICE').toUpperCase()
-        : isBinary
-        ? (recap.result == 1 ? 'DID IT' : 'FAILED')
-        : '${recap.result}\n${recap.answerUnit.toUpperCase()}';
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: ColoredBox(
-        color: const Color(0xFF05080D),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (moment != null)
-              Image.memory(moment!.bytes, fit: BoxFit.cover, cacheWidth: 1080)
-            else
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF162A3A),
-                      Color(0xFF08121D),
-                      Color(0xFF24130B),
-                    ],
-                  ),
-                ),
-              ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: [0, 0.42, 1],
-                  colors: [
-                    Color(0x44000000),
-                    Color(0x55000000),
-                    Color(0xF205080D),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.bolt_rounded,
-                        color: _partyCardOrangeSoft,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'BETS & GUESSES',
-                        style: GoogleFonts.outfit(
-                          color: AppColors.ivory,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'ROUND ${recap.roundNumber}',
-                        style: GoogleFonts.outfit(
-                          color: _partyCardOrangeSoft,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    recap.performerName.toUpperCase(),
-                    style: GoogleFonts.outfit(
-                      color: _partyCardOrangeSoft,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    headline,
-                    style: const TextStyle(
-                      fontFamily: 'RehnCondensed',
-                      color: AppColors.ivory,
-                      fontSize: 60,
-                      fontWeight: FontWeight.w900,
-                      height: 0.8,
-                      shadows: [Shadow(color: Colors.black87, blurRadius: 10)],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    isChoice
-                        ? '${recap.performerName.toUpperCase()} CHOSE'
-                        : isBinary
-                        ? '${recap.durationSeconds}-SECOND CHALLENGE'
-                        : 'IN ${recap.durationSeconds} SECONDS',
-                    style: GoogleFonts.outfit(
-                      color: _partyCardOrange,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    recap.challengeText,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.outfit(
-                      color: AppColors.ivory.withValues(alpha: 0.76),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      height: 1.25,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _RecapStat(
-                          label: isChoice
-                              ? 'ROOM GOT IT'
-                              : isBinary
-                              ? 'ROOM SAID YES'
-                              : 'ROOM LINE',
-                          value: recap.crowdGuess == null
-                              ? '—'
-                              : isChoice || isBinary
-                              ? '${recap.crowdGuess}%'
-                              : '${recap.crowdGuess}',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _RecapStat(
-                          label: 'RESULT',
-                          value: isChoice
-                              ? (recap.result == 0 ? 'A' : 'B')
-                              : isBinary
-                              ? (recap.result == 1 ? 'SUCCESS' : 'FAILED')
-                              : '${recap.result}',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _RecapStat(
-                          label: 'EARNED',
-                          value: '+${recap.performerBonus}',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RecapStat extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _RecapStat({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.36),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _partyCardOrange.withValues(alpha: 0.28)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.outfit(
-              color: AppColors.ivory.withValues(alpha: 0.52),
-              fontSize: 7,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.4,
-            ),
-          ),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              maxLines: 1,
-              style: GoogleFonts.outfit(
-                color: _partyCardOrangeSoft,
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
