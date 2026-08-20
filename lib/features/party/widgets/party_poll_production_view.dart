@@ -369,9 +369,14 @@ class PartyPollProductionView extends StatelessWidget {
             height: 26,
             child: Row(
               children: [
-                Expanded(child: _chipStatPill('BANK', '$score')),
+                Expanded(child: _chipStatPill('SCORE', '$score')),
                 const SizedBox(width: 8),
-                Expanded(child: _chipStatPill('ON TABLE', '$betTotal')),
+                Expanded(
+                  child: _chipStatPill(
+                    'BET LEFT',
+                    isReveal ? '--' : '$availableChips',
+                  ),
+                ),
               ],
             ),
           ),

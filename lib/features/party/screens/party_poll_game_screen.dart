@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,17 +45,34 @@ class _PendingPartyPollBetVisual {
   });
 }
 
+class _PendingPartyPollMoveVisual {
+  final String betId;
+  final int roundNumber;
+  final String targetPlayerId;
+  final double positionX;
+  final double positionY;
+  const _PendingPartyPollMoveVisual({
+    required this.betId,
+    required this.roundNumber,
+    required this.targetPlayerId,
+    required this.positionX,
+    required this.positionY,
+  });
+}
+
 class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     with WidgetsBindingObserver {
   Timer? _clockTimer;
   Timer? _refreshTimer;
   Timer? _reloadDebounce;
   Timer? _revealScanTimer;
+  Timer? _revealLeadInTimer;
   Timer? _revealClinkTimer;
   bool _transitionCommandInFlight = false;
   bool _snapshotLoadInFlight = false;
   bool _betCommandInFlight = false;
   _PendingPartyPollBetVisual? _pendingBetVisual;
+  _PendingPartyPollMoveVisual? _pendingMoveVisual;
   bool _showPartyRoundTransition = false;
   int? _partyTransitionRound;
   Timer? _partyRoundTransitionTimer;
@@ -65,6 +83,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   String? _startedRevealKey;
   int? _activeRevealSlotIndex;
   bool _emphasizeRevealWinners = false;
+  int? _lastDisplayedRemainingSecond;
 
   @override
   void initState() {
@@ -74,8 +93,16 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       unawaited(_initialLoad());
     });
     _clockTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (mounted) setState(() {});
       unawaited(_runDeadlineTransitionIfNeeded());
+      final snapshot = ref.read(partyPollSessionProvider).snapshot;
+      final deadline = snapshot?.round.phaseEndsAt;
+      final second = deadline == null
+          ? 0
+          : max(0, deadline.difference(DateTime.now().toUtc()).inSeconds);
+      if (mounted && second != _lastDisplayedRemainingSecond) {
+        _lastDisplayedRemainingSecond = second;
+        setState(() {});
+      }
     });
     _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       unawaited(_loadSnapshot());
@@ -118,6 +145,8 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _cancelRevealChoreography({required bool resetRevealKey}) {
+    _revealLeadInTimer?.cancel();
+    _revealLeadInTimer = null;
     _revealScanTimer?.cancel();
     _revealScanTimer = null;
     _revealClinkTimer?.cancel();
@@ -157,6 +186,8 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     PartyPollSnapshot snapshot,
     String key,
   ) async {
+    const impactMs = 2050;
+    const maxCadenceMs = 240;
     final players = [...snapshot.round.players]
       ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
     final activeSlots = players
@@ -174,52 +205,58 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       ...activeSlots,
       if (primaryWinningSlot != null) primaryWinningSlot,
     ];
-
     await ref.read(audioServiceProvider).playResultReveal();
     if (!_isCurrentReveal(key) || scanOrder.isEmpty) return;
-
-    var step = 0;
-    setState(() => _activeRevealSlotIndex = scanOrder.first);
-    _revealScanTimer = Timer.periodic(const Duration(milliseconds: 240), (
-      timer,
-    ) {
-      if (!_isCurrentReveal(key)) {
-        timer.cancel();
-        return;
+    final cadenceMs = min(maxCadenceMs, impactMs ~/ scanOrder.length);
+    final leadInMs = impactMs - cadenceMs * scanOrder.length;
+    void complete() {
+      if (!_isCurrentReveal(key)) return;
+      _revealScanTimer?.cancel();
+      _revealScanTimer = null;
+      setState(() {
+        _activeRevealSlotIndex = primaryWinningSlot;
+        _emphasizeRevealWinners = true;
+      });
+      final own = snapshot.round.bets
+          .where((bet) => bet.playerId == snapshot.me.playerId)
+          .toList(growable: false);
+      if (own.isNotEmpty) {
+        final net = own.fold<int>(
+          0,
+          (sum, bet) => sum + (bet.won == true ? bet.chips : -bet.chips),
+        );
+        final audio = ref.read(audioServiceProvider);
+        unawaited(net > 0 ? audio.playPayout() : audio.playChipLoss());
       }
-
-      step++;
-      if (step >= scanOrder.length) {
-        timer.cancel();
-        _revealScanTimer = null;
-        setState(() {
-          _activeRevealSlotIndex = primaryWinningSlot;
-          _emphasizeRevealWinners = true;
-        });
-
-        final ownBets = snapshot.round.bets
-            .where((bet) => bet.playerId == snapshot.me.playerId)
-            .toList(growable: false);
-        if (ownBets.isNotEmpty) {
-          final net = ownBets.fold<int>(
-            0,
-            (total, bet) => total + (bet.won == true ? bet.chips : -bet.chips),
-          );
-          final audio = ref.read(audioServiceProvider);
-          unawaited(net > 0 ? audio.playPayout() : audio.playChipLoss());
+      _revealClinkTimer = Timer(const Duration(milliseconds: 240), () {
+        if (_isCurrentReveal(key)) {
+          unawaited(ref.read(audioServiceProvider).playClink());
         }
+      });
+    }
 
-        _revealClinkTimer = Timer(const Duration(milliseconds: 240), () {
-          if (_isCurrentReveal(key)) {
-            unawaited(ref.read(audioServiceProvider).playClink());
-          }
-        });
-        return;
-      }
+    void begin() {
+      if (!_isCurrentReveal(key)) return;
+      var step = 0;
+      setState(() => _activeRevealSlotIndex = scanOrder.first);
+      _revealScanTimer = Timer.periodic(Duration(milliseconds: cadenceMs), (
+        timer,
+      ) {
+        if (!_isCurrentReveal(key)) {
+          timer.cancel();
+          return;
+        }
+        step++;
+        if (step >= scanOrder.length) {
+          complete();
+          return;
+        }
+        unawaited(ref.read(audioServiceProvider).playClick());
+        setState(() => _activeRevealSlotIndex = scanOrder[step]);
+      });
+    }
 
-      unawaited(ref.read(audioServiceProvider).playClick());
-      setState(() => _activeRevealSlotIndex = scanOrder[step]);
-    });
+    _revealLeadInTimer = Timer(Duration(milliseconds: leadInMs), begin);
   }
 
   Future<void> _loadSnapshot({bool connectRealtime = false}) async {
@@ -667,7 +704,16 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       return;
     }
 
-    setState(() => _betCommandInFlight = true);
+    setState(() {
+      _betCommandInFlight = true;
+      _pendingMoveVisual = _PendingPartyPollMoveVisual(
+        betId: betId,
+        roundNumber: snapshot.round.number,
+        targetPlayerId: targetPlayerId,
+        positionX: positionX,
+        positionY: positionY,
+      );
+    });
     ref.read(audioServiceProvider).playDrop();
     try {
       final updated = await ref
@@ -691,7 +737,12 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         });
       }
     } finally {
-      if (mounted) setState(() => _betCommandInFlight = false);
+      if (mounted) {
+        setState(() {
+          _betCommandInFlight = false;
+          _pendingMoveVisual = null;
+        });
+      }
     }
   }
 
@@ -757,18 +808,28 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         .toList(growable: false);
     final viewBets = snapshot.round.bets
         .where((bet) => targetSlotByPlayerId.containsKey(bet.targetPlayerId))
-        .map(
-          (bet) => PartyPollViewBet(
+        .map((bet) {
+          final pendingMove = _pendingMoveVisual;
+          final usePendingMove =
+              pendingMove != null &&
+              snapshot.round.phase == PartyPollPhase.betting &&
+              pendingMove.roundNumber == snapshot.round.number &&
+              pendingMove.betId == bet.id &&
+              targetSlotByPlayerId.containsKey(pendingMove.targetPlayerId);
+          final targetPlayerId = usePendingMove
+              ? pendingMove.targetPlayerId
+              : bet.targetPlayerId;
+          return PartyPollViewBet(
             id: bet.id,
             bettorPlayerId: bet.playerId,
-            targetPlayerId: bet.targetPlayerId,
-            targetSlotIndex: targetSlotByPlayerId[bet.targetPlayerId]!,
+            targetPlayerId: targetPlayerId,
+            targetSlotIndex: targetSlotByPlayerId[targetPlayerId]!,
             chips: bet.chips,
-            positionX: bet.positionX,
-            positionY: bet.positionY,
+            positionX: usePendingMove ? pendingMove.positionX : bet.positionX,
+            positionY: usePendingMove ? pendingMove.positionY : bet.positionY,
             won: bet.won,
-          ),
-        )
+          );
+        })
         .toList();
     final isReveal = snapshot.round.phase == PartyPollPhase.reveal;
     final pending = _pendingBetVisual;
