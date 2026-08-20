@@ -24,7 +24,10 @@ begin
     raise exception using errcode = '22023', message = 'Invalid bet';
   end if;
 
-  select * into v_room from public.rooms where id = p_room_id;
+  select * into v_room from public.rooms where id = p_room_id for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'Room not found';
+  end if;
 
   -- Serializes all distinct bet actions for this authenticated player.
   select * into v_player
@@ -87,19 +90,36 @@ language plpgsql
 security definer
 set search_path to ''
 as $function$
+declare
+  v_room public.rooms%rowtype;
 begin
-  if not exists (
-    select 1 from public.players p
-    where p.room_id = p_room_id
-      and p.auth_user_id = (select auth.uid())
-      and p.is_host is true
-  ) then
-    raise exception using errcode = '42501', message = 'Host access required';
+  if not public.is_room_member_v2(p_room_id) then
+    raise exception using errcode = '42501', message = 'Room membership required';
+  end if;
+
+  select * into v_room
+  from public.rooms
+  where id = p_room_id
+  for update;
+
+  if not found then
+    return false;
+  end if;
+
+  if v_room.current_round <> p_round_number
+     or v_room.current_round < v_room.max_rounds
+     or v_room.round_phase <> 'revealAnswer'
+     or (v_room.phase_ends_at is not null
+         and v_room.phase_ends_at > statement_timestamp()) then
+    return false;
   end if;
 
   update public.rooms
   set status = 'finished', round_phase = 'idle', phase_ends_at = null
-  where id = p_room_id and current_round = p_round_number
+  where id = p_room_id
+    and status = 'playing'
+    and current_round = p_round_number
+    and current_round >= max_rounds
     and round_phase = 'revealAnswer'
     and (phase_ends_at is null or phase_ends_at <= statement_timestamp());
   return found;
