@@ -849,14 +849,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             icon: Icons.groups_rounded,
             title: 'ONE QUESTION, EVERYONE PLAYS',
             description:
-                'Pick the player who fits the prompt. Your chips are your vote and your confidence.',
+                'Pick who fits the prompt. Your pick is your vote; your chip is your risk.',
           ),
           const SizedBox(height: 18),
           _partyGuideBullet(
             icon: Icons.local_fire_department_rounded,
             title: 'SPLIT OR COMMIT',
             description:
-                'Put your stake on one player for two votes, or split it across two players for one vote each.',
+                'Back one player for two votes, or two players for one vote each. Chip value does not change voting power.',
           ),
           const SizedBox(height: 18),
           _partyGuideBullet(
