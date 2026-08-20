@@ -520,6 +520,7 @@ class AudioService {
           _currentBgmSource = null;
           _currentBgmKey = null;
           _bgmPausedForLifecycle = false;
+          await _safeStop(handle);
         }
       }
       await stopTicking();
@@ -538,6 +539,7 @@ class AudioService {
         _currentBgmSource = null;
         _currentBgmKey = null;
         _bgmPausedForLifecycle = false;
+        await _safeStop(pausedHandle);
       }
     }
     if (!_isMuted && (_currentBgmKey != _desiredBgmKey || _bgmHandle == null)) {

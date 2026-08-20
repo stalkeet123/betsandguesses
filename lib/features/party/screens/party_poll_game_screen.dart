@@ -813,6 +813,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
 
     setState(() {
       _betCommandInFlight = true;
+      _optimisticallyHiddenBetIds.add(betId);
       _selectedBetId = null;
       _selectedChipValue = null;
     });
@@ -861,6 +862,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         )
         .toList(growable: false);
     final viewBets = snapshot.round.bets
+        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => targetSlotByPlayerId.containsKey(bet.targetPlayerId))
         .map((bet) {
           final pendingMove = _pendingMoveVisual;
