@@ -369,11 +369,11 @@ class PartyPollProductionView extends StatelessWidget {
             height: 26,
             child: Row(
               children: [
-                Expanded(child: _chipStatPill('SCORE', '$score')),
+                Expanded(child: _chipStatPill('PROFIT', _formatProfit(score))),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _chipStatPill(
-                    'BET LEFT',
+                    'CHIPS LEFT',
                     isReveal ? '--' : '$availableChips',
                   ),
                 ),
@@ -480,6 +480,8 @@ class PartyPollProductionView extends StatelessWidget {
     1000 => PartyPalette.orangeSoft,
     _ => PartyPalette.orange,
   };
+  String _formatProfit(int value) => value > 0 ? '+$value' : '$value';
+
   Widget _playersStrip() {
     final sorted = [...players]..sort((a, b) => b.score.compareTo(a.score));
     final visiblePlayers = sorted.take(3).toList();
@@ -506,7 +508,7 @@ class PartyPollProductionView extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                'CHIPS',
+                'PROFIT',
                 style: GoogleFonts.outfit(
                   color: PartyPalette.orangeSoft,
                   fontSize: 9,
@@ -564,7 +566,7 @@ class PartyPollProductionView extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            '${visiblePlayers[i].score}',
+                            _formatProfit(visiblePlayers[i].score),
                             style: GoogleFonts.outfit(
                               color: PartyPalette.orangeSoft,
                               fontSize: 14,

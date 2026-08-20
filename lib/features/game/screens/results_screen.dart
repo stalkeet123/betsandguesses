@@ -170,6 +170,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
   }
 
+  String _formatPartyProfit(int value) {
+    final formatted = _formatScore(value);
+    return value > 0 ? '+$formatted' : formatted;
+  }
+
   @override
   Widget build(BuildContext context) {
     final room = ref.watch(currentRoomProvider);
@@ -185,6 +190,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     }
 
     final winners = _winners;
+    final isParty = room?.gameMode == GameMode.party;
 
     return PopScope(
       canPop: false,
@@ -257,9 +263,15 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                             children: [
                               _buildHeader(compact: isCompact),
                               SizedBox(height: isCompact ? 8 : 12),
-                              _buildWinnerCard(winners, compact: isCompact),
+                              _buildWinnerCard(
+                                winners,
+                                compact: isCompact,
+                                isParty: isParty,
+                              ),
                               SizedBox(height: isCompact ? 8 : 12),
-                              Expanded(child: _buildScoreboard()),
+                              Expanded(
+                                child: _buildScoreboard(isParty: isParty),
+                              ),
                               SizedBox(height: isCompact ? 8 : 12),
                               _buildActions(),
                             ],
@@ -346,7 +358,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
   }
 
-  Widget _buildWinnerCard(List<Player> winners, {required bool compact}) {
+  Widget _buildWinnerCard(
+    List<Player> winners, {
+    required bool compact,
+    required bool isParty,
+  }) {
     final hasWinner = winners.isNotEmpty;
     final isFullTie =
         winners.length > 1 && winners.length == _sortedPlayers.length;
@@ -405,7 +421,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 ),
                 SizedBox(height: compact ? 8 : 10),
                 Text(
-                  'FINAL SCORE',
+                  isParty ? 'FINAL PROFIT' : 'FINAL SCORE',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: AppColors.brassLight,
@@ -417,7 +433,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    _formatScore(winners.first.bankScore),
+                    isParty
+                        ? _formatPartyProfit(winners.first.bankScore)
+                        : _formatScore(winners.first.bankScore),
                     maxLines: 1,
                     style: TextStyle(
                       fontFamily: 'RehnCondensed',
@@ -441,7 +459,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     ).animate().fadeIn(duration: 320.ms).slideY(begin: 0.06);
   }
 
-  Widget _buildScoreboard() {
+  Widget _buildScoreboard({required bool isParty}) {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: _darkPanelDecoration(radius: 20),
@@ -455,7 +473,10 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 Expanded(child: _buildBoardHeader('PLAYER')),
                 SizedBox(
                   width: 104,
-                  child: _buildBoardHeader('FINAL SCORE', alignRight: true),
+                  child: _buildBoardHeader(
+                    isParty ? 'PROFIT' : 'FINAL SCORE',
+                    alignRight: true,
+                  ),
                 ),
               ],
             ),
@@ -465,7 +486,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             child: _sortedPlayers.isEmpty
                 ? Center(
                     child: Text(
-                      'Scores will appear here.',
+                      isParty
+                          ? 'Profits will appear here.'
+                          : 'Scores will appear here.',
                       style: Theme.of(
                         context,
                       ).textTheme.titleMedium?.copyWith(color: AppColors.ivory),
@@ -479,8 +502,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                       thickness: 1,
                       color: AppColors.brassLight.withValues(alpha: 0.18),
                     ),
-                    itemBuilder: (context, index) =>
-                        _buildScoreRow(_sortedPlayers[index], index),
+                    itemBuilder: (context, index) => _buildScoreRow(
+                      _sortedPlayers[index],
+                      index,
+                      isParty: isParty,
+                    ),
                   ),
           ),
         ],
@@ -488,7 +514,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     ).animate().fadeIn(delay: 120.ms).slideY(begin: 0.05);
   }
 
-  Widget _buildScoreRow(Player player, int index) {
+  Widget _buildScoreRow(Player player, int index, {required bool isParty}) {
     final rank = _rankForIndex(index);
     final isWinner = rank == 1;
     final rankColor = switch (rank) {
@@ -566,7 +592,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
               child: Text(
-                _formatScore(player.bankScore),
+                isParty
+                    ? _formatPartyProfit(player.bankScore)
+                    : _formatScore(player.bankScore),
                 maxLines: 1,
                 style: TextStyle(
                   color: isWinner ? AppColors.feltDark : AppColors.ivory,
