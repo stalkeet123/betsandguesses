@@ -132,7 +132,6 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
           _activeRevealSlotIndex != null ||
           _emphasizeRevealWinners;
       _cancelRevealChoreography(resetRevealKey: true);
-      _partyRoundTransitionTimer?.cancel();
       if (needsClear && mounted) {
         setState(() {
           _activeRevealSlotIndex = null;
@@ -343,49 +342,62 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     if (snapshot.status == 'finished') _goToResultsOnce();
   }
 
-  Widget _buildPartyRoundTransitionOverlay(PartyPollSnapshot snapshot) =>
-      IgnorePointer(
-            child: ColoredBox(
-              color: PartyPalette.nightDeep.withValues(alpha: .97),
-              child: SafeArea(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 5.5,
+  Widget _buildPartyRoundTransitionOverlay(PartyPollSnapshot snapshot) {
+    final round = snapshot.round;
+    final content = IgnorePointer(
+      child: ColoredBox(
+        color: PartyPalette.nightDeep.withValues(alpha: 0.97),
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 5.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: PartyPalette.surfaceRaised,
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: PartyPalette.orangeSoft.withValues(alpha: 0.6),
+                          width: 1.2,
                         ),
-                        decoration: BoxDecoration(
-                          color: PartyPalette.surfaceRaised,
-                          borderRadius: BorderRadius.circular(99),
-                          border: Border.all(
-                            color: PartyPalette.orangeSoft.withValues(
-                              alpha: .6,
-                            ),
-                            width: 1.2,
+                        boxShadow: [
+                          BoxShadow(
+                            color: PartyPalette.orange.withValues(alpha: 0.25),
+                            blurRadius: 10,
                           ),
-                        ),
-                        child: Text(
-                          'ROUND ${snapshot.round.number} OF ${snapshot.room.maxRounds}',
-                          style: GoogleFonts.outfit(
-                            color: PartyPalette.orangeSoft,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1,
-                          ),
+                        ],
+                      ),
+                      child: Text(
+                        'ROUND ${round.number} OF ${snapshot.room.maxRounds}',
+                        style: GoogleFonts.outfit(
+                          color: PartyPalette.orangeSoft,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.0,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      Text(
-                        'ROUND ${snapshot.round.number}',
+                    ),
+                    const SizedBox(height: 14),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'ROUND ${round.number}',
+                        maxLines: 1,
                         style: const TextStyle(
                           fontFamily: 'RehnCondensed',
                           color: PartyPalette.cream,
                           fontSize: 96,
                           fontWeight: FontWeight.w900,
-                          height: .88,
+                          height: 0.88,
+                          letterSpacing: 0,
                           shadows: [
                             Shadow(
                               color: Colors.black87,
@@ -396,41 +408,72 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                           ],
                         ),
                       ),
-                      const SizedBox(height: 18),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 14,
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            PartyPalette.surfaceRaised.withValues(alpha: 0.95),
+                            PartyPalette.surface.withValues(alpha: 0.98),
+                          ],
                         ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              PartyPalette.surfaceRaised.withValues(alpha: .95),
-                              PartyPalette.surface.withValues(alpha: .98),
-                            ],
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: PartyPalette.orangeSoft.withValues(
+                            alpha: 0.45,
                           ),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: PartyPalette.orangeSoft.withValues(
-                              alpha: .45,
-                            ),
-                            width: 1.4,
-                          ),
+                          width: 1.4,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircleAvatar(
-                              radius: 26,
-                              backgroundColor: PartyPalette.nightDeep,
-                              child: Icon(
-                                Icons.how_to_vote_rounded,
-                                color: PartyPalette.cream,
-                                size: 28,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const RadialGradient(
+                                colors: [
+                                  PartyPalette.surfaceRaised,
+                                  PartyPalette.nightDeep,
+                                ],
                               ),
+                              border: Border.all(
+                                color: PartyPalette.orangeSoft,
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: PartyPalette.orange.withValues(
+                                    alpha: 0.35,
+                                  ),
+                                  blurRadius: 12,
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 14),
-                            Column(
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.how_to_vote_rounded,
+                              color: PartyPalette.cream,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Flexible(
+                            child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -440,19 +483,23 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                                     color: PartyPalette.orangeSoft,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w900,
-                                    letterSpacing: 1,
+                                    letterSpacing: 1.0,
                                   ),
                                 ),
+                                const SizedBox(height: 2),
                                 const Text(
                                   'EVERYONE VOTES',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontFamily: 'RehnCondensed',
                                     color: PartyPalette.cream,
                                     fontSize: 32,
                                     fontWeight: FontWeight.w900,
-                                    height: .95,
+                                    height: 0.95,
                                   ),
                                 ),
+                                const SizedBox(height: 3),
                                 Text(
                                   'Majority Rules · Pick who fits best!',
                                   style: GoogleFonts.outfit(
@@ -463,26 +510,31 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                                 ),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          )
-          .animate(
-            key: ValueKey('party-round-transition-${snapshot.round.number}'),
-          )
-          .fadeIn(duration: 220.ms)
-          .scale(
-            begin: const Offset(.95, .95),
-            end: const Offset(1, 1),
-            duration: 450.ms,
-            curve: Curves.easeOutCubic,
-          )
-          .fadeOut(delay: 1600.ms, duration: 450.ms);
+          ),
+        ),
+      ),
+    );
+    if (MediaQuery.disableAnimationsOf(context)) return content;
+    return content
+        .animate(key: ValueKey('party-round-transition-${round.number}'))
+        .fadeIn(duration: 220.ms, curve: Curves.easeOut)
+        .scale(
+          begin: const Offset(0.95, 0.95),
+          end: const Offset(1, 1),
+          duration: 450.ms,
+          curve: Curves.easeOutCubic,
+        )
+        .fadeOut(delay: 1600.ms, duration: 450.ms, curve: Curves.easeIn);
+  }
+
   void _clearStalePendingBetVisual(PartyPollSnapshot snapshot) {
     final pending = _pendingBetVisual;
     if (pending == null ||
