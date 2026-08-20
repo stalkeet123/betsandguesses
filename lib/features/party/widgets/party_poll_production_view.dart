@@ -142,8 +142,8 @@ class PartyPollProductionView extends StatelessWidget {
                       (compact ? 100 : 120) -
                       8;
                   final questionBetHeight = min(
-                    height * (compact ? .28 : .29),
-                    max(compact ? 112.0 : 132.0, rawQuestionHeight),
+                    height * (compact ? .24 : .26),
+                    max(compact ? 104.0 : 118.0, rawQuestionHeight),
                   );
                   final chipTop = questionBetTop + questionBetHeight + gap;
                   final playersTop = chipTop + chipHeight + gap;
@@ -1315,9 +1315,9 @@ class PartyPollProductionView extends StatelessWidget {
           Expanded(
             child: _AdaptiveQuestionText(
               text: questionText,
-              color: PartyPalette.cream,
-              minFontSize: 20,
-              maxFontSize: 33,
+              color: AppColors.mahoganyDark,
+              minFontSize: 21,
+              maxFontSize: 34,
             ),
           ),
         ],
@@ -1794,7 +1794,7 @@ class _PartyPollSlotLabel extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 50, 4),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
