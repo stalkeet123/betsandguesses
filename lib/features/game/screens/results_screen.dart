@@ -52,7 +52,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final audio = ref.read(audioServiceProvider);
       await audio.stopTransientEffects();
-      await audio.startLobbyMusic();
+      await audio.startMainBgm();
       await audio.playEpicFanfare();
     });
     _loadResults();

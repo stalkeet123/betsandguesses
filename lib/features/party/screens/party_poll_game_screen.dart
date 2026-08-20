@@ -134,7 +134,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
 
   Future<void> _initialLoad() async {
     final audio = ref.read(audioServiceProvider);
-    unawaited(audio.startGameSilence());
+    unawaited(audio.startPartyGameBgm());
     unawaited(audio.preparePartyPollRevealAudio());
     await _loadSnapshot(connectRealtime: true);
   }

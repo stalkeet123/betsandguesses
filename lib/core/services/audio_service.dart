@@ -254,6 +254,11 @@ class AudioService {
 
     if (_currentBgmSource == source && _bgmHandle != null) {
       _currentBgmKey = bgmKey;
+      try {
+        SoLoud.instance.fadeVolume(_bgmHandle!, volume, fadeDuration);
+      } catch (error) {
+        debugPrint('BGM volume update failed: $error');
+      }
       return;
     }
 
@@ -305,6 +310,9 @@ class AudioService {
 
   Future<void> startMainBgm() =>
       _fadeToBgm(_loadBackgroundSource, volume: 0.12, bgmKey: 'main');
+
+  Future<void> startPartyGameBgm() =>
+      _fadeToBgm(_loadBackgroundSource, volume: 0.06, bgmKey: 'party_main');
 
   Future<void> startGameSilence() async {
     _desiredBgmKey = null;
@@ -514,6 +522,9 @@ class AudioService {
         return;
       case 'main':
         await startMainBgm();
+        return;
+      case 'party_main':
+        await startPartyGameBgm();
         return;
     }
   }
