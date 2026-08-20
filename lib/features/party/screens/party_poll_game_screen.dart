@@ -642,6 +642,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     );
     if (!targetExists) return;
     final ownTargetIds = snapshot.round.bets
+        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => bet.playerId == snapshot.me.playerId)
         .map((bet) => bet.targetPlayerId)
         .toSet();
@@ -650,6 +651,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       return;
     }
     final usedChips = snapshot.round.bets
+        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => bet.playerId == snapshot.me.playerId)
         .map((bet) => bet.chips)
         .toSet();
@@ -744,6 +746,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       return;
     }
     final otherTargetIds = snapshot.round.bets
+        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => bet.playerId == snapshot.me.playerId && bet.id != betId)
         .map((bet) => bet.targetPlayerId)
         .toSet();

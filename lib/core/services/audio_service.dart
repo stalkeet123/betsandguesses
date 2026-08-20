@@ -267,6 +267,7 @@ class AudioService {
     _bgmHandle = null;
     _currentBgmSource = null;
     _currentBgmKey = null;
+    _bgmPausedForLifecycle = false;
     if (oldHandle != null) {
       try {
         SoLoud.instance.fadeVolume(oldHandle, 0.0, fadeDuration);
@@ -292,6 +293,7 @@ class AudioService {
       _bgmHandle = newHandle;
       _currentBgmSource = source;
       _currentBgmKey = bgmKey;
+      _bgmPausedForLifecycle = false;
       SoLoud.instance.setProtectVoice(newHandle, true);
       SoLoud.instance.fadeVolume(newHandle, volume, fadeDuration);
     } catch (error) {
@@ -343,6 +345,7 @@ class AudioService {
     _bgmHandle = null;
     _currentBgmSource = null;
     _currentBgmKey = null;
+    _bgmPausedForLifecycle = false;
     if (!_engineReady) return;
 
     for (final handle in handles) {
