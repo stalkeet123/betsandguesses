@@ -200,6 +200,7 @@ class AudioService {
     if (!kIsWeb || _disposed) return;
     _webUserGestureReceived = true;
     await _ensureInitialized();
+    await _applyVolumes();
     if (!_isMuted && _isAppActive) await _resumeDesiredBgm();
   }
 
@@ -485,7 +486,7 @@ class AudioService {
     if (_isMuted) {
       await _stopBackgroundMusic(preserveDesired: true, immediate: true);
       await stopTicking();
-      await stopPayout();
+      await stopTransientEffects();
     } else if (_isAppActive) {
       await _resumeDesiredBgm();
     }
@@ -497,7 +498,7 @@ class AudioService {
     if (!active) {
       await _stopBackgroundMusic(preserveDesired: true, immediate: true);
       await stopTicking();
-      await stopPayout();
+      await stopTransientEffects();
       return;
     }
     if (!_isMuted) await _resumeDesiredBgm();

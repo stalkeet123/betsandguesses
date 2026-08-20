@@ -49,11 +49,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       duration: const Duration(seconds: 5),
     );
     _confettiController.play();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final audio = ref.read(audioServiceProvider);
-      audio.stopTransientEffects();
-      audio.startLobbyMusic();
-      audio.playEpicFanfare();
+      await audio.stopTransientEffects();
+      await audio.startLobbyMusic();
+      await audio.playEpicFanfare();
     });
     _loadResults();
   }
