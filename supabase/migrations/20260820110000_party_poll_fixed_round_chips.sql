@@ -605,6 +605,17 @@ public.place_party_poll_bet_v1(
 )
 to authenticated;
 
+revoke all on function
+public.place_party_bet_v1(
+  uuid,
+  integer,
+  integer,
+  uuid,
+  double precision,
+  double precision
+)
+from public, anon, authenticated;
+
 notify pgrst, 'reload schema';
 
 commit;
