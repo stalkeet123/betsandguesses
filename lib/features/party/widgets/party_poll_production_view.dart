@@ -9,6 +9,11 @@ import '../../../core/widgets/cached_asset_image.dart';
 import '../theme/party_palette.dart';
 import '../../game/widgets/poker_chip.dart';
 
+// Keep in sync with the reveal lead in PartyPollGameScreen.
+const _revealChipEntryDurationMs = 350;
+const _revealChipEntryStaggerMs = 40;
+const _revealChipEntryMaxStaggerMs = 200;
+
 class PartyPollViewPlayer {
   final String id;
   final int slotIndex;
@@ -1086,6 +1091,10 @@ class PartyPollProductionView extends StatelessWidget {
     final interactive = isOwnBet && !isReveal
         ? GestureDetector(onTap: () => onBetSelected(bet.id), child: visual)
         : IgnorePointer(child: visual);
+    final opponentRevealIndex = bets
+        .take(index)
+        .where((candidate) => candidate.bettorPlayerId != currentPlayerId)
+        .length;
     final revealedOpponent =
         isReveal &&
             !isOwnBet &&
@@ -1097,19 +1106,27 @@ class PartyPollProductionView extends StatelessWidget {
         ? interactive
               .animate(
                 key: ValueKey('reveal-chip-$roundNumber-${bet.id}'),
-                delay: Duration(milliseconds: min(200, index * 40)),
+                delay: Duration(
+                  milliseconds: min(
+                    _revealChipEntryMaxStaggerMs,
+                    opponentRevealIndex * _revealChipEntryStaggerMs,
+                  ),
+                ),
               )
-              .fadeIn(duration: 350.ms, curve: Curves.easeOutCubic)
+              .fadeIn(
+                duration: _revealChipEntryDurationMs.ms,
+                curve: Curves.easeOutCubic,
+              )
               .moveX(
                 begin: -min(150.0, boardSize.width * .55),
                 end: 0,
-                duration: 350.ms,
+                duration: _revealChipEntryDurationMs.ms,
                 curve: Curves.easeOutCubic,
               )
               .scale(
                 begin: const Offset(.76, .76),
                 end: const Offset(1, 1),
-                duration: 350.ms,
+                duration: _revealChipEntryDurationMs.ms,
                 curve: Curves.easeOutCubic,
               )
         : interactive;

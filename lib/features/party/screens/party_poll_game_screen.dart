@@ -27,6 +27,11 @@ class PartyPollGameScreen extends ConsumerStatefulWidget {
       _PartyPollGameScreenState();
 }
 
+// Must match the reveal chip entry contract in PartyPollProductionView.
+const _revealChipEntryDurationMs = 350;
+const _revealChipEntryStaggerMs = 40;
+const _revealChipEntryMaxStaggerMs = 200;
+
 class _PendingPartyPollBetVisual {
   final String clientActionId;
   final int roundNumber;
@@ -209,8 +214,19 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       ...activeSlots,
       if (primaryWinningSlot != null) primaryWinningSlot,
     ];
-    if (!MediaQuery.disableAnimationsOf(context)) {
-      await Future<void>.delayed(const Duration(milliseconds: 420));
+    final opponentBetCount = snapshot.round.bets
+        .where((bet) => bet.playerId != snapshot.me.playerId)
+        .length;
+    final revealEntryLeadMs =
+        MediaQuery.disableAnimationsOf(context) || opponentBetCount == 0
+        ? 0
+        : _revealChipEntryDurationMs +
+              min(
+                _revealChipEntryMaxStaggerMs,
+                (opponentBetCount - 1) * _revealChipEntryStaggerMs,
+              ).toInt();
+    if (revealEntryLeadMs > 0) {
+      await Future<void>.delayed(Duration(milliseconds: revealEntryLeadMs));
     }
     if (!_isCurrentReveal(key)) return;
     await ref.read(audioServiceProvider).playResultReveal();
