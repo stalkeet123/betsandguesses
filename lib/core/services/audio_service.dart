@@ -39,23 +39,21 @@ class AudioService {
   bool _isAppActive = true;
   bool _disposed = false;
   bool _webEngineReady = false;
+  bool _webUserGestureReceived = !kIsWeb;
   final Map<String, DateTime> _lastSfxPlayedAt = {};
 
-  static const _backgroundMusic = 'assets/sound/arka plan.mp3';
-  static const _elevatorMusic =
-      'assets/sound/686020__yellowtree__elevator-music.wav';
-  static const _questionSuspenseMusic =
-      'assets/sound/mixkit-game-show-suspense-waiting-667.wav';
-  static const _questionReveal = 'assets/sound/soru-acılma.wav';
-  static const _tickingClock = 'assets/sound/saat.wav';
-  static const _timeUp = 'assets/sound/sürebitti.wav';
-  static const _chipSelect = 'assets/sound/chip1.wav';
-  static const _chipDrop = 'assets/sound/çip2.wav';
-  static const _chipLoss = 'assets/sound/çipkaybolma.wav';
-  static const _resultReveal = 'assets/sound/sonuç açıklanma.flac';
-  static const _payoutWin = 'assets/sound/532861__joma86__allinpushchips.wav';
-  static const _epicFanfare =
-      'assets/sound/514492__metrostock99__grand-entrance-intro.wav';
+  static const _backgroundMusic = 'assets/sound/bgm_main.mp3';
+  static const _elevatorMusic = 'assets/sound/bgm_lobby.wav';
+  static const _questionSuspenseMusic = 'assets/sound/bgm_question.wav';
+  static const _questionReveal = 'assets/sound/sfx_question_reveal.wav';
+  static const _tickingClock = 'assets/sound/sfx_clock.wav';
+  static const _timeUp = 'assets/sound/sfx_time_up.wav';
+  static const _chipSelect = 'assets/sound/sfx_chip_select.wav';
+  static const _chipDrop = 'assets/sound/sfx_chip_drop.wav';
+  static const _chipLoss = 'assets/sound/sfx_chip_loss.wav';
+  static const _resultReveal = 'assets/sound/sfx_result_reveal.flac';
+  static const _payoutWin = 'assets/sound/sfx_payout.wav';
+  static const _epicFanfare = 'assets/sound/sfx_fanfare.wav';
 
   AudioService(this._prefs) {
     _isMuted = _prefs.getBool('audio_muted') ?? false;
@@ -198,9 +196,20 @@ class AudioService {
     (source) => _epicFanfareSource = source,
   );
 
+  Future<void> unlockFromUserGesture() async {
+    if (!kIsWeb || _disposed) return;
+    _webUserGestureReceived = true;
+    await _ensureInitialized();
+    if (!_isMuted && _isAppActive) await _resumeDesiredBgm();
+  }
+
   Future<void> _applyVolumes() async {
     if (!_engineReady) return;
-    SoLoud.instance.setGlobalVolume(_isMuted ? 0.0 : 1.0);
+    SoLoud.instance.setGlobalVolume(
+      _isMuted || !_isAppActive || (kIsWeb && !_webUserGestureReceived)
+          ? 0.0
+          : 1.0,
+    );
   }
 
   Future<void> _fadeToBgm(
@@ -216,8 +225,14 @@ class AudioService {
         return;
       }
     }
-    if (_isMuted || !_isAppActive || _disposed) return;
-    if (bgmKey != null && _pendingBgmKey == bgmKey) return;
+    if (_isMuted ||
+        !_isAppActive ||
+        _disposed ||
+        (kIsWeb && !_webUserGestureReceived))
+      return;
+    if (bgmKey != null && _pendingBgmKey == bgmKey) {
+      return;
+    }
 
     if (bgmKey != null) _pendingBgmKey = bgmKey;
     final requestId = ++_bgmRequestId;
@@ -289,6 +304,11 @@ class AudioService {
 
   Future<void> startMainBgm() =>
       _fadeToBgm(_loadBackgroundSource, volume: 0.12, bgmKey: 'main');
+
+  Future<void> startGameSilence() async {
+    _desiredBgmKey = null;
+    await _stopBackgroundMusic(preserveDesired: false, immediate: true);
+  }
 
   Future<void> stopBackgroundMusic({bool immediate = false}) async {
     _desiredBgmKey = null;
@@ -504,7 +524,11 @@ class AudioService {
     Duration minInterval = const Duration(milliseconds: 45),
     int maxInstances = 3,
   }) async {
-    if (_isMuted || !_isAppActive || _disposed) return;
+    if (_isMuted ||
+        !_isAppActive ||
+        _disposed ||
+        (kIsWeb && !_webUserGestureReceived))
+      return;
 
     final requestedAt = DateTime.now();
     final previousRequest = _lastSfxPlayedAt[key];
@@ -612,9 +636,33 @@ class AudioService {
     maxInstances: 1,
   );
 
+  Future<void> _stopSourceHandles(AudioSource? source) async {
+    final handles = source?.handles.toList(growable: false);
+    if (handles == null) {
+      return;
+    }
+    for (final handle in handles) {
+      await _safeStop(handle);
+    }
+  }
+
+  Future<void> stopResultReveal() => _stopSourceHandles(_resultRevealSource);
+  Future<void> stopFanfare() => _stopSourceHandles(_epicFanfareSource);
+
+  Future<void> stopTransientEffects() async {
+    await stopResultReveal();
+    await stopFanfare();
+    await _stopSourceHandles(_questionRevealSource);
+    await _stopSourceHandles(_timeUpSource);
+    await _stopSourceHandles(_chipLossSource);
+    await stopPayout();
+  }
+
   Future<void> stopPayout() async {
     final handles = _payoutWinSource?.handles.toList(growable: false);
-    if (handles == null) return;
+    if (handles == null) {
+      return;
+    }
     for (final handle in handles) {
       await _safeStop(handle);
     }

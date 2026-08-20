@@ -128,7 +128,9 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   Future<void> _initialLoad() async {
-    unawaited(ref.read(audioServiceProvider).preparePartyPollRevealAudio());
+    final audio = ref.read(audioServiceProvider);
+    unawaited(audio.startGameSilence());
+    unawaited(audio.preparePartyPollRevealAudio());
     await _loadSnapshot(connectRealtime: true);
   }
 
@@ -145,6 +147,8 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _cancelRevealChoreography({required bool resetRevealKey}) {
+    unawaited(ref.read(audioServiceProvider).stopResultReveal());
+    unawaited(ref.read(audioServiceProvider).stopPayout());
     _revealLeadInTimer?.cancel();
     _revealLeadInTimer = null;
     _revealScanTimer?.cancel();
@@ -358,6 +362,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _goToResultsOnce() {
+    unawaited(ref.read(audioServiceProvider).stopTransientEffects());
     if (_resultsNavigationScheduled || !mounted) return;
     _resultsNavigationScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {

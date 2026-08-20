@@ -195,7 +195,9 @@ class _TahminAppState extends ConsumerState<TahminApp>
                             onPointerDown: (_) {
                               if (!_hasInteracted) {
                                 _hasInteracted = true;
-                                ref.read(audioServiceProvider).startMainBgm();
+                                ref
+                                    .read(audioServiceProvider)
+                                    .unlockFromUserGesture();
                               }
                             },
                             child: ClipRect(child: child),

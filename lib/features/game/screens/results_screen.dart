@@ -50,8 +50,10 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
     _confettiController.play();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(audioServiceProvider).startLobbyMusic();
-      ref.read(audioServiceProvider).playEpicFanfare();
+      final audio = ref.read(audioServiceProvider);
+      audio.stopTransientEffects();
+      audio.startLobbyMusic();
+      audio.playEpicFanfare();
     });
     _loadResults();
   }
