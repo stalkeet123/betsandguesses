@@ -81,6 +81,30 @@ begin
 end;
 $function$;
 
+create or replace function public.finish_game_v2(p_room_id uuid, p_round_number integer)
+returns boolean
+language plpgsql
+security definer
+set search_path to ''
+as $function$
+begin
+  if not exists (
+    select 1 from public.players p
+    where p.room_id = p_room_id
+      and p.auth_user_id = (select auth.uid())
+      and p.is_host is true
+  ) then
+    raise exception using errcode = '42501', message = 'Host access required';
+  end if;
+
+  update public.rooms
+  set status = 'finished', round_phase = 'idle', phase_ends_at = null
+  where id = p_room_id and current_round = p_round_number
+    and round_phase = 'revealAnswer'
+    and (phase_ends_at is null or phase_ends_at <= statement_timestamp());
+  return found;
+end;
+$function$;
 create or replace function public.reset_room_to_lobby_v1(p_room_id uuid)
 returns jsonb
 language plpgsql
