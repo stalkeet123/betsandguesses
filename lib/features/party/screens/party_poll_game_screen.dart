@@ -26,14 +26,11 @@ class PartyPollGameScreen extends ConsumerStatefulWidget {
 
 class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     with WidgetsBindingObserver {
-  // Measured from assets/sound/sonuç açıklanma.flac: dominant drum impact
-  // begins at 2050 ms from playback start.
-  static const _revealImpactOffset = Duration(milliseconds: 2050);
   Timer? _clockTimer;
   Timer? _refreshTimer;
   Timer? _reloadDebounce;
-  Timer? _revealImpactTimer;
-  final List<Timer> _revealScanTimers = [];
+  Timer? _revealScanTimer;
+  Timer? _revealClinkTimer;
   bool _transitionCommandInFlight = false;
   bool _snapshotLoadInFlight = false;
   bool _betCommandInFlight = false;
@@ -96,12 +93,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _cancelRevealChoreography({required bool resetRevealKey}) {
-    _revealImpactTimer?.cancel();
-    _revealImpactTimer = null;
-    for (final timer in _revealScanTimers) {
-      timer.cancel();
-    }
-    _revealScanTimers.clear();
+    _revealScanTimer?.cancel();
+    _revealScanTimer = null;
+    _revealClinkTimer?.cancel();
+    _revealClinkTimer = null;
     if (resetRevealKey) _startedRevealKey = null;
   }
 
@@ -139,52 +134,66 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   ) async {
     final players = [...snapshot.round.players]
       ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-
-    await ref.read(audioServiceProvider).playResultReveal();
-    if (!_isCurrentReveal(key)) return;
-
-    if (players.isNotEmpty) {
-      setState(() => _activeRevealSlotIndex = players.first.slotIndex);
-      for (var index = 1; index < players.length; index++) {
-        final delay = Duration(
-          milliseconds:
-              (_revealImpactOffset.inMilliseconds * index / players.length)
-                  .round(),
-        );
-        final timer = Timer(delay, () {
-          if (!_isCurrentReveal(key)) return;
-          unawaited(ref.read(audioServiceProvider).playClick());
-          setState(() => _activeRevealSlotIndex = players[index].slotIndex);
-        });
-        _revealScanTimers.add(timer);
+    final activeSlots = players
+        .map((player) => player.slotIndex)
+        .toList(growable: false);
+    int? primaryWinningSlot;
+    for (final player in players) {
+      if (snapshot.round.winningPlayerIds.contains(player.id)) {
+        primaryWinningSlot = player.slotIndex;
+        break;
       }
     }
+    final scanOrder = <int>[
+      ...activeSlots,
+      ...activeSlots,
+      if (primaryWinningSlot != null) primaryWinningSlot,
+    ];
 
-    _revealImpactTimer = Timer(_revealImpactOffset, () {
-      if (!_isCurrentReveal(key)) return;
-      setState(() {
-        _activeRevealSlotIndex = null;
-        _emphasizeRevealWinners = true;
-      });
+    await ref.read(audioServiceProvider).playResultReveal();
+    if (!_isCurrentReveal(key) || scanOrder.isEmpty) return;
 
-      final ownBets = snapshot.round.bets
-          .where((bet) => bet.playerId == snapshot.me.playerId)
-          .toList(growable: false);
-      if (ownBets.isNotEmpty) {
-        final net = ownBets.fold<int>(
-          0,
-          (total, bet) => total + (bet.won == true ? bet.chips : -bet.chips),
-        );
-        final audio = ref.read(audioServiceProvider);
-        unawaited(net > 0 ? audio.playPayout() : audio.playChipLoss());
+    var step = 0;
+    setState(() => _activeRevealSlotIndex = scanOrder.first);
+    _revealScanTimer = Timer.periodic(const Duration(milliseconds: 240), (
+      timer,
+    ) {
+      if (!_isCurrentReveal(key)) {
+        timer.cancel();
+        return;
       }
 
-      final clinkTimer = Timer(const Duration(milliseconds: 240), () {
-        if (_isCurrentReveal(key)) {
-          unawaited(ref.read(audioServiceProvider).playClink());
+      step++;
+      if (step >= scanOrder.length) {
+        timer.cancel();
+        _revealScanTimer = null;
+        setState(() {
+          _activeRevealSlotIndex = primaryWinningSlot;
+          _emphasizeRevealWinners = true;
+        });
+
+        final ownBets = snapshot.round.bets
+            .where((bet) => bet.playerId == snapshot.me.playerId)
+            .toList(growable: false);
+        if (ownBets.isNotEmpty) {
+          final net = ownBets.fold<int>(
+            0,
+            (total, bet) => total + (bet.won == true ? bet.chips : -bet.chips),
+          );
+          final audio = ref.read(audioServiceProvider);
+          unawaited(net > 0 ? audio.playPayout() : audio.playChipLoss());
         }
-      });
-      _revealScanTimers.add(clinkTimer);
+
+        _revealClinkTimer = Timer(const Duration(milliseconds: 240), () {
+          if (_isCurrentReveal(key)) {
+            unawaited(ref.read(audioServiceProvider).playClink());
+          }
+        });
+        return;
+      }
+
+      unawaited(ref.read(audioServiceProvider).playClick());
+      setState(() => _activeRevealSlotIndex = scanOrder[step]);
     });
   }
 
