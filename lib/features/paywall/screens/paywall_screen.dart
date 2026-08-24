@@ -114,7 +114,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     if (!_purchaseDataLoaded) return 'LOADING…';
     return _isPackagePurchasable(packageIdentifier)
         ? _packagePrices[packageIdentifier]!
-        : 'UNAVAILABLE';
+        : 'CURRENTLY UNAVAILABLE';
+  }
+
+  String _purchaseCtaLabel(String action, String packageIdentifier) {
+    final price = _purchasePriceLabel(packageIdentifier);
+    if (price == 'LOADING…' || price == 'CURRENTLY UNAVAILABLE') {
+      return price;
+    }
+    return '$action • $price';
   }
 
   Future<void> _purchase(String packageIdentifier) async {
@@ -257,9 +265,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                               compact: veryShort || short,
                             ),
                           ),
-                          SizedBox(height: veryShort ? 6 : 9),
-                          _buildBottomBanner(compact: veryShort),
-                          SizedBox(height: veryShort ? 4 : 7),
+                          SizedBox(height: veryShort ? 5 : 8),
                           _buildFooter(compact: veryShort),
                         ],
                       ),
@@ -342,7 +348,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   Widget _buildBenefitStrip({required bool compact}) {
     return Container(
-      padding: EdgeInsets.symmetric(vertical: compact ? 7 : 9),
+      padding: EdgeInsets.symmetric(vertical: compact ? 5 : 7),
       decoration: _darkPanel(radius: 14),
       child: IntrinsicHeight(
         child: Row(
@@ -428,181 +434,112 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cardCompact = compact || constraints.maxHeight < 285;
+        final cardCompact = compact || constraints.maxHeight < 300;
+        final lifetimeHeight = cardCompact ? 106.0 : 132.0;
 
         return AnimatedBuilder(
           animation: _glowController,
           builder: (context, _) {
-            final cards = [
-              _PlanCard(
-                title: 'PARTY PASS',
-                subtitle: '24 Hours',
-                badge: 'MOST POPULAR',
-                crownColor: AppColors.chipGold,
-                glowValue: _glowController.value,
-                compact: cardCompact,
-                background: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF5F2477),
-                    Color(0xFF271127),
-                    Color(0xFF14071C),
-                  ],
-                ),
-                features: const [
-                  _PlanFeature(Icons.access_time_rounded, '24-hour access'),
-                  _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
-                  _PlanFeature(
-                    Icons.all_inclusive_rounded,
-                    'Unlimited hosting',
-                  ),
-                  _PlanFeature(Icons.groups_rounded, '10 Players • 12 Rounds'),
-                  _PlanFeature(
-                    Icons.category_rounded,
-                    'Pick Classic categories',
-                  ),
-                ],
-                price: _purchasePriceLabel(
-                  RevenueCatConstants.dailyPassPackageIdentifier,
-                ),
-                footer: '24 HOURS ACCESS',
-                isLoading:
-                    _busyPackageIdentifier ==
-                    RevenueCatConstants.dailyPassPackageIdentifier,
-                onTap:
-                    isPremium ||
-                        !_isPackagePurchasable(
-                          RevenueCatConstants.dailyPassPackageIdentifier,
-                        )
-                    ? null
-                    : () => _purchase(
-                        RevenueCatConstants.dailyPassPackageIdentifier,
-                      ),
-              ),
-              _PlanCard(
-                title: 'FULL ACCESS',
-                subtitle: 'One-time purchase',
-                crownColor: AppColors.neonGreen,
-                compact: cardCompact,
-                features: const [
-                  _PlanFeature(
-                    Icons.workspace_premium_rounded,
-                    'Lifetime access',
-                  ),
-                  _PlanFeature(
-                    Icons.all_inclusive_rounded,
-                    'Unlimited hosting',
-                  ),
-                  _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
-                  _PlanFeature(Icons.timer_outlined, 'Up to 12 Rounds'),
-                  _PlanFeature(
-                    Icons.category_rounded,
-                    'Pick Classic categories',
-                  ),
-                ],
-                price: _purchasePriceLabel(
-                  RevenueCatConstants.lifetimePackageIdentifier,
-                ),
-                footer: 'LIFETIME ACCESS',
-                isGreenPrice: true,
-                isLoading:
-                    _busyPackageIdentifier ==
-                    RevenueCatConstants.lifetimePackageIdentifier,
-                onTap:
-                    isPremium ||
-                        !_isPackagePurchasable(
-                          RevenueCatConstants.lifetimePackageIdentifier,
-                        )
-                    ? null
-                    : () => _purchase(
-                        RevenueCatConstants.lifetimePackageIdentifier,
-                      ),
-              ),
-            ];
-
-            return Row(
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: cards[0]),
-                SizedBox(width: cardCompact ? 8 : 14),
-                Expanded(child: cards[1]),
+                Expanded(
+                  child: _PlanCard(
+                    variant: _PlanCardVariant.primary,
+                    title: 'PARTY PASS',
+                    subtitle: 'Everything premium for the next 24 hours.',
+                    badge: 'MOST POPULAR',
+                    crownColor: AppColors.chipGold,
+                    glowValue: _glowController.value,
+                    compact: cardCompact,
+                    background: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF5F2477),
+                        Color(0xFF271127),
+                        Color(0xFF14071C),
+                      ],
+                    ),
+                    features: const [
+                      _PlanFeature(
+                        Icons.all_inclusive_rounded,
+                        'Unlimited hosting',
+                      ),
+                      _PlanFeature(Icons.groups_rounded, 'Up to 10 players'),
+                      _PlanFeature(Icons.timer_outlined, 'Up to 12 rounds'),
+                      _PlanFeature(
+                        Icons.category_rounded,
+                        'Pick Classic categories',
+                      ),
+                    ],
+                    priceLabel: _purchaseCtaLabel(
+                      'GET PARTY PASS',
+                      RevenueCatConstants.dailyPassPackageIdentifier,
+                    ),
+                    isPurchasable: _isPackagePurchasable(
+                      RevenueCatConstants.dailyPassPackageIdentifier,
+                    ),
+                    isLoading:
+                        _busyPackageIdentifier ==
+                        RevenueCatConstants.dailyPassPackageIdentifier,
+                    onTap:
+                        isPremium ||
+                            !_isPackagePurchasable(
+                              RevenueCatConstants.dailyPassPackageIdentifier,
+                            )
+                        ? null
+                        : () => _purchase(
+                            RevenueCatConstants.dailyPassPackageIdentifier,
+                          ),
+                  ),
+                ),
+                SizedBox(height: cardCompact ? 7 : 10),
+                SizedBox(
+                  height: lifetimeHeight,
+                  child: _PlanCard(
+                    variant: _PlanCardVariant.secondary,
+                    title: 'FULL ACCESS',
+                    subtitle: 'Lifetime • One-time purchase',
+                    crownColor: AppColors.neonGreen,
+                    compact: cardCompact,
+                    features: const [
+                      _PlanFeature(
+                        Icons.all_inclusive_rounded,
+                        'Unlimited hosting • Up to 10 players',
+                      ),
+                      _PlanFeature(
+                        Icons.category_rounded,
+                        'Up to 12 rounds • Classic categories',
+                      ),
+                    ],
+                    priceLabel: _purchaseCtaLabel(
+                      'LIFETIME',
+                      RevenueCatConstants.lifetimePackageIdentifier,
+                    ),
+                    isPurchasable: _isPackagePurchasable(
+                      RevenueCatConstants.lifetimePackageIdentifier,
+                    ),
+                    isGreenPrice: true,
+                    isLoading:
+                        _busyPackageIdentifier ==
+                        RevenueCatConstants.lifetimePackageIdentifier,
+                    onTap:
+                        isPremium ||
+                            !_isPackagePurchasable(
+                              RevenueCatConstants.lifetimePackageIdentifier,
+                            )
+                        ? null
+                        : () => _purchase(
+                            RevenueCatConstants.lifetimePackageIdentifier,
+                          ),
+                  ),
+                ),
               ],
             );
           },
         );
       },
-    );
-  }
-
-  Widget _buildBottomBanner({required bool compact}) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 10 : 14,
-        vertical: compact ? 7 : 9,
-      ),
-      decoration: _darkPanel(radius: 14).copyWith(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF17100F), Color(0xFF071C13), Color(0xFF101010)],
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: compact ? 32 : 38,
-            height: compact ? 32 : 38,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppColors.goldGradient,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.brass.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                ),
-              ],
-            ),
-            child: Icon(
-              Icons.workspace_premium_rounded,
-              color: AppColors.ink,
-              size: compact ? 19 : 22,
-            ),
-          ),
-          SizedBox(width: compact ? 8 : 11),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'HOST MORE. PLAY BIGGER.',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.brassLight,
-                    fontSize: compact ? 12 : 14,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                  ),
-                ),
-                SizedBox(height: compact ? 3 : 4),
-                Text(
-                  'Unlimited hosting • 10 players • 12 rounds',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.ivory,
-                    fontSize: compact ? 9 : 11,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -857,15 +794,18 @@ class _PlanFeature {
   const _PlanFeature(this.icon, this.label);
 }
 
+enum _PlanCardVariant { primary, secondary }
+
 class _PlanCard extends StatelessWidget {
+  final _PlanCardVariant variant;
   final String title;
   final String subtitle;
   final String? badge;
   final Color crownColor;
   final Gradient? background;
   final List<_PlanFeature> features;
-  final String? price;
-  final String footer;
+  final String priceLabel;
+  final bool isPurchasable;
   final bool isGreenPrice;
   final bool isLoading;
   final double glowValue;
@@ -873,14 +813,15 @@ class _PlanCard extends StatelessWidget {
   final bool compact;
 
   const _PlanCard({
+    required this.variant,
     required this.title,
     required this.subtitle,
     this.badge,
     this.crownColor = AppColors.brassLight,
     this.background,
     required this.features,
-    required this.footer,
-    this.price,
+    required this.priceLabel,
+    required this.isPurchasable,
     this.isGreenPrice = false,
     this.isLoading = false,
     this.glowValue = 0.0,
@@ -890,174 +831,348 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isGlowing = glowValue > 0;
-    final glow = isGlowing ? 0.26 + (glowValue * 0.46) : 0.0;
+    final isPrimary = variant == _PlanCardVariant.primary;
     final badgeOverlap = compact ? 10.0 : 14.0;
+    final glow = 0.26 + (glowValue * 0.46);
+    final card = Container(
+      alignment: Alignment.topCenter,
+      padding: EdgeInsets.fromLTRB(
+        compact ? 11 : 16,
+        isPrimary ? badgeOverlap + (compact ? 12 : 16) : (compact ? 8 : 10),
+        compact ? 11 : 16,
+        isPrimary ? (compact ? 9 : 13) : (compact ? 8 : 10),
+      ),
+      decoration: BoxDecoration(
+        gradient:
+            background ??
+            LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.feltDark.withValues(alpha: 0.98),
+                AppColors.felt.withValues(alpha: 0.72),
+                AppColors.feltDark.withValues(alpha: 0.98),
+              ],
+            ),
+        borderRadius: BorderRadius.circular(compact ? 14 : 18),
+        border: Border.all(
+          color: isPrimary
+              ? Color.lerp(
+                  AppColors.brassLight,
+                  Colors.white,
+                  glowValue * 0.42,
+                )!
+              : AppColors.neonGreen.withValues(alpha: 0.7),
+          width: isPrimary ? 1.8 : 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.38),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+          if (isPrimary)
+            BoxShadow(
+              color: AppColors.brassLight.withValues(alpha: glow),
+              blurRadius: 22 + (glowValue * 18),
+              spreadRadius: 1.5 + (glowValue * 2.8),
+            ),
+        ],
+      ),
+      child: isPrimary
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _PlanHeading(
+                  title: title,
+                  subtitle: subtitle,
+                  crownColor: crownColor,
+                  isPrimary: true,
+                  compact: compact,
+                ),
+                SizedBox(height: compact ? 6 : 9),
+                Container(
+                  height: 1,
+                  color: AppColors.brassLight.withValues(alpha: 0.26),
+                ),
+                SizedBox(height: compact ? 7 : 10),
+                for (var index = 0; index < features.length; index++) ...[
+                  _FeatureRow(feature: features[index], compact: compact),
+                  if (index != features.length - 1)
+                    SizedBox(height: compact ? 6 : 9),
+                ],
+                SizedBox(height: compact ? 9 : 13),
+                _PriceButton(
+                  label: priceLabel,
+                  isGreen: isGreenPrice,
+                  isPurchasable: isPurchasable,
+                  isLoading: isLoading,
+                  onTap: onTap,
+                  compact: compact,
+                ),
+                SizedBox(height: compact ? 5 : 7),
+                Text(
+                  'No auto renewal',
+                  textAlign: TextAlign.center,
+                  textScaler: TextScaler.noScaling,
+                  style: TextStyle(
+                    color: AppColors.ivory.withValues(alpha: 0.68),
+                    fontSize: compact ? 9 : 10,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ],
+            )
+          : _SecondaryPlanContent(
+              title: title,
+              subtitle: subtitle,
+              crownColor: crownColor,
+              features: features,
+              priceLabel: priceLabel,
+              isPurchasable: isPurchasable,
+              isLoading: isLoading,
+              isGreenPrice: isGreenPrice,
+              onTap: onTap,
+              compact: compact,
+            ),
+    );
+
+    if (!isPrimary) return card;
 
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
-        Positioned.fill(
-          top: badgeOverlap,
+        Positioned.fill(top: badgeOverlap, child: card),
+        Positioned(
+          top: 0,
           child: Container(
-            padding: EdgeInsets.fromLTRB(
-              compact ? 8 : 12,
-              compact ? 15 : 20,
-              compact ? 8 : 12,
-              compact ? 8 : 12,
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 11 : 18,
+              vertical: compact ? 5 : 7,
             ),
             decoration: BoxDecoration(
-              gradient:
-                  background ??
-                  LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.feltDark.withValues(alpha: 0.98),
-                      AppColors.felt.withValues(alpha: 0.72),
-                      AppColors.feltDark.withValues(alpha: 0.98),
-                    ],
-                  ),
-              borderRadius: BorderRadius.circular(compact ? 14 : 18),
-              border: Border.all(
-                color: isGlowing
-                    ? Color.lerp(
-                        AppColors.brassLight,
-                        Colors.white,
-                        glowValue * 0.42,
-                      )!
-                    : AppColors.brassLight,
-                width: badge == null ? 1.35 : 1.8,
-              ),
+              gradient: AppColors.goldGradient,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.ink.withValues(alpha: 0.28)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.38),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withValues(alpha: 0.28),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
                 ),
-                if (badge != null)
-                  BoxShadow(
-                    color: AppColors.brass.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                  ),
-                if (isGlowing)
-                  BoxShadow(
-                    color: AppColors.brassLight.withValues(alpha: glow),
-                    blurRadius: 22 + (glowValue * 18),
-                    spreadRadius: 1.5 + (glowValue * 2.8),
-                  ),
               ],
             ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.workspace_premium_rounded,
-                  color: crownColor,
-                  size: compact ? 18 : 24,
-                ),
-                SizedBox(height: compact ? 3 : 6),
-                Text(
-                  title,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'RehnCondensed',
-                    color: badge == null
-                        ? AppColors.ivory
-                        : AppColors.brassLight,
-                    fontSize: compact
-                        ? (title.length > 8 ? 15 : 18)
-                        : (title.length > 8 ? 18 : 22),
-                    fontWeight: FontWeight.w900,
-                    height: 0.95,
-                    shadows: const [
-                      Shadow(
-                        color: Colors.black87,
-                        blurRadius: 6,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: compact ? 2 : 4),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.ivory,
-                    fontSize: compact ? 9 : 11,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
-                SizedBox(height: compact ? 5 : 10),
-                Container(
-                  height: 1,
-                  color: AppColors.brassLight.withValues(alpha: 0.26),
-                ),
-                SizedBox(height: compact ? 5 : 10),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      for (final feature in features)
-                        _FeatureRow(feature: feature, compact: compact),
-                    ],
-                  ),
-                ),
-                SizedBox(height: compact ? 4 : 8),
-                if (price != null) ...[
-                  _PriceButton(
-                    price: price!,
-                    isGreen: isGreenPrice,
-                    isLoading: isLoading,
-                    onTap: onTap,
-                    compact: compact,
-                  ),
-                  SizedBox(height: compact ? 4 : 8),
-                ],
-                _PlanFooter(label: footer, compact: compact),
-              ],
+            child: Text(
+              badge!,
+              textScaler: TextScaler.noScaling,
+              style: TextStyle(
+                color: AppColors.ink,
+                fontSize: compact ? 8 : 10,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
             ),
           ),
         ),
-        if (badge != null)
-          Positioned(
-            top: 0,
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: compact ? 11 : 18,
-                vertical: compact ? 5 : 7,
-              ),
-              decoration: BoxDecoration(
-                gradient: AppColors.goldGradient,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.ink.withValues(alpha: 0.28),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.28),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
+      ],
+    );
+  }
+}
+
+class _SecondaryPlanContent extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Color crownColor;
+  final List<_PlanFeature> features;
+  final String priceLabel;
+  final bool isPurchasable;
+  final bool isLoading;
+  final bool isGreenPrice;
+  final VoidCallback? onTap;
+  final bool compact;
+
+  const _SecondaryPlanContent({
+    required this.title,
+    required this.subtitle,
+    required this.crownColor,
+    required this.features,
+    required this.priceLabel,
+    required this.isPurchasable,
+    required this.isLoading,
+    required this.isGreenPrice,
+    this.onTap,
+    required this.compact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.workspace_premium_rounded,
+              color: crownColor,
+              size: compact ? 18 : 23,
+            ),
+            SizedBox(width: compact ? 6 : 8),
+            Flexible(
               child: Text(
-                badge!,
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textScaler: TextScaler.noScaling,
                 style: TextStyle(
-                  color: AppColors.ink,
-                  fontSize: compact ? 8 : 10,
+                  fontFamily: 'RehnCondensed',
+                  color: AppColors.ivory,
+                  fontSize: compact ? 19 : 24,
                   fontWeight: FontWeight.w900,
-                  height: 1,
+                  height: 0.95,
                 ),
               ),
             ),
+            SizedBox(width: compact ? 5 : 8),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  subtitle,
+                  textScaler: TextScaler.noScaling,
+                  style: TextStyle(
+                    color: AppColors.neonGreen,
+                    fontSize: compact ? 8 : 10,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 5 : 7),
+        Text(
+          features.map((feature) => feature.label).join('\n'),
+          maxLines: 2,
+          textScaler: TextScaler.noScaling,
+          style: TextStyle(
+            color: AppColors.ivory.withValues(alpha: 0.8),
+            fontSize: compact ? 9 : 11,
+            fontWeight: FontWeight.w700,
+            height: 1.18,
           ),
+        ),
+        SizedBox(height: compact ? 7 : 9),
+        _PriceButton(
+          label: priceLabel,
+          isGreen: isGreenPrice,
+          isPurchasable: isPurchasable,
+          isLoading: isLoading,
+          onTap: onTap,
+          compact: compact,
+        ),
+      ],
+    );
+  }
+}
+
+class _PlanHeading extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Color crownColor;
+  final bool isPrimary;
+  final bool compact;
+
+  const _PlanHeading({
+    required this.title,
+    required this.subtitle,
+    required this.crownColor,
+    required this.isPrimary,
+    required this.compact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.workspace_premium_rounded,
+              color: crownColor,
+              size: compact ? 18 : 23,
+            ),
+            SizedBox(width: compact ? 6 : 8),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textScaler: TextScaler.noScaling,
+                style: TextStyle(
+                  fontFamily: 'RehnCondensed',
+                  color: isPrimary ? AppColors.brassLight : AppColors.ivory,
+                  fontSize: compact ? 19 : 24,
+                  fontWeight: FontWeight.w900,
+                  height: 0.95,
+                  shadows: const [
+                    Shadow(
+                      color: Colors.black87,
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (isPrimary) ...[
+              SizedBox(width: compact ? 6 : 8),
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 7 : 9,
+                  vertical: compact ? 4 : 5,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.26),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppColors.brassLight.withValues(alpha: 0.52),
+                  ),
+                ),
+                child: Text(
+                  '24 HOURS',
+                  textScaler: TextScaler.noScaling,
+                  style: TextStyle(
+                    color: AppColors.brassLight,
+                    fontSize: compact ? 8 : 9,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        SizedBox(height: compact ? 4 : 6),
+        Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textScaler: TextScaler.noScaling,
+          style: TextStyle(
+            color: AppColors.ivory.withValues(alpha: 0.76),
+            fontSize: compact ? 10 : 12,
+            fontWeight: FontWeight.w700,
+            height: 1.1,
+          ),
+        ),
       ],
     );
   }
@@ -1101,15 +1216,17 @@ class _FeatureRow extends StatelessWidget {
 }
 
 class _PriceButton extends StatelessWidget {
-  final String price;
+  final String label;
   final bool isGreen;
+  final bool isPurchasable;
   final bool isLoading;
   final VoidCallback? onTap;
   final bool compact;
 
   const _PriceButton({
-    required this.price,
+    required this.label,
     required this.isGreen,
+    required this.isPurchasable,
     required this.isLoading,
     this.onTap,
     this.compact = false,
@@ -1117,23 +1234,40 @@ class _PriceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final unavailable = !isLoading && !isPurchasable;
+    final backgroundColor = unavailable
+        ? AppColors.feltDark.withValues(alpha: 0.82)
+        : isGreen
+        ? AppColors.feltLight
+        : AppColors.brass;
+    final foregroundColor = unavailable
+        ? AppColors.ivory.withValues(alpha: 0.5)
+        : isGreen
+        ? AppColors.ivory
+        : AppColors.ink;
+
     return SizedBox(
       width: double.infinity,
-      height: compact ? 32 : 40,
+      height: compact ? 30 : 38,
       child: ElevatedButton(
         onPressed: isLoading ? null : onTap,
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          backgroundColor: isGreen ? AppColors.feltLight : AppColors.brass,
-          foregroundColor: isGreen ? AppColors.ivory : AppColors.ink,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          disabledBackgroundColor: backgroundColor,
+          disabledForegroundColor: foregroundColor,
+          elevation: unavailable ? 0 : null,
           textStyle: TextStyle(
-            fontSize: compact ? 16 : 20,
+            fontSize: compact ? 14 : 17,
             fontWeight: FontWeight.w900,
           ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(
-              color: AppColors.ivory.withValues(alpha: 0.56),
+              color: unavailable
+                  ? AppColors.brassLight.withValues(alpha: 0.2)
+                  : AppColors.ivory.withValues(alpha: 0.56),
               width: 1,
             ),
           ),
@@ -1144,56 +1278,20 @@ class _PriceButton extends StatelessWidget {
                 height: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.2,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    isGreen ? AppColors.ivory : AppColors.ink,
-                  ),
+                  valueColor: AlwaysStoppedAnimation<Color>(foregroundColor),
                 ),
               )
             : FittedBox(
+                fit: BoxFit.scaleDown,
                 child: Text(
-                  price,
+                  label,
+                  textScaler: TextScaler.noScaling,
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: compact ? 16 : 20,
+                    fontSize: compact ? 14 : 17,
                   ),
                 ),
               ),
-      ),
-    );
-  }
-}
-
-class _PlanFooter extends StatelessWidget {
-  final String label;
-  final bool compact;
-
-  const _PlanFooter({required this.label, this.compact = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 6 : 10,
-        vertical: compact ? 4 : 6,
-      ),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.2)),
-      ),
-      child: FittedBox(
-        child: Text(
-          label,
-          maxLines: 1,
-          style: TextStyle(
-            fontFamily: 'RehnCondensed',
-            color: AppColors.brassLight,
-            fontSize: compact ? 8 : 10,
-            fontWeight: FontWeight.w900,
-            height: 1,
-          ),
-        ),
       ),
     );
   }
