@@ -953,79 +953,170 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _partyModeGuideCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-      decoration: BoxDecoration(
-        color: PartyPalette.nightDeep.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: PartyPalette.orangeSoft.withValues(alpha: 0.38),
-          width: 1.2,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxHeight < 270 || constraints.maxWidth < 300;
+        final tight = constraints.maxHeight < 165;
+        final horizontalPadding = compact ? 14.0 : 24.0;
+        final verticalPadding = tight ? 10.0 : (compact ? 14.0 : 22.0);
+        final gap = compact ? 10.0 : 18.0;
+
+        return Container(
+          width: double.infinity,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: PartyPalette.nightDeep.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: PartyPalette.orangeSoft.withValues(alpha: 0.38),
+              width: 1.2,
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
+            child: tight
+                ? _partyTightGuide()
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: PartyPalette.orange.withValues(
+                                alpha: 0.18,
+                              ),
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: const Icon(
+                              Icons.how_to_vote_rounded,
+                              color: PartyPalette.orangeSoft,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Text(
+                              'PARTY POLL — READ THE ROOM',
+                              maxLines: compact ? 2 : 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.outfit(
+                                color: PartyPalette.cream,
+                                fontSize: compact ? 14 : 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: compact ? 0.35 : 0.7,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: compact ? 12 : 20),
+                      if (compact) ...[
+                        _partyGuideBullet(
+                          icon: Icons.how_to_vote_rounded,
+                          title: 'PICK + RISK',
+                          description:
+                              'Pick who fits the prompt. Your chip is your risk.',
+                          compact: true,
+                        ),
+                        SizedBox(height: gap),
+                        _partyGuideBullet(
+                          icon: Icons.account_tree_rounded,
+                          title: 'SPLIT OR COMMIT',
+                          description:
+                              'Back one player for two votes, or two players for one each.',
+                          compact: true,
+                        ),
+                      ] else ...[
+                        _partyGuideBullet(
+                          icon: Icons.groups_rounded,
+                          title: 'ONE QUESTION, EVERYONE PLAYS',
+                          description:
+                              'Pick who fits the prompt, then put your chips behind them.',
+                        ),
+                        SizedBox(height: gap),
+                        _partyGuideBullet(
+                          icon: Icons.local_fire_department_rounded,
+                          title: 'CHIPS ARE YOUR VOTES',
+                          description:
+                              'Every chip counts at face value: 5, 10, or 25. Your chip is both your vote and your risk.',
+                        ),
+                        SizedBox(height: gap),
+                        _partyGuideBullet(
+                          icon: Icons.account_tree_rounded,
+                          title: 'STACK OR SPREAD',
+                          description:
+                              'Stack your chips on one player or spread them across two or three. The highest total chip weight wins the poll.',
+                        ),
+                        SizedBox(height: gap),
+                        _partyGuideBullet(
+                          icon: Icons.emoji_events_rounded,
+                          title: 'REVEAL, THEN SETTLE',
+                          description:
+                              'Bets stay hidden until the reveal. Winning chips add their face value; losing chips subtract it.',
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _partyTightGuide() {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: PartyPalette.orange.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(
+            Icons.how_to_vote_rounded,
+            color: PartyPalette.orangeSoft,
+            size: 16,
+          ),
         ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: PartyPalette.orange.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: const Icon(
-                  Icons.how_to_vote_rounded,
-                  color: PartyPalette.orangeSoft,
-                  size: 18,
+              Text(
+                'PARTY POLL',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.45,
                 ),
               ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  'PARTY POLL — READ THE ROOM',
-                  style: GoogleFonts.outfit(
-                    color: PartyPalette.cream,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.7,
-                  ),
+              Text(
+                'Pick a player, then choose how much risk to take.',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.creamMuted.withValues(alpha: 0.85),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  height: 1.2,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          _partyGuideBullet(
-            icon: Icons.groups_rounded,
-            title: 'ONE QUESTION, EVERYONE PLAYS',
-            description:
-                'Pick who fits the prompt, then put your chips behind them.',
-          ),
-          const SizedBox(height: 18),
-          _partyGuideBullet(
-            icon: Icons.local_fire_department_rounded,
-            title: 'CHIPS ARE YOUR VOTES',
-            description:
-                'Every chip counts at face value: 5, 10, or 25. Your chip is both your vote and your risk.',
-          ),
-          const SizedBox(height: 18),
-          _partyGuideBullet(
-            icon: Icons.account_tree_rounded,
-            title: 'STACK OR SPREAD',
-            description:
-                'Stack your chips on one player or spread them across two or three. The highest total chip weight wins the poll.',
-          ),
-          const SizedBox(height: 18),
-          _partyGuideBullet(
-            icon: Icons.emoji_events_rounded,
-            title: 'REVEAL, THEN SETTLE',
-            description:
-                'Bets stay hidden until the reveal. Winning chips add their face value; losing chips subtract it.',
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1033,12 +1124,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required IconData icon,
     required String title,
     required String description,
+    bool compact = false,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 19, color: PartyPalette.orangeSoft),
-        const SizedBox(width: 8),
+        Icon(icon, size: compact ? 17 : 19, color: PartyPalette.orangeSoft),
+        SizedBox(width: compact ? 7 : 8),
         Expanded(
           child: RichText(
             text: TextSpan(
@@ -1047,7 +1139,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   text: '$title: ',
                   style: GoogleFonts.outfit(
                     color: PartyPalette.cream,
-                    fontSize: 14,
+                    fontSize: compact ? 12 : 14,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -1055,9 +1147,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   text: description,
                   style: GoogleFonts.outfit(
                     color: PartyPalette.creamMuted.withValues(alpha: 0.85),
-                    fontSize: 13,
+                    fontSize: compact ? 11 : 13,
                     fontWeight: FontWeight.w500,
-                    height: 1.42,
+                    height: compact ? 1.28 : 1.42,
                   ),
                 ),
               ],
