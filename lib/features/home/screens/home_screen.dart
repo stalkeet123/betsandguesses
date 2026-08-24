@@ -454,22 +454,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ref.read(audioServiceProvider).startMainBgm();
     setState(() => _isLoading = true);
     try {
-      final isPremium = await ref
-          .read(premiumStatusProvider.future)
-          .catchError((_) => false);
-      final finalRounds = isPremium
-          ? maxRounds.clamp(GameConstants.minRounds, GameConstants.maxRounds)
-          : maxRounds.clamp(
-              GameConstants.minRounds,
-              GameConstants.freeMaxRounds,
-            );
-      final finalPlayers = isPremium
-          ? maxPlayers.clamp(1, GameConstants.maxPlayers)
-          : maxPlayers.clamp(1, GameConstants.freeMaxPlayers);
-      final finalCategory =
-          !isPremium && category != GameConstants.defaultCategory
-          ? GameConstants.defaultCategory
-          : category;
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
       final deviceId = ref.read(deviceIdProvider);
