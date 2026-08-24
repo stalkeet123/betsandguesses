@@ -4,6 +4,14 @@ import '../../../core/providers/core_providers.dart';
 import '../models/party_poll_snapshot.dart';
 import '../services/party_poll_service.dart';
 
+PartyPollSnapshot selectPartyPollSnapshot(
+  PartyPollSnapshot? current,
+  PartyPollSnapshot incoming,
+) {
+  if (current == null || current.room.id != incoming.room.id) return incoming;
+  return incoming.stateVersion >= current.stateVersion ? incoming : current;
+}
+
 class PartyPollSessionState {
   final PartyPollSnapshot? snapshot;
   final bool isLoading;
@@ -46,11 +54,8 @@ final partyPollSessionProvider =
 class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   int _pendingBetCommands = 0;
   PartyPollService get _service => ref.read(partyPollServiceProvider);
-  PartyPollSnapshot _acceptedSnapshot(PartyPollSnapshot incoming) {
-    final current = state.snapshot;
-    if (current == null || current.room.id != incoming.room.id) return incoming;
-    return incoming.stateVersion >= current.stateVersion ? incoming : current;
-  }
+  PartyPollSnapshot _acceptedSnapshot(PartyPollSnapshot incoming) =>
+      selectPartyPollSnapshot(state.snapshot, incoming);
 
   @override
   PartyPollSessionState build() => const PartyPollSessionState();
@@ -65,13 +70,14 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   Future<PartyPollSnapshot?> load(String roomId) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final snapshot = await _service.getSnapshot(roomId);
+      final incoming = await _service.getSnapshot(roomId);
+      final accepted = _acceptedSnapshot(incoming);
       state = state.copyWith(
-        snapshot: _acceptedSnapshot(snapshot),
+        snapshot: accepted,
         isLoading: false,
         clearError: true,
       );
-      return snapshot;
+      return accepted;
     } catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: '$error');
       return null;
