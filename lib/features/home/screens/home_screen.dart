@@ -849,21 +849,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             icon: Icons.groups_rounded,
             title: 'ONE QUESTION, EVERYONE PLAYS',
             description:
-                'Pick who fits the prompt. Your pick is your vote; your chip is your risk.',
+                'Pick who fits the prompt, then put your chips behind them.',
           ),
           const SizedBox(height: 18),
           _partyGuideBullet(
             icon: Icons.local_fire_department_rounded,
-            title: 'SPLIT OR COMMIT',
+            title: 'CHIPS ARE YOUR VOTES',
             description:
-                'Back one player for two votes, or two players for one vote each. Chip value does not change voting power.',
+                'Every chip counts at face value: 5, 10, or 25. Your chip is both your vote and your risk.',
+          ),
+          const SizedBox(height: 18),
+          _partyGuideBullet(
+            icon: Icons.account_tree_rounded,
+            title: 'STACK OR SPREAD',
+            description:
+                'Stack your chips on one player or spread them across two or three. The highest total chip weight wins the poll.',
           ),
           const SizedBox(height: 18),
           _partyGuideBullet(
             icon: Icons.emoji_events_rounded,
             title: 'REVEAL, THEN SETTLE',
             description:
-                'Bets stay hidden until the reveal. Winning picks pay 2×; every losing stake is simply lost.',
+                'Bets stay hidden until the reveal. Winning chips add their face value; losing chips subtract it.',
           ),
         ],
       ),

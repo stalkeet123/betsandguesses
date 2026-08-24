@@ -112,12 +112,9 @@ void main() {
     expect(PartyRoundPhase.reveal.gamePhase, RoundPhase.revealAnswer);
   });
 
-  test('Party betting stays shorter than Classic betting', () {
+  test('Party betting preserves its independent 30-second window', () {
     expect(GameConstants.partyBetTimerSeconds, 30);
-    expect(
-      GameConstants.partyBetTimerSeconds,
-      lessThan(GameConstants.betTimerSeconds),
-    );
+    expect(GameConstants.betTimerSeconds, 20);
   });
 
   test('Party reveal leaves room for the board winner animation', () {

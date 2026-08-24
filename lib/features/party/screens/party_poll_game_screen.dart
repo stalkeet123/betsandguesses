@@ -641,15 +641,6 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       (player) => player.id == targetPlayerId,
     );
     if (!targetExists) return;
-    final ownTargetIds = snapshot.round.bets
-        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
-        .where((bet) => bet.playerId == snapshot.me.playerId)
-        .map((bet) => bet.targetPlayerId)
-        .toSet();
-    if (ownTargetIds.length >= 2 && !ownTargetIds.contains(targetPlayerId)) {
-      _showMessage('You can back up to two players this round.');
-      return;
-    }
     final usedChips = snapshot.round.bets
         .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => bet.playerId == snapshot.me.playerId)
@@ -743,16 +734,6 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     if (!snapshot.round.players.any((player) => player.id == targetPlayerId) ||
         !positionX.isFinite ||
         !positionY.isFinite) {
-      return;
-    }
-    final otherTargetIds = snapshot.round.bets
-        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
-        .where((bet) => bet.playerId == snapshot.me.playerId && bet.id != betId)
-        .map((bet) => bet.targetPlayerId)
-        .toSet();
-    if (otherTargetIds.length >= 2 &&
-        !otherTargetIds.contains(targetPlayerId)) {
-      _showMessage('You can back up to two players this round.');
       return;
     }
 
