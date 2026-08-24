@@ -1636,20 +1636,27 @@ class _AdaptiveQuestionText extends StatelessWidget {
     required this.minFontSize,
     required this.maxFontSize,
   });
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, c) {
-      if (c.maxWidth <= 0 || c.maxHeight <= 0) return const SizedBox.shrink();
-      var low = minFontSize;
+    builder: (context, constraints) {
+      if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+        return const SizedBox.shrink();
+      }
+
+      // Measure the same wrapped text that we render. The lower floor applies
+      // only to long prompts, so short prompts retain the production scale.
+      final lowerBound = min(minFontSize, max(14.0, minFontSize * .66));
+      var low = lowerBound;
       var high = maxFontSize;
-      for (var i = 0; i < 10; i++) {
-        final mid = (low + high) / 2;
+      for (var i = 0; i < 12; i++) {
+        final candidate = (low + high) / 2;
         final painter = TextPainter(
           text: TextSpan(
             text: text,
             style: TextStyle(
               fontFamily: 'RehnCondensed',
-              fontSize: mid,
+              fontSize: candidate,
               fontWeight: FontWeight.w900,
               height: 1.02,
             ),
@@ -1657,21 +1664,34 @@ class _AdaptiveQuestionText extends StatelessWidget {
           textAlign: TextAlign.center,
           textDirection: TextDirection.ltr,
           textScaler: TextScaler.noScaling,
-        )..layout(maxWidth: c.maxWidth);
-        if (painter.width <= c.maxWidth && painter.height <= c.maxHeight) {
-          low = mid;
+          strutStyle: const StrutStyle(
+            fontFamily: 'RehnCondensed',
+            forceStrutHeight: true,
+            height: 1.02,
+          ),
+        )..layout(maxWidth: constraints.maxWidth);
+        if (painter.height <= constraints.maxHeight) {
+          low = candidate;
         } else {
-          high = mid;
+          high = candidate;
         }
       }
+
       return Center(
         child: Text(
           text,
           textAlign: TextAlign.center,
+          softWrap: true,
+          textScaler: TextScaler.noScaling,
+          strutStyle: const StrutStyle(
+            fontFamily: 'RehnCondensed',
+            forceStrutHeight: true,
+            height: 1.02,
+          ),
           style: TextStyle(
             fontFamily: 'RehnCondensed',
             color: color,
-            fontSize: low.clamp(minFontSize, maxFontSize).toDouble(),
+            fontSize: low,
             fontWeight: FontWeight.w900,
             height: 1.02,
           ),

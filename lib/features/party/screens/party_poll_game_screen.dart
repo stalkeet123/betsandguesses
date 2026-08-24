@@ -75,10 +75,12 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   Timer? _revealClinkTimer;
   bool _transitionCommandInFlight = false;
   bool _snapshotLoadInFlight = false;
-  bool _betCommandInFlight = false;
-  _PendingPartyPollBetVisual? _pendingBetVisual;
+  final Map<String, _PendingPartyPollBetVisual> _pendingBetVisuals =
+      <String, _PendingPartyPollBetVisual>{};
   final Set<String> _optimisticallyHiddenBetIds = <String>{};
-  _PendingPartyPollMoveVisual? _pendingMoveVisual;
+  final Map<String, _PendingPartyPollMoveVisual> _pendingMoveVisuals =
+      <String, _PendingPartyPollMoveVisual>{};
+  final Set<String> _removalCommandBetIds = <String>{};
   bool _showPartyRoundTransition = false;
   int? _partyTransitionRound;
   Timer? _partyRoundTransitionTimer;
@@ -600,17 +602,21 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _clearStalePendingBetVisual(PartyPollSnapshot snapshot) {
-    final pending = _pendingBetVisual;
-    if (pending == null ||
-        (snapshot.round.phase == PartyPollPhase.betting &&
-            pending.roundNumber == snapshot.round.number)) {
-      return;
+    final staleIds = _pendingBetVisuals.entries
+        .where(
+          (entry) =>
+              snapshot.round.phase != PartyPollPhase.betting ||
+              entry.value.roundNumber != snapshot.round.number,
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    if (staleIds.isNotEmpty && mounted) {
+      setState(() {
+        for (final id in staleIds) {
+          _pendingBetVisuals.remove(id);
+        }
+      });
     }
-    setState(() {
-      if (identical(_pendingBetVisual, pending)) {
-        _pendingBetVisual = null;
-      }
-    });
   }
 
   void _reconcileOptimisticallyHiddenBets(PartyPollSnapshot snapshot) {
@@ -634,7 +640,6 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     double? positionX,
     double? positionY,
   ) async {
-    if (_betCommandInFlight) return;
     final chip = _selectedChipValue;
     if (chip == null || snapshot.round.phase != PartyPollPhase.betting) return;
     final targetExists = snapshot.round.players.any(
@@ -646,18 +651,18 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         .where((bet) => bet.playerId == snapshot.me.playerId)
         .map((bet) => bet.chips)
         .toSet();
-    final pendingChip = _pendingBetVisual?.roundNumber == snapshot.round.number
-        ? _pendingBetVisual?.chips
-        : null;
-    if (usedChips.contains(chip) || pendingChip == chip) {
+    final pendingChips = _pendingBetVisuals.values
+        .where((pending) => pending.roundNumber == snapshot.round.number)
+        .map((pending) => pending.chips)
+        .toSet();
+    if (usedChips.contains(chip) || pendingChips.contains(chip)) {
       _showMessage('That chip is already used this round.');
       return;
     }
 
     final clientActionId = const Uuid().v4();
     setState(() {
-      _betCommandInFlight = true;
-      _pendingBetVisual = _PendingPartyPollBetVisual(
+      _pendingBetVisuals[clientActionId] = _PendingPartyPollBetVisual(
         clientActionId: clientActionId,
         roundNumber: snapshot.round.number,
         targetPlayerId: targetPlayerId,
@@ -687,12 +692,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _betCommandInFlight = false;
-          if (_pendingBetVisual?.clientActionId == clientActionId) {
-            _pendingBetVisual = null;
-          }
-        });
+        setState(() => _pendingBetVisuals.remove(clientActionId));
       }
     }
   }
@@ -717,7 +717,9 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     double positionX,
     double positionY,
   ) async {
-    if (_betCommandInFlight || snapshot.round.phase != PartyPollPhase.betting) {
+    if (_removalCommandBetIds.contains(betId) ||
+        _pendingMoveVisuals.containsKey(betId) ||
+        snapshot.round.phase != PartyPollPhase.betting) {
       return;
     }
     PartyPollBet? sourceBet;
@@ -738,8 +740,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     }
 
     setState(() {
-      _betCommandInFlight = true;
-      _pendingMoveVisual = _PendingPartyPollMoveVisual(
+      _pendingMoveVisuals[betId] = _PendingPartyPollMoveVisual(
         betId: betId,
         roundNumber: snapshot.round.number,
         targetPlayerId: targetPlayerId,
@@ -759,7 +760,6 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             positionY: positionY,
           );
       if (updated == null && mounted) {
-        setState(() => _optimisticallyHiddenBetIds.remove(betId));
         _showMessage(
           ref.read(partyPollSessionProvider).errorMessage ??
               'Bet could not be moved.',
@@ -771,17 +771,14 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         });
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _betCommandInFlight = false;
-          _pendingMoveVisual = null;
-        });
-      }
+      if (mounted) setState(() => _pendingMoveVisuals.remove(betId));
     }
   }
 
   Future<void> _removeBet(PartyPollSnapshot snapshot, String betId) async {
-    if (_betCommandInFlight || snapshot.round.phase != PartyPollPhase.betting) {
+    if (_removalCommandBetIds.contains(betId) ||
+        _pendingMoveVisuals.containsKey(betId) ||
+        snapshot.round.phase != PartyPollPhase.betting) {
       return;
     }
     final isOwnedCurrentBet = snapshot.round.bets.any(
@@ -793,7 +790,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     }
 
     setState(() {
-      _betCommandInFlight = true;
+      _removalCommandBetIds.add(betId);
       _optimisticallyHiddenBetIds.add(betId);
       _selectedBetId = null;
       _selectedChipValue = null;
@@ -811,7 +808,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         );
       }
     } finally {
-      if (mounted) setState(() => _betCommandInFlight = false);
+      if (mounted) setState(() => _removalCommandBetIds.remove(betId));
     }
   }
 
@@ -846,12 +843,11 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => targetSlotByPlayerId.containsKey(bet.targetPlayerId))
         .map((bet) {
-          final pendingMove = _pendingMoveVisual;
+          final pendingMove = _pendingMoveVisuals[bet.id];
           final usePendingMove =
               pendingMove != null &&
               snapshot.round.phase == PartyPollPhase.betting &&
               pendingMove.roundNumber == snapshot.round.number &&
-              pendingMove.betId == bet.id &&
               targetSlotByPlayerId.containsKey(pendingMove.targetPlayerId);
           final targetPlayerId = usePendingMove
               ? pendingMove.targetPlayerId
@@ -869,32 +865,28 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         })
         .toList();
     final isReveal = snapshot.round.phase == PartyPollPhase.reveal;
-    final pending = _pendingBetVisual;
-    final pendingIsAuthoritative =
-        pending != null &&
-        snapshot.round.bets.any(
-          (bet) => bet.clientActionId == pending.clientActionId,
-        );
-    final pendingSlotIndex = pending == null
-        ? null
-        : targetSlotByPlayerId[pending.targetPlayerId];
-    if (pending != null &&
-        snapshot.round.phase == PartyPollPhase.betting &&
-        pending.roundNumber == snapshot.round.number &&
-        !pendingIsAuthoritative &&
-        pendingSlotIndex != null) {
-      viewBets.add(
-        PartyPollViewBet(
-          id: 'pending:${pending.clientActionId}',
-          bettorPlayerId: snapshot.me.playerId,
-          targetPlayerId: pending.targetPlayerId,
-          targetSlotIndex: pendingSlotIndex,
-          chips: pending.chips,
-          positionX: pending.positionX,
-          positionY: pending.positionY,
-          won: null,
-        ),
+    for (final pending in _pendingBetVisuals.values) {
+      final pendingIsAuthoritative = snapshot.round.bets.any(
+        (bet) => bet.clientActionId == pending.clientActionId,
       );
+      final pendingSlotIndex = targetSlotByPlayerId[pending.targetPlayerId];
+      if (snapshot.round.phase == PartyPollPhase.betting &&
+          pending.roundNumber == snapshot.round.number &&
+          !pendingIsAuthoritative &&
+          pendingSlotIndex != null) {
+        viewBets.add(
+          PartyPollViewBet(
+            id: 'pending:${pending.clientActionId}',
+            bettorPlayerId: snapshot.me.playerId,
+            targetPlayerId: pending.targetPlayerId,
+            targetSlotIndex: pendingSlotIndex,
+            chips: pending.chips,
+            positionX: pending.positionX,
+            positionY: pending.positionY,
+            won: null,
+          ),
+        );
+      }
     }
     final effectiveOwnBetTotal = viewBets
         .where((bet) => bet.bettorPlayerId == snapshot.me.playerId)

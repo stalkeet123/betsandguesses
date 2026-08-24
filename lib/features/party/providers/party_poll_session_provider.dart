@@ -44,6 +44,7 @@ final partyPollSessionProvider =
     );
 
 class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
+  int _pendingBetCommands = 0;
   PartyPollService get _service => ref.read(partyPollServiceProvider);
 
   @override
@@ -89,7 +90,9 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     double? positionX,
     double? positionY,
   }) async {
-    if (state.isCommandRunning) return null;
+    // Independent actions may be in flight together. The server still
+    // serializes and validates each clientActionId authoritatively.
+    _pendingBetCommands++;
     state = state.copyWith(isCommandRunning: true, clearError: true);
     try {
       final placement = await _service.placeBet(
@@ -100,15 +103,20 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
         positionX: positionX,
         positionY: positionY,
       );
-      state = state.copyWith(
-        snapshot: placement.snapshot,
-        isCommandRunning: false,
-        clearError: true,
-      );
+      final current = state.snapshot;
+      final snapshot =
+          current != null &&
+              current.stateVersion > placement.snapshot.stateVersion
+          ? current
+          : placement.snapshot;
+      state = state.copyWith(snapshot: snapshot, clearError: true);
       return placement;
     } catch (error) {
-      state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
+      state = state.copyWith(errorMessage: '$error');
       return null;
+    } finally {
+      _pendingBetCommands--;
+      state = state.copyWith(isCommandRunning: _pendingBetCommands > 0);
     }
   }
 
@@ -118,7 +126,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     required String targetPlayerId,
     double? positionX,
     double? positionY,
-  }) => _run(
+  }) => _runBetCommand(
     () => _service.moveBet(
       roomId: roomId,
       betId: betId,
@@ -131,7 +139,33 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   Future<PartyPollSnapshot?> removeBet({
     required String roomId,
     required String betId,
-  }) => _run(() => _service.removeBet(roomId: roomId, betId: betId));
+  }) => _runBetCommand(() => _service.removeBet(roomId: roomId, betId: betId));
+
+  Future<PartyPollSnapshot?> _runBetCommand(
+    Future<PartyPollSnapshot> Function() command,
+  ) async {
+    _pendingBetCommands++;
+    state = state.copyWith(isCommandRunning: true, clearError: true);
+    try {
+      final snapshot = await command();
+      final current = state.snapshot;
+      state = state.copyWith(
+        snapshot:
+            current != null && current.stateVersion > snapshot.stateVersion
+            ? current
+            : snapshot,
+        clearError: true,
+      );
+      return snapshot;
+    } catch (error) {
+      state = state.copyWith(errorMessage: '$error');
+      return null;
+    } finally {
+      _pendingBetCommands--;
+      state = state.copyWith(isCommandRunning: _pendingBetCommands > 0);
+    }
+  }
+
   Future<PartyPollSnapshot?> settleRound(String roomId) =>
       _run(() => _service.settleRound(roomId));
 
