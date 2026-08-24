@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/providers/core_providers.dart';
 import '../models/party_poll_snapshot.dart';
 import '../services/party_poll_service.dart';
@@ -87,13 +88,31 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   Future<PartyPollSnapshot?> startGame(
     String roomId, {
     int bettingDurationSeconds = 30,
-  }) {
-    return _run(
-      () => _service.startGame(
+  }) async {
+    if (state.isCommandRunning) return state.snapshot;
+    state = state.copyWith(isCommandRunning: true, clearError: true);
+    try {
+      final snapshot = await _service.startGame(
         roomId: roomId,
         bettingDurationSeconds: bettingDurationSeconds,
-      ),
-    );
+      );
+      final accepted = _acceptedSnapshot(snapshot);
+      state = state.copyWith(
+        snapshot: accepted,
+        isCommandRunning: false,
+        clearError: true,
+      );
+      return accepted;
+    } on FreeHostLimitReachedException {
+      state = state.copyWith(
+        isCommandRunning: false,
+        errorMessage: freeHostLimitReachedMessage,
+      );
+      rethrow;
+    } catch (error) {
+      state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
+      return null;
+    }
   }
 
   Future<PartyPollBetPlacement?> placeBet({

@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/constants/game_constants.dart';
+import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
@@ -276,21 +277,59 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     await context.pushNamed('premium');
     if (mounted) {
       ref.invalidate(premiumStatusProvider);
+      ref.invalidate(monetizationStatusProvider);
+    }
+  }
+
+  Future<bool> _refreshPremiumEntitlementBeforeHostStart() async {
+    final fallbackPremium = ref.read(premiumStatusProvider).value ?? false;
+    final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+    if (userId == null) return fallbackPremium;
+
+    try {
+      final revenueCat = ref.read(revenueCatServiceProvider);
+      await revenueCat.initialize(appUserId: userId);
+      await revenueCat.refreshCustomerInfo();
+      final isPremium = await revenueCat.isPremium();
+      if (!mounted) return fallbackPremium;
+
+      ref.invalidate(premiumStatusProvider);
+      if (isPremium) {
+        try {
+          await ref
+              .read(monetizationServiceProvider)
+              .syncRevenueCatEntitlement();
+        } catch (error, stackTrace) {
+          debugPrint(
+            'RevenueCat entitlement sync before host start failed: '
+            '$error\n$stackTrace',
+          );
+        } finally {
+          if (mounted) ref.invalidate(monetizationStatusProvider);
+        }
+      }
+      return isPremium;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'RevenueCat entitlement refresh before host start failed: '
+        '$error\n$stackTrace',
+      );
+      if (mounted) ref.invalidate(premiumStatusProvider);
+      return fallbackPremium;
     }
   }
 
   Future<void> _startGame() async {
     if (_isStarting) return;
-
-    final isPremium = ref.read(premiumStatusProvider).value ?? false;
-    if (!isPremium && _activePlayers.length > GameConstants.freeMaxPlayers) {
-      await _openPaywall();
-      return;
-    }
-
     setState(() => _isStarting = true);
 
     try {
+      final isPremium = await _refreshPremiumEntitlementBeforeHostStart();
+      if (!isPremium && _activePlayers.length > GameConstants.freeMaxPlayers) {
+        await _openPaywall();
+        return;
+      }
+
       final room = ref.read(currentRoomProvider);
       if (room == null) return;
 
@@ -342,6 +381,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 'phase_ends_at': snapshot.round.phaseEndsAt?.toIso8601String(),
               }),
         );
+        ref.invalidate(monetizationStatusProvider);
         if (mounted) {
           _isNavigatingToGame = true;
           context.goNamed(
@@ -400,9 +440,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             }),
       );
 
+      ref.invalidate(monetizationStatusProvider);
       if (mounted) {
         _isNavigatingToGame = true;
         context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
+      }
+    } on FreeHostLimitReachedException {
+      ref.invalidate(monetizationStatusProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("You've used your 3 free hosted games."),
+          ),
+        );
+        await _openPaywall();
       }
     } catch (e) {
       if (mounted) {
@@ -1115,11 +1166,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               onPressed: primaryEnabled
                   ? () {
                       if (isHost) {
-                        if (exceedsLimit) {
-                          _openPaywall();
-                        } else {
-                          _startGame();
-                        }
+                        _startGame();
                       } else {
                         _toggleReady();
                       }
