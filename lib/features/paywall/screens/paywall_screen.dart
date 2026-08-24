@@ -98,9 +98,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     if (result.cancelled) return;
 
     if (result.success) {
-      _showSuccessDialog('Purchase Successful!', 'You now have full access to all premium features.');
+      _showSuccessDialog(
+        'Purchase Successful!',
+        'You now have full access to all premium features.',
+      );
     } else {
-      _showErrorDialog('Purchase Failed', result.message ?? 'Unable to complete purchase.');
+      _showErrorDialog(
+        'Purchase Failed',
+        result.message ?? 'Unable to complete purchase.',
+      );
     }
   }
 
@@ -120,9 +126,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     });
 
     if (result.success) {
-      _showSuccessDialog('Purchases Restored!', 'Your premium features have been restored successfully.');
+      _showSuccessDialog(
+        'Purchases Restored!',
+        'Your premium features have been restored successfully.',
+      );
     } else {
-      _showErrorDialog('Restore Failed', result.message ?? 'No active purchase found.');
+      _showErrorDialog(
+        'Restore Failed',
+        result.message ?? 'No active purchase found.',
+      );
     }
   }
 
@@ -219,8 +231,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     return Row(
       children: [
         SizedBox(
-          width: 36,
-          height: 36,
+          width: 44,
+          height: 44,
           child: IconButton(
             onPressed: () {
               if (Navigator.of(context).canPop()) {
@@ -229,12 +241,13 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                 context.goNamed('home');
               }
             },
-            icon: const Icon(Icons.close_rounded, size: 24),
+            icon: const Center(child: Icon(Icons.close_rounded, size: 22)),
             color: AppColors.ivory,
             style: IconButton.styleFrom(
               backgroundColor: AppColors.feltDark.withValues(alpha: 0.84),
               side: const BorderSide(color: AppColors.brassLight, width: 1.5),
               shape: const CircleBorder(),
+              padding: EdgeInsets.zero,
             ),
           ),
         ),
@@ -274,7 +287,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               child: _BenefitItem(
                 icon: Icons.groups_rounded,
                 title: 'BIGGER LOBBIES',
-                subtitle: 'Unlimited players',
+                subtitle: 'Up to 10 Players',
               ),
             ),
             _verticalRule(),
@@ -327,7 +340,6 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     );
   }
 
-
   Widget _buildPlans(BuildContext context) {
     return AnimatedBuilder(
       animation: _glowController,
@@ -347,7 +359,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             features: const [
               _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
               _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
-              _PlanFeature(Icons.groups_rounded, 'Unlimited players'),
+              _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
               _PlanFeature(Icons.category_rounded, 'Premium categories'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
             ],
@@ -370,7 +382,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             features: const [
               _PlanFeature(Icons.workspace_premium_rounded, 'Lifetime access'),
               _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
-              _PlanFeature(Icons.groups_rounded, 'Unlimited players'),
+              _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
               _PlanFeature(Icons.category_rounded, 'Premium categories'),
               _PlanFeature(Icons.block_rounded, 'No ads'),
             ],
@@ -504,9 +516,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           _FooterChip(
             icon: Icons.privacy_tip_rounded,
             label: 'PRIVACY POLICY',
-            onTap: () => _launchURL(
-              'https://bets-and-guesses.com/privacy.html',
-            ),
+            onTap: () =>
+                _launchURL('https://bets-and-guesses.com/privacy.html'),
           ),
         ],
       ),
@@ -566,12 +577,27 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           ),
           title: Row(
             children: [
-              const Icon(Icons.check_circle_outline_rounded, color: AppColors.neonGreen, size: 28),
+              const Icon(
+                Icons.check_circle_outline_rounded,
+                color: AppColors.neonGreen,
+                size: 28,
+              ),
               const SizedBox(width: 8),
-              Expanded(child: Text(title, style: const TextStyle(color: AppColors.ivory, fontWeight: FontWeight.w900))),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.ivory,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
             ],
           ),
-          content: Text(message, style: const TextStyle(color: AppColors.ivory, fontSize: 16)),
+          content: Text(
+            message,
+            style: const TextStyle(color: AppColors.ivory, fontSize: 16),
+          ),
           actions: [
             TextButton(
               onPressed: () {
@@ -582,7 +608,13 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                   context.goNamed('home'); // go home
                 }
               },
-              child: const Text('LET\'S GO!', style: TextStyle(color: AppColors.neonGreen, fontWeight: FontWeight.w900)),
+              child: const Text(
+                'LET\'S GO!',
+                style: TextStyle(
+                  color: AppColors.neonGreen,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
           ],
         );
@@ -602,16 +634,37 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           ),
           title: Row(
             children: [
-              const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
+              const Icon(
+                Icons.error_outline_rounded,
+                color: Colors.redAccent,
+                size: 28,
+              ),
               const SizedBox(width: 8),
-              Expanded(child: Text(title, style: const TextStyle(color: AppColors.ivory, fontWeight: FontWeight.w900))),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.ivory,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
             ],
           ),
-          content: Text(message, style: const TextStyle(color: AppColors.ivory, fontSize: 16)),
+          content: Text(
+            message,
+            style: const TextStyle(color: AppColors.ivory, fontSize: 16),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w900)),
+              child: const Text(
+                'OK',
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
           ],
         );
