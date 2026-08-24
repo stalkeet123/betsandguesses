@@ -46,12 +46,20 @@ final partyPollSessionProvider =
 class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   int _pendingBetCommands = 0;
   PartyPollService get _service => ref.read(partyPollServiceProvider);
+  PartyPollSnapshot _acceptedSnapshot(PartyPollSnapshot incoming) {
+    final current = state.snapshot;
+    if (current == null || current.room.id != incoming.room.id) return incoming;
+    return incoming.stateVersion >= current.stateVersion ? incoming : current;
+  }
 
   @override
   PartyPollSessionState build() => const PartyPollSessionState();
 
   void setSnapshot(PartyPollSnapshot snapshot) {
-    state = state.copyWith(snapshot: snapshot, clearError: true);
+    state = state.copyWith(
+      snapshot: _acceptedSnapshot(snapshot),
+      clearError: true,
+    );
   }
 
   Future<PartyPollSnapshot?> load(String roomId) async {
@@ -59,7 +67,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     try {
       final snapshot = await _service.getSnapshot(roomId);
       state = state.copyWith(
-        snapshot: snapshot,
+        snapshot: _acceptedSnapshot(snapshot),
         isLoading: false,
         clearError: true,
       );
@@ -103,13 +111,10 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
         positionX: positionX,
         positionY: positionY,
       );
-      final current = state.snapshot;
-      final snapshot =
-          current != null &&
-              current.stateVersion > placement.snapshot.stateVersion
-          ? current
-          : placement.snapshot;
-      state = state.copyWith(snapshot: snapshot, clearError: true);
+      state = state.copyWith(
+        snapshot: _acceptedSnapshot(placement.snapshot),
+        clearError: true,
+      );
       return placement;
     } catch (error) {
       state = state.copyWith(errorMessage: '$error');
@@ -148,12 +153,8 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     state = state.copyWith(isCommandRunning: true, clearError: true);
     try {
       final snapshot = await command();
-      final current = state.snapshot;
       state = state.copyWith(
-        snapshot:
-            current != null && current.stateVersion > snapshot.stateVersion
-            ? current
-            : snapshot,
+        snapshot: _acceptedSnapshot(snapshot),
         clearError: true,
       );
       return snapshot;
@@ -188,7 +189,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       if (isSnapshot) {
         final snapshot = PartyPollSnapshot.fromJson(response);
         state = state.copyWith(
-          snapshot: snapshot,
+          snapshot: _acceptedSnapshot(snapshot),
           isCommandRunning: false,
           clearError: true,
         );
@@ -210,7 +211,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     try {
       final snapshot = await command();
       state = state.copyWith(
-        snapshot: snapshot,
+        snapshot: _acceptedSnapshot(snapshot),
         isCommandRunning: false,
         clearError: true,
       );
