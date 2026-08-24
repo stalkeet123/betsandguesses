@@ -25,7 +25,13 @@ class RevenueCatService {
   bool get isConfigured => _isConfigured;
 
   Future<void> initialize({String? appUserId}) async {
-    if (_isConfigured) return;
+    if (_isConfigured) {
+      if (appUserId != null && appUserId.trim().isNotEmpty) {
+        final info = await Purchases.logIn(appUserId.trim());
+        _customerInfo = info.customerInfo;
+      }
+      return;
+    }
     if (!RevenueCatConstants.hasApiKey) return;
 
     await Purchases.setLogLevel(LogLevel.warn);

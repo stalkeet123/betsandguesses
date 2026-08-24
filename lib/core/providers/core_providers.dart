@@ -52,7 +52,8 @@ final revenueCatServiceProvider = Provider<RevenueCatService>((ref) {
 
 final premiumStatusProvider = FutureProvider<bool>((ref) async {
   final service = ref.watch(revenueCatServiceProvider);
-  await service.initialize();
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+  await service.initialize(appUserId: userId);
   return service.isPremium();
 });
 
