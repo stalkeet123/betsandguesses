@@ -343,17 +343,17 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             _verticalRule(),
             Expanded(
               child: _BenefitItem(
-                icon: Icons.groups_rounded,
-                title: 'BIGGER LOBBIES',
-                subtitle: 'Up to 10 Players',
+                icon: Icons.category_rounded,
+                title: 'FULL CLASSIC LIBRARY',
+                subtitle: 'More questions to play',
               ),
             ),
             _verticalRule(),
             Expanded(
               child: _BenefitItem(
-                icon: Icons.timer_outlined,
-                title: 'MORE ROUNDS',
-                subtitle: 'Up to 12 Rounds',
+                icon: Icons.groups_rounded,
+                title: 'BIGGER LOBBIES',
+                subtitle: 'Up to 10 Players',
               ),
             ),
           ],
@@ -417,7 +417,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
               _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited hosting'),
               _PlanFeature(Icons.groups_rounded, '10 Players • 12 Rounds'),
-              _PlanFeature(Icons.category_rounded, 'Pick Classic categories'),
+              _PlanFeature(
+                Icons.category_rounded,
+                'Full Classic library • Categories',
+              ),
             ],
             price: _purchasePriceLabel(
               RevenueCatConstants.dailyPassPackageIdentifier,
@@ -444,7 +447,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited hosting'),
               _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
               _PlanFeature(Icons.timer_outlined, 'Up to 12 Rounds'),
-              _PlanFeature(Icons.category_rounded, 'Pick Classic categories'),
+              _PlanFeature(
+                Icons.category_rounded,
+                'Full Classic library • Categories',
+              ),
             ],
             price: _purchasePriceLabel(
               RevenueCatConstants.lifetimePackageIdentifier,
@@ -528,7 +534,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                 ),
                 SizedBox(height: 5),
                 Text(
-                  'Unlimited hosting, bigger lobbies & longer games.',
+                  'Unlimited hosting, full Classic library & bigger games.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

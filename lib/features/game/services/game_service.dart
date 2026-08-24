@@ -58,7 +58,7 @@ class GameService {
   }) async {
     try {
       final response = await _client.rpc(
-        'start_game_v3',
+        'start_game_v4',
         params: {'p_room_id': roomId, 'p_duration_seconds': durationSeconds},
       );
       return SecureGameStart.fromJson(
@@ -78,7 +78,7 @@ class GameService {
     required int durationSeconds,
   }) async {
     final response = await _client.rpc(
-      'claim_next_question_v2',
+      'claim_next_question_v3',
       params: {
         'p_room_id': roomId,
         'p_round_number': roundNumber,
