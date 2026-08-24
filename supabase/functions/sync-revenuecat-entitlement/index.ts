@@ -1,0 +1,22 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const entitlement = "hubword";
+Deno.serve(async (request) => {
+  const auth = request.headers.get("Authorization");
+  if (!auth?.startsWith("Bearer ")) return Response.json({ error: "AUTH_REQUIRED" }, { status: 401 });
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const { data: { user }, error } = await admin.auth.getUser(auth.substring(7));
+  if (error || !user) return Response.json({ error: "AUTH_REQUIRED" }, { status: 401 });
+  const secret = Deno.env.get("REVENUECAT_SECRET_API_KEY");
+  if (!secret) return Response.json({ error: "REVENUECAT_NOT_CONFIGURED" }, { status: 503 });
+  const response = await fetch(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(user.id)}`, { headers: { Authorization: `Bearer ${secret}` } });
+  if (!response.ok && response.status !== 404) return Response.json({ error: "REVENUECAT_UNAVAILABLE" }, { status: 502 });
+  const body = response.ok ? await response.json() : {};
+  const item = body?.subscriber?.entitlements?.[entitlement];
+  const expires = item?.expires_date ? new Date(item.expires_date) : null;
+  const active = !!item && (!expires || expires > new Date());
+  const lifetime = active && !item?.expires_date;
+  const { error: upsertError } = await admin.from("monetization_profiles").upsert({ user_id: user.id, lifetime_premium: lifetime, premium_expires_at: active && !lifetime ? expires!.toISOString() : null, revenuecat_checked_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  if (upsertError) return Response.json({ error: "PROFILE_SYNC_FAILED" }, { status: 500 });
+  const { data, error: statusError } = await admin.rpc("get_monetization_status_v1");
+  return statusError ? Response.json({ error: "STATUS_FAILED" }, { status: 500 }) : Response.json(data);
+});
