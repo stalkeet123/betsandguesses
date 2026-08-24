@@ -5,6 +5,8 @@ import 'package:uuid/uuid.dart';
 import '../services/realtime_service.dart';
 import '../services/audio_service.dart';
 import '../services/revenuecat_service.dart';
+import '../services/monetization_service.dart';
+import '../models/monetization_status.dart';
 import '../../features/room/services/room_service.dart';
 import '../../features/player/services/player_service.dart';
 import '../../features/game/services/game_service.dart';
@@ -138,3 +140,10 @@ final isHostProvider = Provider<bool>((ref) {
   final player = ref.watch(currentPlayerProvider);
   return player?.isHost ?? false;
 });
+
+final monetizationServiceProvider = Provider<MonetizationService>(
+  (ref) => MonetizationService(ref.watch(supabaseClientProvider)),
+);
+final monetizationStatusProvider = FutureProvider<MonetizationStatus>(
+  (ref) => ref.watch(monetizationServiceProvider).getStatus(),
+);

@@ -17,6 +17,8 @@ Deno.serve(async (request) => {
   const lifetime = active && !item?.expires_date;
   const { error: upsertError } = await admin.from("monetization_profiles").upsert({ user_id: user.id, lifetime_premium: lifetime, premium_expires_at: active && !lifetime ? expires!.toISOString() : null, revenuecat_checked_at: new Date().toISOString(), updated_at: new Date().toISOString() });
   if (upsertError) return Response.json({ error: "PROFILE_SYNC_FAILED" }, { status: 500 });
-  const { data, error: statusError } = await admin.rpc("get_monetization_status_v1");
-  return statusError ? Response.json({ error: "STATUS_FAILED" }, { status: 500 }) : Response.json(data);
-});
+  const { data: profile, error: statusError } = await admin.from("monetization_profiles").select("lifetime_premium,premium_expires_at,free_host_games_used").eq("user_id", user.id).single();
+  if (statusError || !profile) return Response.json({ error: "STATUS_FAILED" }, { status: 500 });
+  const expiry = profile.premium_expires_at ? new Date(profile.premium_expires_at) : null;
+  const isPremium = profile.lifetime_premium || (!!expiry && !Number.isNaN(expiry.valueOf()) && expiry > new Date());
+  return Response.json({ is_premium: isPremium, is_lifetime: profile.lifetime_premium, premium_expires_at: profile.premium_expires_at, free_host_games_used: profile.free_host_games_used, free_host_games_remaining: Math.max(0, 3 - profile.free_host_games_used) });});
