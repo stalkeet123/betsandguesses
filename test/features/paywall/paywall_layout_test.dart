@@ -24,6 +24,21 @@ void main() {
   testWidgets('paywall fits 320x568 at 1.2 text scale', (tester) async {
     await _pumpPaywall(tester, size: const Size(320, 568), textScale: 1.2);
   });
+
+  testWidgets('purchase cards keep content-driven visual mass', (tester) async {
+    await _pumpPaywall(tester, size: const Size(390, 844), textScale: 1);
+
+    final partyPass = tester.getSize(
+      find.byKey(const ValueKey('paywall-party-pass')),
+    );
+    final fullAccess = tester.getSize(
+      find.byKey(const ValueKey('paywall-full-access')),
+    );
+
+    expect(partyPass.width, closeTo(fullAccess.width, 0.1));
+    expect(partyPass.height, lessThan(280));
+    expect(fullAccess.height, inInclusiveRange(110, 170));
+  });
 }
 
 Future<void> _pumpPaywall(

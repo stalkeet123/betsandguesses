@@ -258,13 +258,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                           SizedBox(height: veryShort ? 5 : 8),
                           _buildBenefitStrip(compact: veryShort),
                           SizedBox(height: veryShort ? 7 : 11),
-                          Expanded(
-                            child: _buildPlans(
-                              context,
-                              isPremium: isPremium,
-                              compact: veryShort || short,
-                            ),
+                          _buildPlans(
+                            context,
+                            isPremium: isPremium,
+                            compact: veryShort || short,
                           ),
+                          const Spacer(),
                           SizedBox(height: veryShort ? 5 : 8),
                           _buildFooter(compact: veryShort),
                         ],
@@ -432,112 +431,104 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     required bool isPremium,
     required bool compact,
   }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardCompact = compact || constraints.maxHeight < 300;
-        final lifetimeHeight = cardCompact ? 106.0 : 132.0;
-
-        return AnimatedBuilder(
-          animation: _glowController,
-          builder: (context, _) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _PlanCard(
-                    variant: _PlanCardVariant.primary,
-                    title: 'PARTY PASS',
-                    subtitle: 'Everything premium for the next 24 hours.',
-                    badge: 'MOST POPULAR',
-                    crownColor: AppColors.chipGold,
-                    glowValue: _glowController.value,
-                    compact: cardCompact,
-                    background: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF5F2477),
-                        Color(0xFF271127),
-                        Color(0xFF14071C),
-                      ],
-                    ),
-                    features: const [
-                      _PlanFeature(
-                        Icons.all_inclusive_rounded,
-                        'Unlimited hosting',
-                      ),
-                      _PlanFeature(Icons.groups_rounded, 'Up to 10 players'),
-                      _PlanFeature(Icons.timer_outlined, 'Up to 12 rounds'),
-                      _PlanFeature(
-                        Icons.category_rounded,
-                        'Pick Classic categories',
-                      ),
-                    ],
-                    priceLabel: _purchaseCtaLabel(
-                      'GET PARTY PASS',
-                      RevenueCatConstants.dailyPassPackageIdentifier,
-                    ),
-                    isPurchasable: _isPackagePurchasable(
-                      RevenueCatConstants.dailyPassPackageIdentifier,
-                    ),
-                    isLoading:
-                        _busyPackageIdentifier ==
+    return AnimatedBuilder(
+      animation: _glowController,
+      builder: (context, _) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _PlanCard(
+              variant: _PlanCardVariant.primary,
+              title: 'PARTY PASS',
+              subtitle: 'Premium access for the next 24 hours.',
+              badge: 'MOST POPULAR',
+              crownColor: AppColors.chipGold,
+              glowValue: _glowController.value,
+              compact: compact,
+              background: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF642A79),
+                  Color(0xFF301337),
+                  Color(0xFF17091E),
+                ],
+              ),
+              features: const [
+                _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited hosting'),
+                _PlanFeature(Icons.groups_rounded, 'Up to 10 players'),
+                _PlanFeature(Icons.timer_outlined, 'Up to 12 rounds'),
+                _PlanFeature(Icons.category_rounded, 'Classic categories'),
+              ],
+              priceLabel: _purchaseCtaLabel(
+                'GET PARTY PASS',
+                RevenueCatConstants.dailyPassPackageIdentifier,
+              ),
+              isPurchasable: _isPackagePurchasable(
+                RevenueCatConstants.dailyPassPackageIdentifier,
+              ),
+              isLoading:
+                  _busyPackageIdentifier ==
+                  RevenueCatConstants.dailyPassPackageIdentifier,
+              onTap:
+                  isPremium ||
+                      !_isPackagePurchasable(
                         RevenueCatConstants.dailyPassPackageIdentifier,
-                    onTap:
-                        isPremium ||
-                            !_isPackagePurchasable(
-                              RevenueCatConstants.dailyPassPackageIdentifier,
-                            )
-                        ? null
-                        : () => _purchase(
-                            RevenueCatConstants.dailyPassPackageIdentifier,
-                          ),
-                  ),
+                      )
+                  ? null
+                  : () => _purchase(
+                      RevenueCatConstants.dailyPassPackageIdentifier,
+                    ),
+            ),
+            SizedBox(height: compact ? 8 : 12),
+            _PlanCard(
+              variant: _PlanCardVariant.secondary,
+              title: 'FULL ACCESS',
+              subtitle: 'Lifetime • One-time purchase',
+              crownColor: AppColors.neonGreen,
+              compact: compact,
+              background: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF123E31),
+                  Color(0xFF0B281F),
+                  Color(0xFF071A15),
+                ],
+              ),
+              features: const [
+                _PlanFeature(
+                  Icons.all_inclusive_rounded,
+                  'Unlimited hosting • 10 players',
                 ),
-                SizedBox(height: cardCompact ? 7 : 10),
-                SizedBox(
-                  height: lifetimeHeight,
-                  child: _PlanCard(
-                    variant: _PlanCardVariant.secondary,
-                    title: 'FULL ACCESS',
-                    subtitle: 'Lifetime • One-time purchase',
-                    crownColor: AppColors.neonGreen,
-                    compact: cardCompact,
-                    features: const [
-                      _PlanFeature(
-                        Icons.all_inclusive_rounded,
-                        'Unlimited hosting • Up to 10 players',
-                      ),
-                      _PlanFeature(
-                        Icons.category_rounded,
-                        'Up to 12 rounds • Classic categories',
-                      ),
-                    ],
-                    priceLabel: _purchaseCtaLabel(
-                      'LIFETIME',
-                      RevenueCatConstants.lifetimePackageIdentifier,
-                    ),
-                    isPurchasable: _isPackagePurchasable(
-                      RevenueCatConstants.lifetimePackageIdentifier,
-                    ),
-                    isGreenPrice: true,
-                    isLoading:
-                        _busyPackageIdentifier ==
-                        RevenueCatConstants.lifetimePackageIdentifier,
-                    onTap:
-                        isPremium ||
-                            !_isPackagePurchasable(
-                              RevenueCatConstants.lifetimePackageIdentifier,
-                            )
-                        ? null
-                        : () => _purchase(
-                            RevenueCatConstants.lifetimePackageIdentifier,
-                          ),
-                  ),
+                _PlanFeature(
+                  Icons.category_rounded,
+                  '12 rounds • Classic categories',
                 ),
               ],
-            );
-          },
+              priceLabel: _purchaseCtaLabel(
+                'LIFETIME',
+                RevenueCatConstants.lifetimePackageIdentifier,
+              ),
+              isPurchasable: _isPackagePurchasable(
+                RevenueCatConstants.lifetimePackageIdentifier,
+              ),
+              isGreenPrice: true,
+              isLoading:
+                  _busyPackageIdentifier ==
+                  RevenueCatConstants.lifetimePackageIdentifier,
+              onTap:
+                  isPremium ||
+                      !_isPackagePurchasable(
+                        RevenueCatConstants.lifetimePackageIdentifier,
+                      )
+                  ? null
+                  : () => _purchase(
+                      RevenueCatConstants.lifetimePackageIdentifier,
+                    ),
+            ),
+          ],
         );
       },
     );
@@ -835,6 +826,7 @@ class _PlanCard extends StatelessWidget {
     final badgeOverlap = compact ? 10.0 : 14.0;
     final glow = 0.26 + (glowValue * 0.46);
     final card = Container(
+      key: ValueKey(isPrimary ? 'paywall-party-pass' : 'paywall-full-access'),
       alignment: Alignment.topCenter,
       padding: EdgeInsets.fromLTRB(
         compact ? 11 : 16,
@@ -945,7 +937,10 @@ class _PlanCard extends StatelessWidget {
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
-        Positioned.fill(top: badgeOverlap, child: card),
+        Padding(
+          padding: EdgeInsets.only(top: badgeOverlap),
+          child: card,
+        ),
         Positioned(
           top: 0,
           child: Container(
@@ -1110,7 +1105,7 @@ class _PlanHeading extends StatelessWidget {
               size: compact ? 18 : 23,
             ),
             SizedBox(width: compact ? 6 : 8),
-            Expanded(
+            Flexible(
               child: Text(
                 title,
                 maxLines: 1,
