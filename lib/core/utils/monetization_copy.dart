@@ -20,9 +20,9 @@ String paywallCurrentPlanText({
   if (freeHostGamesRemaining == null) return 'CURRENT PLAN: FREE';
 
   return switch (freeHostGamesRemaining) {
-    3 => 'FREE • 3 HOSTED GAMES LEFT',
+    3 => 'FREE • 3 HOSTED GAMES INCLUDED',
     2 => 'FREE • 2 HOSTED GAMES LEFT',
     1 => 'FREE • LAST HOSTED GAME',
-    _ => 'FREE TRIAL USED',
+    _ => 'FREE HOSTING USED',
   };
 }

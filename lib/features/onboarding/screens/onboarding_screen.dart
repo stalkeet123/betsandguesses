@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,7 +102,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     ref.read(audioServiceProvider).playClick();
     await ref.read(onboardingSeenProvider.notifier).markSeen();
     if (!mounted) return;
-    context.goNamed('home');
+    context.goNamed(kIsWeb ? 'home' : 'premium');
   }
 
   void _next() {

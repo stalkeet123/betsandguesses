@@ -48,10 +48,18 @@ void main() {
     );
   });
 
-  test('formats the paywall plan strip safely when status is unavailable', () {
+  test('formats the paywall plan strip from hosted game credits', () {
     expect(
-      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: null),
-      'CURRENT PLAN: FREE',
+      paywallCurrentPlanText(isPremium: true, freeHostGamesRemaining: 0),
+      'PREMIUM ACTIVE',
+    );
+    expect(
+      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 3),
+      'FREE • 3 HOSTED GAMES INCLUDED',
+    );
+    expect(
+      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 2),
+      'FREE • 2 HOSTED GAMES LEFT',
     );
     expect(
       paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 1),
@@ -59,7 +67,11 @@ void main() {
     );
     expect(
       paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 0),
-      'FREE TRIAL USED',
+      'FREE HOSTING USED',
+    );
+    expect(
+      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: null),
+      'CURRENT PLAN: FREE',
     );
   });
   test('parses lifetime and expiry entitlement fields safely', () {

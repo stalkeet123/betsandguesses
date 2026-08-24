@@ -10,7 +10,9 @@ import '../../../core/utils/monetization_copy.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 
 class PaywallScreen extends ConsumerStatefulWidget {
-  const PaywallScreen({super.key});
+  final bool enableStartupWork;
+
+  const PaywallScreen({super.key, this.enableStartupWork = true});
 
   @override
   ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
@@ -34,10 +36,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       lowerBound: 0.0,
       upperBound: 1.0,
     )..repeat(reverse: true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(audioServiceProvider).startMainBgm();
-      _loadRevenueCat();
-    });
+    if (widget.enableStartupWork) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(audioServiceProvider).startMainBgm();
+        _loadRevenueCat();
+      });
+    }
   }
 
   @override
@@ -202,7 +206,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                   colors: [
                     AppColors.feltLight.withValues(alpha: 0.16),
                     Colors.transparent,
-                    Colors.black.withValues(alpha: 0.36),
+                    Colors.black.withValues(alpha: 0.42),
                   ],
                 ),
               ),
@@ -211,60 +215,53 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final contentWidth = constraints.maxWidth
-                    .clamp(320.0, 560.0)
-                    .toDouble();
-                final designHeight = constraints.maxHeight
-                    .clamp(720.0, 900.0)
-                    .toDouble();
-                final horizontalPadding = contentWidth < 380 ? 14.0 : 20.0;
+                final veryShort = constraints.maxHeight < 590;
+                final short = constraints.maxHeight < 720;
+                final horizontalPadding = constraints.maxWidth <= 340
+                    ? 12.0
+                    : constraints.maxWidth < 390
+                    ? 16.0
+                    : 20.0;
+                final verticalPadding = veryShort ? 6.0 : 10.0;
 
                 return Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topCenter,
-                    child: SizedBox(
-                      width: contentWidth,
-                      height: designHeight,
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          horizontalPadding,
-                          8,
-                          horizontalPadding,
-                          14,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _buildTopBar(context),
-                            const SizedBox(height: 4),
-                            const SizedBox(
-                              height: 100,
-                              child: CachedAssetImage(
-                                AppAssetPaths.logo,
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            _buildTitle(),
-                            const SizedBox(height: 8),
-                            _buildCurrentPlanStrip(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        verticalPadding,
+                        horizontalPadding,
+                        veryShort ? 8 : 12,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildCompactHeader(context, compact: veryShort),
+                          SizedBox(height: veryShort ? 2 : 5),
+                          _buildTitle(compact: veryShort),
+                          SizedBox(height: veryShort ? 4 : 7),
+                          _buildCurrentPlanStrip(
+                            isPremium: isPremium,
+                            freeHostGamesRemaining:
+                                serverStatus?.freeHostGamesRemaining,
+                            compact: veryShort,
+                          ),
+                          SizedBox(height: veryShort ? 5 : 8),
+                          _buildBenefitStrip(compact: veryShort),
+                          SizedBox(height: veryShort ? 7 : 11),
+                          Expanded(
+                            child: _buildPlans(
+                              context,
                               isPremium: isPremium,
-                              freeHostGamesRemaining:
-                                  serverStatus?.freeHostGamesRemaining,
+                              compact: veryShort || short,
                             ),
-                            const SizedBox(height: 10),
-                            _buildBenefitStrip(),
-                            const SizedBox(height: 14),
-                            Expanded(
-                              child: _buildPlans(context, isPremium: isPremium),
-                            ),
-                            const SizedBox(height: 12),
-                            _buildBottomBanner(),
-                            const SizedBox(height: 10),
-                            _buildFooter(),
-                          ],
-                        ),
+                          ),
+                          SizedBox(height: veryShort ? 6 : 9),
+                          _buildBottomBanner(compact: veryShort),
+                          SizedBox(height: veryShort ? 4 : 7),
+                          _buildFooter(compact: veryShort),
+                        ],
                       ),
                     ),
                   ),
@@ -277,37 +274,54 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     );
   }
 
-  Widget _buildTopBar(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 44,
-          height: 44,
-          child: IconButton(
-            onPressed: () {
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              } else {
-                context.goNamed('home');
-              }
-            },
-            icon: const Center(child: Icon(Icons.close_rounded, size: 22)),
-            color: AppColors.ivory,
-            style: IconButton.styleFrom(
-              backgroundColor: AppColors.feltDark.withValues(alpha: 0.84),
-              side: const BorderSide(color: AppColors.brassLight, width: 1.5),
-              shape: const CircleBorder(),
-              padding: EdgeInsets.zero,
+  Widget _buildCompactHeader(BuildContext context, {required bool compact}) {
+    return SizedBox(
+      height: compact ? 48 : 60,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(
+            height: compact ? 42 : 54,
+            child: const CachedAssetImage(
+              AppAssetPaths.logo,
+              fit: BoxFit.contain,
+              cacheWidth: 420,
             ),
           ),
-        ),
-        const Spacer(),
-      ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: IconButton(
+                onPressed: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  } else {
+                    context.goNamed('home');
+                  }
+                },
+                icon: const Center(child: Icon(Icons.close_rounded, size: 22)),
+                color: AppColors.ivory,
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.feltDark.withValues(alpha: 0.84),
+                  side: const BorderSide(
+                    color: AppColors.brassLight,
+                    width: 1.5,
+                  ),
+                  shape: const CircleBorder(),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildTitle() {
-    return const Text(
+  Widget _buildTitle({required bool compact}) {
+    return Text(
       'KEEP THE PARTY GOING',
       textAlign: TextAlign.center,
       maxLines: 1,
@@ -315,20 +329,20 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       style: TextStyle(
         fontFamily: 'RehnCondensed',
         color: AppColors.ivory,
-        fontSize: 19,
+        fontSize: compact ? 18 : 21,
         fontWeight: FontWeight.w900,
         letterSpacing: 0.8,
         height: 1,
-        shadows: [
+        shadows: const [
           Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 2)),
         ],
       ),
     );
   }
 
-  Widget _buildBenefitStrip() {
+  Widget _buildBenefitStrip({required bool compact}) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: EdgeInsets.symmetric(vertical: compact ? 7 : 9),
       decoration: _darkPanel(radius: 14),
       child: IntrinsicHeight(
         child: Row(
@@ -338,14 +352,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                 icon: Icons.all_inclusive_rounded,
                 title: 'UNLIMITED HOSTING',
                 subtitle: 'Host more games',
-              ),
-            ),
-            _verticalRule(),
-            Expanded(
-              child: _BenefitItem(
-                icon: Icons.category_rounded,
-                title: 'FULL CLASSIC LIBRARY',
-                subtitle: 'More questions to play',
+                compact: compact,
               ),
             ),
             _verticalRule(),
@@ -354,6 +361,16 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                 icon: Icons.groups_rounded,
                 title: 'BIGGER LOBBIES',
                 subtitle: 'Up to 10 Players',
+                compact: compact,
+              ),
+            ),
+            _verticalRule(),
+            Expanded(
+              child: _BenefitItem(
+                icon: Icons.timer_outlined,
+                title: 'MORE ROUNDS',
+                subtitle: 'Up to 12 Rounds',
+                compact: compact,
               ),
             ),
           ],
@@ -365,128 +382,165 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   Widget _buildCurrentPlanStrip({
     required bool isPremium,
     required int? freeHostGamesRemaining,
+    required bool compact,
   }) {
     return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.22),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: AppColors.brassLight.withValues(alpha: 0.2),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 10 : 14,
+            vertical: compact ? 5 : 6,
           ),
-        ),
-        child: Text(
-          paywallCurrentPlanText(
-            isPremium: isPremium,
-            freeHostGamesRemaining: freeHostGamesRemaining,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: AppColors.brassLight.withValues(alpha: 0.2),
+            ),
           ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: isPremium
-                ? AppColors.neonGreen
-                : AppColors.ivory.withValues(alpha: 0.72),
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-            height: 1,
+          child: Text(
+            paywallCurrentPlanText(
+              isPremium: isPremium,
+              freeHostGamesRemaining: freeHostGamesRemaining,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isPremium
+                  ? AppColors.neonGreen
+                  : AppColors.ivory.withValues(alpha: 0.72),
+              fontSize: compact ? 9 : 10,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildPlans(BuildContext context, {required bool isPremium}) {
-    return AnimatedBuilder(
-      animation: _glowController,
-      builder: (context, _) {
-        final cards = [
-          _PlanCard(
-            title: 'PARTY PASS',
-            subtitle: '24 Hours',
-            badge: 'MOST POPULAR',
-            crownColor: AppColors.chipGold,
-            glowValue: _glowController.value,
-            background: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF5F2477), Color(0xFF271127), Color(0xFF14071C)],
-            ),
-            features: const [
-              _PlanFeature(Icons.access_time_rounded, '24-hour access'),
-              _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
-              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited hosting'),
-              _PlanFeature(Icons.groups_rounded, '10 Players • 12 Rounds'),
-              _PlanFeature(
-                Icons.category_rounded,
-                'Full Classic library • Categories',
-              ),
-            ],
-            price: _purchasePriceLabel(
-              RevenueCatConstants.dailyPassPackageIdentifier,
-            ),
-            footer: '24 HOURS ACCESS',
-            isLoading:
-                _busyPackageIdentifier ==
-                RevenueCatConstants.dailyPassPackageIdentifier,
-            onTap:
-                isPremium ||
-                    !_isPackagePurchasable(
-                      RevenueCatConstants.dailyPassPackageIdentifier,
-                    )
-                ? null
-                : () =>
-                      _purchase(RevenueCatConstants.dailyPassPackageIdentifier),
-          ),
-          _PlanCard(
-            title: 'FULL ACCESS',
-            subtitle: 'One-time purchase',
-            crownColor: AppColors.neonGreen,
-            features: const [
-              _PlanFeature(Icons.workspace_premium_rounded, 'Lifetime access'),
-              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited hosting'),
-              _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
-              _PlanFeature(Icons.timer_outlined, 'Up to 12 Rounds'),
-              _PlanFeature(
-                Icons.category_rounded,
-                'Full Classic library • Categories',
-              ),
-            ],
-            price: _purchasePriceLabel(
-              RevenueCatConstants.lifetimePackageIdentifier,
-            ),
-            footer: 'LIFETIME ACCESS',
-            isGreenPrice: true,
-            isLoading:
-                _busyPackageIdentifier ==
-                RevenueCatConstants.lifetimePackageIdentifier,
-            onTap:
-                isPremium ||
-                    !_isPackagePurchasable(
-                      RevenueCatConstants.lifetimePackageIdentifier,
-                    )
-                ? null
-                : () =>
-                      _purchase(RevenueCatConstants.lifetimePackageIdentifier),
-          ),
-        ];
+  Widget _buildPlans(
+    BuildContext context, {
+    required bool isPremium,
+    required bool compact,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardCompact = compact || constraints.maxHeight < 285;
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var index = 0; index < cards.length; index++) ...[
-              Expanded(child: cards[index]),
-              if (index != cards.length - 1) const SizedBox(width: 14),
-            ],
-          ],
+        return AnimatedBuilder(
+          animation: _glowController,
+          builder: (context, _) {
+            final cards = [
+              _PlanCard(
+                title: 'PARTY PASS',
+                subtitle: '24 Hours',
+                badge: 'MOST POPULAR',
+                crownColor: AppColors.chipGold,
+                glowValue: _glowController.value,
+                compact: cardCompact,
+                background: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF5F2477),
+                    Color(0xFF271127),
+                    Color(0xFF14071C),
+                  ],
+                ),
+                features: const [
+                  _PlanFeature(Icons.access_time_rounded, '24-hour access'),
+                  _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
+                  _PlanFeature(
+                    Icons.all_inclusive_rounded,
+                    'Unlimited hosting',
+                  ),
+                  _PlanFeature(Icons.groups_rounded, '10 Players • 12 Rounds'),
+                  _PlanFeature(
+                    Icons.category_rounded,
+                    'Pick Classic categories',
+                  ),
+                ],
+                price: _purchasePriceLabel(
+                  RevenueCatConstants.dailyPassPackageIdentifier,
+                ),
+                footer: '24 HOURS ACCESS',
+                isLoading:
+                    _busyPackageIdentifier ==
+                    RevenueCatConstants.dailyPassPackageIdentifier,
+                onTap:
+                    isPremium ||
+                        !_isPackagePurchasable(
+                          RevenueCatConstants.dailyPassPackageIdentifier,
+                        )
+                    ? null
+                    : () => _purchase(
+                        RevenueCatConstants.dailyPassPackageIdentifier,
+                      ),
+              ),
+              _PlanCard(
+                title: 'FULL ACCESS',
+                subtitle: 'One-time purchase',
+                crownColor: AppColors.neonGreen,
+                compact: cardCompact,
+                features: const [
+                  _PlanFeature(
+                    Icons.workspace_premium_rounded,
+                    'Lifetime access',
+                  ),
+                  _PlanFeature(
+                    Icons.all_inclusive_rounded,
+                    'Unlimited hosting',
+                  ),
+                  _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
+                  _PlanFeature(Icons.timer_outlined, 'Up to 12 Rounds'),
+                  _PlanFeature(
+                    Icons.category_rounded,
+                    'Pick Classic categories',
+                  ),
+                ],
+                price: _purchasePriceLabel(
+                  RevenueCatConstants.lifetimePackageIdentifier,
+                ),
+                footer: 'LIFETIME ACCESS',
+                isGreenPrice: true,
+                isLoading:
+                    _busyPackageIdentifier ==
+                    RevenueCatConstants.lifetimePackageIdentifier,
+                onTap:
+                    isPremium ||
+                        !_isPackagePurchasable(
+                          RevenueCatConstants.lifetimePackageIdentifier,
+                        )
+                    ? null
+                    : () => _purchase(
+                        RevenueCatConstants.lifetimePackageIdentifier,
+                      ),
+              ),
+            ];
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: cards[0]),
+                SizedBox(width: cardCompact ? 8 : 14),
+                Expanded(child: cards[1]),
+              ],
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildBottomBanner() {
+  Widget _buildBottomBanner({required bool compact}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 14,
+        vertical: compact ? 7 : 9,
+      ),
       decoration: _darkPanel(radius: 14).copyWith(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -497,49 +551,49 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: compact ? 32 : 38,
+            height: compact ? 32 : 38,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: AppColors.goldGradient,
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.brass.withValues(alpha: 0.38),
-                  blurRadius: 18,
+                  color: AppColors.brass.withValues(alpha: 0.3),
+                  blurRadius: 12,
                 ),
               ],
             ),
-            child: const Icon(
+            child: Icon(
               Icons.workspace_premium_rounded,
               color: AppColors.ink,
-              size: 24,
+              size: compact ? 19 : 22,
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: compact ? 8 : 11),
           Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'HOST MORE. PLAY BIGGER.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppColors.brassLight,
-                    fontSize: 14,
+                    fontSize: compact ? 12 : 14,
                     fontWeight: FontWeight.w900,
                     height: 1,
                   ),
                 ),
-                SizedBox(height: 5),
+                SizedBox(height: compact ? 3 : 4),
                 Text(
-                  'Unlimited hosting, full Classic library & bigger games.',
+                  'Unlimited hosting • 10 players • 12 rounds',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppColors.ivory,
-                    fontSize: 11,
+                    fontSize: compact ? 9 : 11,
                     fontWeight: FontWeight.w700,
                     height: 1,
                   ),
@@ -561,35 +615,38 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     }
   }
 
-  Widget _buildFooter() {
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _FooterChip(
-            icon: _isRestoring
-                ? Icons.hourglass_top_rounded
-                : Icons.restore_rounded,
-            label: _isRestoring ? 'RESTORING' : 'RESTORE PURCHASES',
-            onTap: _restorePurchases,
-          ),
-          const SizedBox(width: 20),
-          _FooterChip(
-            icon: Icons.description_rounded,
-            label: 'TERMS OF USE',
-            onTap: () => _launchURL(
-              'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/',
+  Widget _buildFooter({required bool compact}) {
+    return SizedBox(
+      height: compact ? 26 : 30,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _FooterChip(
+              icon: _isRestoring
+                  ? Icons.hourglass_top_rounded
+                  : Icons.restore_rounded,
+              label: _isRestoring ? 'RESTORING' : 'RESTORE PURCHASES',
+              onTap: _restorePurchases,
             ),
-          ),
-          const SizedBox(width: 20),
-          _FooterChip(
-            icon: Icons.privacy_tip_rounded,
-            label: 'PRIVACY POLICY',
-            onTap: () =>
-                _launchURL('https://bets-and-guesses.com/privacy.html'),
-          ),
-        ],
+            const SizedBox(width: 20),
+            _FooterChip(
+              icon: Icons.description_rounded,
+              label: 'TERMS OF USE',
+              onTap: () => _launchURL(
+                'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/',
+              ),
+            ),
+            const SizedBox(width: 20),
+            _FooterChip(
+              icon: Icons.privacy_tip_rounded,
+              label: 'PRIVACY POLICY',
+              onTap: () =>
+                  _launchURL('https://bets-and-guesses.com/privacy.html'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -747,11 +804,13 @@ class _BenefitItem extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final bool compact;
 
   const _BenefitItem({
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.compact = false,
   });
 
   @override
@@ -759,29 +818,29 @@ class _BenefitItem extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: AppColors.brassLight, size: 30),
-        const SizedBox(height: 7),
+        Icon(icon, color: AppColors.brassLight, size: compact ? 22 : 28),
+        SizedBox(height: compact ? 4 : 6),
         Text(
           title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.brassLight,
-            fontSize: 11,
+            fontSize: compact ? 9 : 11,
             fontWeight: FontWeight.w900,
             height: 1,
           ),
         ),
-        const SizedBox(height: 5),
+        SizedBox(height: compact ? 3 : 5),
         Text(
           subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.ivory,
-            fontSize: 10,
+            fontSize: compact ? 8 : 10,
             fontWeight: FontWeight.w700,
             height: 1,
           ),
@@ -811,6 +870,7 @@ class _PlanCard extends StatelessWidget {
   final bool isLoading;
   final double glowValue;
   final VoidCallback? onTap;
+  final bool compact;
 
   const _PlanCard({
     required this.title,
@@ -825,151 +885,154 @@ class _PlanCard extends StatelessWidget {
     this.isLoading = false,
     this.glowValue = 0.0,
     this.onTap,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final isGlowing = glowValue > 0;
     final glow = isGlowing ? 0.26 + (glowValue * 0.46) : 0.0;
-
-    // Badge height so both cards align at the same top level
-    const badgeOverlap = 14.0;
+    final badgeOverlap = compact ? 10.0 : 14.0;
 
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
-        Container(
-          margin: const EdgeInsets.only(top: badgeOverlap),
-          padding: const EdgeInsets.fromLTRB(12, 20, 12, 12),
-          decoration: BoxDecoration(
-            gradient:
-                background ??
-                LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.feltDark.withValues(alpha: 0.98),
-                    AppColors.felt.withValues(alpha: 0.72),
-                    AppColors.feltDark.withValues(alpha: 0.98),
-                  ],
-                ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: isGlowing
-                  ? Color.lerp(
-                      AppColors.brassLight,
-                      Colors.white,
-                      glowValue * 0.42,
-                    )!
-                  : AppColors.brassLight,
-              width: badge == null ? 1.35 : 1.8,
+        Positioned.fill(
+          top: badgeOverlap,
+          child: Container(
+            padding: EdgeInsets.fromLTRB(
+              compact ? 8 : 12,
+              compact ? 15 : 20,
+              compact ? 8 : 12,
+              compact ? 8 : 12,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.38),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-              if (badge != null)
-                BoxShadow(
-                  color: AppColors.brass.withValues(alpha: 0.3),
-                  blurRadius: 20,
-                ),
-              if (isGlowing)
-                BoxShadow(
-                  color: AppColors.brassLight.withValues(alpha: glow),
-                  blurRadius: 22 + (glowValue * 18),
-                  spreadRadius: 1.5 + (glowValue * 2.8),
-                ),
-              if (isGlowing)
-                BoxShadow(
-                  color: AppColors.chipGold.withValues(
-                    alpha: 0.22 + (glowValue * 0.26),
-                  ),
-                  blurRadius: 36 + (glowValue * 22),
-                  spreadRadius: -2,
-                ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Icon(
-                Icons.workspace_premium_rounded,
-                color: crownColor,
-                size: 24,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                title,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'RehnCondensed',
-                  color: badge == null ? AppColors.ivory : AppColors.brassLight,
-                  fontSize: title.length > 8 ? 18 : 22,
-                  fontWeight: FontWeight.w900,
-                  height: 0.95,
-                  shadows: const [
-                    Shadow(
-                      color: Colors.black87,
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.ivory,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                height: 1,
-                color: AppColors.brassLight.withValues(alpha: 0.26),
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    for (var index = 0; index < features.length; index++) ...[
-                      _FeatureRow(feature: features[index]),
-                      if (index != features.length - 1)
-                        const SizedBox(height: 7),
+            decoration: BoxDecoration(
+              gradient:
+                  background ??
+                  LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.feltDark.withValues(alpha: 0.98),
+                      AppColors.felt.withValues(alpha: 0.72),
+                      AppColors.feltDark.withValues(alpha: 0.98),
                     ],
-                  ],
-                ),
+                  ),
+              borderRadius: BorderRadius.circular(compact ? 14 : 18),
+              border: Border.all(
+                color: isGlowing
+                    ? Color.lerp(
+                        AppColors.brassLight,
+                        Colors.white,
+                        glowValue * 0.42,
+                      )!
+                    : AppColors.brassLight,
+                width: badge == null ? 1.35 : 1.8,
               ),
-              const SizedBox(height: 8),
-              if (price != null) ...[
-                _PriceButton(
-                  price: price!,
-                  isGreen: isGreenPrice,
-                  isLoading: isLoading,
-                  onTap: onTap,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
                 ),
-                const SizedBox(height: 8),
+                if (badge != null)
+                  BoxShadow(
+                    color: AppColors.brass.withValues(alpha: 0.3),
+                    blurRadius: 20,
+                  ),
+                if (isGlowing)
+                  BoxShadow(
+                    color: AppColors.brassLight.withValues(alpha: glow),
+                    blurRadius: 22 + (glowValue * 18),
+                    spreadRadius: 1.5 + (glowValue * 2.8),
+                  ),
               ],
-              _PlanFooter(label: footer),
-            ],
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.workspace_premium_rounded,
+                  color: crownColor,
+                  size: compact ? 18 : 24,
+                ),
+                SizedBox(height: compact ? 3 : 6),
+                Text(
+                  title,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'RehnCondensed',
+                    color: badge == null
+                        ? AppColors.ivory
+                        : AppColors.brassLight,
+                    fontSize: compact
+                        ? (title.length > 8 ? 15 : 18)
+                        : (title.length > 8 ? 18 : 22),
+                    fontWeight: FontWeight.w900,
+                    height: 0.95,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: compact ? 2 : 4),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.ivory,
+                    fontSize: compact ? 9 : 11,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+                SizedBox(height: compact ? 5 : 10),
+                Container(
+                  height: 1,
+                  color: AppColors.brassLight.withValues(alpha: 0.26),
+                ),
+                SizedBox(height: compact ? 5 : 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      for (final feature in features)
+                        _FeatureRow(feature: feature, compact: compact),
+                    ],
+                  ),
+                ),
+                SizedBox(height: compact ? 4 : 8),
+                if (price != null) ...[
+                  _PriceButton(
+                    price: price!,
+                    isGreen: isGreenPrice,
+                    isLoading: isLoading,
+                    onTap: onTap,
+                    compact: compact,
+                  ),
+                  SizedBox(height: compact ? 4 : 8),
+                ],
+                _PlanFooter(label: footer, compact: compact),
+              ],
+            ),
           ),
         ),
         if (badge != null)
           Positioned(
             top: 0,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 11 : 18,
+                vertical: compact ? 5 : 7,
+              ),
               decoration: BoxDecoration(
                 gradient: AppColors.goldGradient,
                 borderRadius: BorderRadius.circular(8),
@@ -986,9 +1049,9 @@ class _PlanCard extends StatelessWidget {
               ),
               child: Text(
                 badge!,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.ink,
-                  fontSize: 10,
+                  fontSize: compact ? 8 : 10,
                   fontWeight: FontWeight.w900,
                   height: 1,
                 ),
@@ -1002,25 +1065,33 @@ class _PlanCard extends StatelessWidget {
 
 class _FeatureRow extends StatelessWidget {
   final _PlanFeature feature;
+  final bool compact;
 
-  const _FeatureRow({required this.feature});
+  const _FeatureRow({required this.feature, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(feature.icon, color: AppColors.brassLight, size: 16),
-        const SizedBox(width: 8),
+        Icon(
+          feature.icon,
+          color: AppColors.brassLight,
+          size: compact ? 12 : 16,
+        ),
+        SizedBox(width: compact ? 4 : 8),
         Expanded(
-          child: Text(
-            feature.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.ivory,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              feature.label,
+              maxLines: 1,
+              style: TextStyle(
+                color: AppColors.ivory,
+                fontSize: compact ? 10 : 12,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+              ),
             ),
           ),
         ),
@@ -1034,26 +1105,31 @@ class _PriceButton extends StatelessWidget {
   final bool isGreen;
   final bool isLoading;
   final VoidCallback? onTap;
+  final bool compact;
 
   const _PriceButton({
     required this.price,
     required this.isGreen,
     required this.isLoading,
     this.onTap,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 40,
+      height: compact ? 32 : 40,
       child: ElevatedButton(
         onPressed: isLoading ? null : onTap,
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           backgroundColor: isGreen ? AppColors.feltLight : AppColors.brass,
           foregroundColor: isGreen ? AppColors.ivory : AppColors.ink,
-          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          textStyle: TextStyle(
+            fontSize: compact ? 16 : 20,
+            fontWeight: FontWeight.w900,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(
@@ -1076,9 +1152,9 @@ class _PriceButton extends StatelessWidget {
             : FittedBox(
                 child: Text(
                   price,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 20,
+                    fontSize: compact ? 16 : 20,
                   ),
                 ),
               ),
@@ -1089,13 +1165,17 @@ class _PriceButton extends StatelessWidget {
 
 class _PlanFooter extends StatelessWidget {
   final String label;
+  final bool compact;
 
-  const _PlanFooter({required this.label});
+  const _PlanFooter({required this.label, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 6 : 10,
+        vertical: compact ? 4 : 6,
+      ),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.18),
@@ -1109,7 +1189,7 @@ class _PlanFooter extends StatelessWidget {
           style: TextStyle(
             fontFamily: 'RehnCondensed',
             color: AppColors.brassLight,
-            fontSize: 10,
+            fontSize: compact ? 8 : 10,
             fontWeight: FontWeight.w900,
             height: 1,
           ),
