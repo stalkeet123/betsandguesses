@@ -31,13 +31,15 @@ void main() {
     final partyPass = tester.getSize(
       find.byKey(const ValueKey('paywall-party-pass')),
     );
-    final fullAccess = tester.getSize(
-      find.byKey(const ValueKey('paywall-full-access')),
-    );
+    final fullAccessFinder = find.byKey(const ValueKey('paywall-full-access'));
+    final fullAccess = tester.getSize(fullAccessFinder);
+    final fullAccessRect = tester.getRect(fullAccessFinder);
+    final restorePurchases = tester.getRect(find.text('RESTORE PURCHASES'));
 
     expect(partyPass.width, closeTo(fullAccess.width, 0.1));
     expect(partyPass.height, lessThan(280));
-    expect(fullAccess.height, inInclusiveRange(110, 170));
+    expect(fullAccess.height, inInclusiveRange(120, 155));
+    expect(restorePurchases.top - fullAccessRect.bottom, lessThan(130));
   });
 }
 

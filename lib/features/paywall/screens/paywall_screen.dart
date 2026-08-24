@@ -246,24 +246,27 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _buildCompactHeader(context, compact: veryShort),
-                          SizedBox(height: veryShort ? 2 : 5),
+                          SizedBox(height: veryShort ? 1 : 4),
                           _buildTitle(compact: veryShort),
-                          SizedBox(height: veryShort ? 4 : 7),
+                          const Spacer(flex: 1),
+                          SizedBox(height: veryShort ? 3 : 6),
                           _buildCurrentPlanStrip(
                             isPremium: isPremium,
                             freeHostGamesRemaining:
                                 serverStatus?.freeHostGamesRemaining,
                             compact: veryShort,
                           ),
-                          SizedBox(height: veryShort ? 5 : 8),
+                          const Spacer(flex: 1),
+                          SizedBox(height: veryShort ? 4 : 7),
                           _buildBenefitStrip(compact: veryShort),
-                          SizedBox(height: veryShort ? 7 : 11),
+                          const Spacer(flex: 2),
+                          SizedBox(height: veryShort ? 5 : 9),
                           _buildPlans(
                             context,
                             isPremium: isPremium,
                             compact: veryShort || short,
                           ),
-                          const Spacer(),
+                          const Spacer(flex: 3),
                           SizedBox(height: veryShort ? 5 : 8),
                           _buildFooter(compact: veryShort),
                         ],
@@ -281,12 +284,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   Widget _buildCompactHeader(BuildContext context, {required bool compact}) {
     return SizedBox(
-      height: compact ? 48 : 60,
+      height: compact ? 52 : 68,
       child: Stack(
         alignment: Alignment.center,
         children: [
           SizedBox(
-            height: compact ? 42 : 54,
+            height: compact ? 49 : 63,
             child: const CachedAssetImage(
               AppAssetPaths.logo,
               fit: BoxFit.contain,
@@ -508,7 +511,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                 ),
               ],
               priceLabel: _purchaseCtaLabel(
-                'LIFETIME',
+                'FULL ACCESS',
                 RevenueCatConstants.lifetimePackageIdentifier,
               ),
               isPurchasable: _isPackagePurchasable(
@@ -1016,7 +1019,7 @@ class _SecondaryPlanContent extends StatelessWidget {
               size: compact ? 18 : 23,
             ),
             SizedBox(width: compact ? 6 : 8),
-            Flexible(
+            Expanded(
               child: Text(
                 title,
                 maxLines: 1,
@@ -1025,32 +1028,26 @@ class _SecondaryPlanContent extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'RehnCondensed',
                   color: AppColors.ivory,
-                  fontSize: compact ? 19 : 24,
+                  fontSize: compact ? 22 : 27,
                   fontWeight: FontWeight.w900,
                   height: 0.95,
                 ),
               ),
             ),
-            SizedBox(width: compact ? 5 : 8),
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: Text(
-                  subtitle,
-                  textScaler: TextScaler.noScaling,
-                  style: TextStyle(
-                    color: AppColors.neonGreen,
-                    fontSize: compact ? 8 : 10,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
-        SizedBox(height: compact ? 5 : 7),
+        SizedBox(height: compact ? 4 : 6),
+        Text(
+          subtitle,
+          textScaler: TextScaler.noScaling,
+          style: TextStyle(
+            color: AppColors.neonGreen,
+            fontSize: compact ? 9 : 11,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
+        ),
+        SizedBox(height: compact ? 6 : 8),
         Text(
           features.map((feature) => feature.label).join('\n'),
           maxLines: 2,
@@ -1062,7 +1059,7 @@ class _SecondaryPlanContent extends StatelessWidget {
             height: 1.18,
           ),
         ),
-        SizedBox(height: compact ? 7 : 9),
+        SizedBox(height: compact ? 8 : 11),
         _PriceButton(
           label: priceLabel,
           isGreen: isGreenPrice,
@@ -1114,7 +1111,7 @@ class _PlanHeading extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'RehnCondensed',
                   color: isPrimary ? AppColors.brassLight : AppColors.ivory,
-                  fontSize: compact ? 19 : 24,
+                  fontSize: compact ? 22 : 27,
                   fontWeight: FontWeight.w900,
                   height: 0.95,
                   shadows: const [
@@ -1231,7 +1228,7 @@ class _PriceButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final unavailable = !isLoading && !isPurchasable;
     final backgroundColor = unavailable
-        ? AppColors.feltDark.withValues(alpha: 0.82)
+        ? (isGreen ? const Color(0xFF0B2A20) : const Color(0xFF2B172E))
         : isGreen
         ? AppColors.feltLight
         : AppColors.brass;
