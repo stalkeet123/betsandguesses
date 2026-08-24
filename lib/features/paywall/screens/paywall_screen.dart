@@ -6,6 +6,7 @@ import '../../../core/constants/revenuecat_constants.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/monetization_copy.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 
 class PaywallScreen extends ConsumerStatefulWidget {
@@ -19,6 +20,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     with SingleTickerProviderStateMixin, RouteAware {
   late final AnimationController _glowController;
   Map<String, String> _packagePrices = const {};
+  bool _purchaseDataLoaded = false;
   String? _busyPackageIdentifier;
   bool _isRestoring = false;
   bool _isPremium = false;
@@ -90,15 +92,33 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       setState(() {
         _packagePrices = prices;
         _isPremium = isPremium;
+        _purchaseDataLoaded = true;
       });
     } catch (error) {
       if (!mounted) return;
+      setState(() => _purchaseDataLoaded = true);
       _showSnack('Could not load purchases: $error');
     }
   }
 
+  bool _isPackagePurchasable(String packageIdentifier) {
+    final price = _packagePrices[packageIdentifier];
+    return _purchaseDataLoaded && price != null && price.trim().isNotEmpty;
+  }
+
+  String _purchasePriceLabel(String packageIdentifier) {
+    if (!_purchaseDataLoaded) return 'LOADING…';
+    return _isPackagePurchasable(packageIdentifier)
+        ? _packagePrices[packageIdentifier]!
+        : 'UNAVAILABLE';
+  }
+
   Future<void> _purchase(String packageIdentifier) async {
-    if (_busyPackageIdentifier != null || _isRestoring) return;
+    if (!_isPackagePurchasable(packageIdentifier) ||
+        _busyPackageIdentifier != null ||
+        _isRestoring) {
+      return;
+    }
 
     setState(() => _busyPackageIdentifier = packageIdentifier);
 
@@ -119,7 +139,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       if (result.isPremium) await _syncMonetizationNonFatally();
       _showSuccessDialog(
         'Purchase Successful!',
-        'You now have full access to all premium features.',
+        'Premium access is now active.',
       );
     } else {
       _showErrorDialog(
@@ -149,7 +169,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       if (result.isPremium) await _syncMonetizationNonFatally();
       _showSuccessDialog(
         'Purchases Restored!',
-        'Your premium features have been restored successfully.',
+        'Your premium access has been restored.',
       );
     } else {
       _showErrorDialog(
@@ -161,6 +181,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   @override
   Widget build(BuildContext context) {
+    final serverStatus = ref.watch(monetizationStatusProvider).asData?.value;
+    final isPremium = _isPremium || (serverStatus?.isPremium ?? false);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -225,11 +248,17 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                             const SizedBox(height: 8),
                             _buildTitle(),
                             const SizedBox(height: 8),
-                            _buildCurrentPlanStrip(),
+                            _buildCurrentPlanStrip(
+                              isPremium: isPremium,
+                              freeHostGamesRemaining:
+                                  serverStatus?.freeHostGamesRemaining,
+                            ),
                             const SizedBox(height: 10),
                             _buildBenefitStrip(),
                             const SizedBox(height: 14),
-                            Expanded(child: _buildPlans(context)),
+                            Expanded(
+                              child: _buildPlans(context, isPremium: isPremium),
+                            ),
                             const SizedBox(height: 12),
                             _buildBottomBanner(),
                             const SizedBox(height: 10),
@@ -279,7 +308,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
   Widget _buildTitle() {
     return const Text(
-      'UNLOCK THE ULTIMATE PARTY EXPERIENCE',
+      'KEEP THE PARTY GOING',
       textAlign: TextAlign.center,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -306,6 +335,14 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           children: [
             Expanded(
               child: _BenefitItem(
+                icon: Icons.all_inclusive_rounded,
+                title: 'UNLIMITED HOSTING',
+                subtitle: 'Host more games',
+              ),
+            ),
+            _verticalRule(),
+            Expanded(
+              child: _BenefitItem(
                 icon: Icons.groups_rounded,
                 title: 'BIGGER LOBBIES',
                 subtitle: 'Up to 10 Players',
@@ -314,17 +351,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             _verticalRule(),
             Expanded(
               child: _BenefitItem(
-                icon: Icons.all_inclusive_rounded,
-                title: 'UNLIMITED GAMES',
-                subtitle: 'No daily limits',
-              ),
-            ),
-            _verticalRule(),
-            Expanded(
-              child: _BenefitItem(
-                icon: Icons.block_rounded,
-                title: 'NO ADS',
-                subtitle: 'Pure fun',
+                icon: Icons.timer_outlined,
+                title: 'MORE ROUNDS',
+                subtitle: 'Up to 12 Rounds',
               ),
             ),
           ],
@@ -333,7 +362,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     );
   }
 
-  Widget _buildCurrentPlanStrip() {
+  Widget _buildCurrentPlanStrip({
+    required bool isPremium,
+    required int? freeHostGamesRemaining,
+  }) {
     return Center(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -345,11 +377,14 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           ),
         ),
         child: Text(
-          _isPremium ? 'PREMIUM ACTIVE' : 'CURRENT PLAN: FREE',
+          paywallCurrentPlanText(
+            isPremium: isPremium,
+            freeHostGamesRemaining: freeHostGamesRemaining,
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: _isPremium
+            color: isPremium
                 ? AppColors.neonGreen
                 : AppColors.ivory.withValues(alpha: 0.72),
             fontSize: 10,
@@ -361,7 +396,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     );
   }
 
-  Widget _buildPlans(BuildContext context) {
+  Widget _buildPlans(BuildContext context, {required bool isPremium}) {
     return AnimatedBuilder(
       animation: _glowController,
       builder: (context, _) {
@@ -378,20 +413,24 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               colors: [Color(0xFF5F2477), Color(0xFF271127), Color(0xFF14071C)],
             ),
             features: const [
+              _PlanFeature(Icons.access_time_rounded, '24-hour access'),
               _PlanFeature(Icons.event_repeat_rounded, 'No auto renewal'),
-              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
-              _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
-              _PlanFeature(Icons.category_rounded, 'Premium categories'),
-              _PlanFeature(Icons.block_rounded, 'No ads'),
+              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited hosting'),
+              _PlanFeature(Icons.groups_rounded, '10 Players • 12 Rounds'),
+              _PlanFeature(Icons.category_rounded, 'Pick Classic categories'),
             ],
-            price: '₺59,99',
-            displayPrice:
-                _packagePrices[RevenueCatConstants.dailyPassPackageIdentifier],
+            price: _purchasePriceLabel(
+              RevenueCatConstants.dailyPassPackageIdentifier,
+            ),
             footer: '24 HOURS ACCESS',
             isLoading:
                 _busyPackageIdentifier ==
                 RevenueCatConstants.dailyPassPackageIdentifier,
-            onTap: _isPremium
+            onTap:
+                isPremium ||
+                    !_isPackagePurchasable(
+                      RevenueCatConstants.dailyPassPackageIdentifier,
+                    )
                 ? null
                 : () =>
                       _purchase(RevenueCatConstants.dailyPassPackageIdentifier),
@@ -402,20 +441,24 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             crownColor: AppColors.neonGreen,
             features: const [
               _PlanFeature(Icons.workspace_premium_rounded, 'Lifetime access'),
-              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited games'),
+              _PlanFeature(Icons.all_inclusive_rounded, 'Unlimited hosting'),
               _PlanFeature(Icons.groups_rounded, 'Up to 10 Players'),
-              _PlanFeature(Icons.category_rounded, 'Premium categories'),
-              _PlanFeature(Icons.block_rounded, 'No ads'),
+              _PlanFeature(Icons.timer_outlined, 'Up to 12 Rounds'),
+              _PlanFeature(Icons.category_rounded, 'Pick Classic categories'),
             ],
-            price: '₺199,99',
-            displayPrice:
-                _packagePrices[RevenueCatConstants.lifetimePackageIdentifier],
+            price: _purchasePriceLabel(
+              RevenueCatConstants.lifetimePackageIdentifier,
+            ),
             footer: 'LIFETIME ACCESS',
             isGreenPrice: true,
             isLoading:
                 _busyPackageIdentifier ==
                 RevenueCatConstants.lifetimePackageIdentifier,
-            onTap: _isPremium
+            onTap:
+                isPremium ||
+                    !_isPackagePurchasable(
+                      RevenueCatConstants.lifetimePackageIdentifier,
+                    )
                 ? null
                 : () =>
                       _purchase(RevenueCatConstants.lifetimePackageIdentifier),
@@ -473,7 +516,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
                 Text(
-                  'MORE FUN. MORE QUESTIONS.',
+                  'HOST MORE. PLAY BIGGER.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -485,7 +528,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
                 ),
                 SizedBox(height: 5),
                 Text(
-                  'Perfect for game nights, parties & events!',
+                  'Unlimited hosting, bigger lobbies & longer games.',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -757,7 +800,6 @@ class _PlanCard extends StatelessWidget {
   final Gradient? background;
   final List<_PlanFeature> features;
   final String? price;
-  final String? displayPrice;
   final String footer;
   final bool isGreenPrice;
   final bool isLoading;
@@ -773,7 +815,6 @@ class _PlanCard extends StatelessWidget {
     required this.features,
     required this.footer,
     this.price,
-    this.displayPrice,
     this.isGreenPrice = false,
     this.isLoading = false,
     this.glowValue = 0.0,
@@ -907,7 +948,7 @@ class _PlanCard extends StatelessWidget {
               const SizedBox(height: 8),
               if (price != null) ...[
                 _PriceButton(
-                  price: displayPrice ?? price!,
+                  price: price!,
                   isGreen: isGreenPrice,
                   isLoading: isLoading,
                   onTap: onTap,

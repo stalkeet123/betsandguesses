@@ -8,7 +8,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../../core/errors/monetization_exceptions.dart';
+import '../../../core/models/monetization_status.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/utils/monetization_copy.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
@@ -119,11 +121,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    final isPremium = await ref
+    final localPremium = await ref
         .read(premiumStatusProvider.future)
         .catchError((_) => false);
     if (!mounted) return;
 
+    final cachedServerStatus = ref
+        .read(monetizationStatusProvider)
+        .asData
+        ?.value;
+    final monetizationStatusFuture = _readMonetizationStatusSafely();
+    var isPremium = localPremium || (cachedServerStatus?.isPremium ?? false);
     final categoriesFuture = ref
         .read(gameServiceProvider)
         .getQuestionCategories();
@@ -152,6 +160,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           return Column(
             mainAxisSize: MainAxisSize.max,
             children: [
+              FutureBuilder<MonetizationStatus?>(
+                future: monetizationStatusFuture,
+                builder: (context, snapshot) {
+                  final status = snapshot.data ?? cachedServerStatus;
+                  if (status == null) return const SizedBox.shrink();
+
+                  final displayPremium = localPremium || status.isPremium;
+                  if (displayPremium && !isPremium) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setModalState(() => isPremium = true);
+                    });
+                  }
+
+                  return Column(
+                    children: [
+                      _buildFreeHostingBanner(
+                        isPremium: localPremium || status.isPremium,
+                        freeHostGamesRemaining: status.freeHostGamesRemaining,
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  );
+                },
+              ),
               Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
@@ -340,6 +372,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         },
       ),
       themeMode: setupThemeMode,
+    );
+  }
+
+  Future<MonetizationStatus?> _readMonetizationStatusSafely() async {
+    try {
+      return await ref.read(monetizationStatusProvider.future);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildFreeHostingBanner({
+    required bool isPremium,
+    required int freeHostGamesRemaining,
+  }) {
+    final active = isPremium || freeHostGamesRemaining > 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: (active ? AppColors.feltDark : AppColors.error).withValues(
+          alpha: 0.82,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (isPremium ? AppColors.neonGreen : AppColors.brassLight)
+              .withValues(alpha: 0.58),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isPremium ? Icons.workspace_premium_rounded : Icons.casino_rounded,
+            color: isPremium ? AppColors.neonGreen : AppColors.brassLight,
+            size: 17,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              setupFreeHostingStatusText(
+                isPremium: isPremium,
+                freeHostGamesRemaining: freeHostGamesRemaining,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.ivory,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
