@@ -116,7 +116,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     if (result.cancelled) return;
 
     if (result.success) {
-      if (result.isPremium) unawaited(_syncMonetizationNonFatally());
+      if (result.isPremium) await _syncMonetizationNonFatally();
       _showSuccessDialog(
         'Purchase Successful!',
         'You now have full access to all premium features.',
@@ -146,8 +146,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     });
 
     if (result.success) {
-      if (result.isPremium) unawaited(_syncMonetizationNonFatally());
-      if (result.isPremium) unawaited(_syncMonetizationNonFatally());
+      if (result.isPremium) await _syncMonetizationNonFatally();
       _showSuccessDialog(
         'Purchases Restored!',
         'Your premium features have been restored successfully.',
