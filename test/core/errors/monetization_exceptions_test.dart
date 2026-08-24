@@ -10,4 +10,28 @@ void main() {
       isFalse,
     );
   });
+
+  test('maps only exact premium setup requirement messages', () {
+    expect(
+      premiumSetupRequirementForMessage('PREMIUM_PLAYERS_REQUIRED'),
+      PremiumSetupRequirement.players,
+    );
+    expect(
+      premiumSetupRequirementForMessage('PREMIUM_ROUNDS_REQUIRED'),
+      PremiumSetupRequirement.rounds,
+    );
+    expect(
+      premiumSetupRequirementForMessage('PREMIUM_CATEGORY_REQUIRED'),
+      PremiumSetupRequirement.category,
+    );
+    expect(premiumSetupRequirementForMessage('P0001'), isNull);
+    expect(
+      premiumSetupRequirementForMessage('PREMIUM_PLAYERS_REQUIRED extra'),
+      isNull,
+    );
+    expect(
+      premiumSetupRequirementForMessage('some PREMIUM_PLAYERS_REQUIRED'),
+      isNull,
+    );
+  });
 }

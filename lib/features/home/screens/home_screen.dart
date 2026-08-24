@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/game_constants.dart';
+import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
@@ -290,10 +291,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 width: double.infinity,
                 height: 58,
                 child: ElevatedButton.icon(
-                  onPressed: () {
+                  onPressed: () async {
                     Navigator.of(context).pop();
                     if (usesPremiumSetup) {
-                      _goPremium();
+                      await _goPremium();
                       return;
                     }
                     _createRoom(
@@ -370,22 +371,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ref.read(playerNameProvider.notifier).setName(name);
 
     try {
-      final isPremium = await ref
-          .read(premiumStatusProvider.future)
-          .catchError((_) => false);
-      final finalRounds = isPremium
-          ? maxRounds.clamp(GameConstants.minRounds, GameConstants.maxRounds)
-          : maxRounds.clamp(
-              GameConstants.minRounds,
-              GameConstants.freeMaxRounds,
-            );
-      final finalPlayers = isPremium
-          ? maxPlayers.clamp(1, GameConstants.maxPlayers)
-          : maxPlayers.clamp(1, GameConstants.freeMaxPlayers);
-      final finalCategory =
-          !isPremium && category != GameConstants.defaultCategory
-          ? GameConstants.defaultCategory
-          : category;
+      await _refreshPremiumEntitlementBeforeRoomCreate();
+      final finalRounds = maxRounds.clamp(
+        GameConstants.minRounds,
+        GameConstants.maxRounds,
+      );
+      final finalPlayers = maxPlayers.clamp(
+        GameConstants.minPlayers,
+        GameConstants.maxPlayers,
+      );
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
       final deviceId = ref.read(deviceIdProvider);
@@ -393,7 +387,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         'temp',
         maxRounds: finalRounds,
         maxPlayers: finalPlayers,
-        category: finalCategory,
+        category: category,
         gameMode: gameMode,
       );
 
@@ -421,6 +415,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (mounted) {
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
+    } on PremiumSetupRequiredException catch (error) {
+      ref.invalidate(premiumStatusProvider);
+      ref.invalidate(monetizationStatusProvider);
+      final message = switch (error.requirement) {
+        PremiumSetupRequirement.players =>
+          'More than 4 players requires premium.',
+        PremiumSetupRequirement.rounds =>
+          'More than 6 rounds requires premium.',
+        PremiumSetupRequirement.category =>
+          'Choosing a category requires premium.',
+      };
+      _showSnack(message);
+      if (mounted) await _goPremium();
     } catch (e) {
       _showSnack('Room could not be created: $e');
     } finally {
@@ -495,12 +502,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _goPremium() {
+  Future<bool> _refreshPremiumEntitlementBeforeRoomCreate() async {
+    final fallbackPremium = ref.read(premiumStatusProvider).value ?? false;
+    final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+    if (userId == null) return fallbackPremium;
+
+    try {
+      final revenueCat = ref.read(revenueCatServiceProvider);
+      await revenueCat.initialize(appUserId: userId);
+      await revenueCat.refreshCustomerInfo();
+      final isPremium = await revenueCat.isPremium();
+      if (!mounted) return fallbackPremium;
+
+      ref.invalidate(premiumStatusProvider);
+      if (isPremium) {
+        try {
+          await ref
+              .read(monetizationServiceProvider)
+              .syncRevenueCatEntitlement();
+        } catch (error, stackTrace) {
+          debugPrint(
+            'RevenueCat entitlement sync before room create failed: '
+            '$error\n$stackTrace',
+          );
+        } finally {
+          if (mounted) ref.invalidate(monetizationStatusProvider);
+        }
+      }
+      return isPremium;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'RevenueCat entitlement refresh before room create failed: '
+        '$error\n$stackTrace',
+      );
+      if (mounted) ref.invalidate(premiumStatusProvider);
+      return fallbackPremium;
+    }
+  }
+
+  Future<void> _goPremium() async {
     if (kIsWeb) return;
 
     ref.read(audioServiceProvider).playClick();
     ref.read(audioServiceProvider).startMainBgm();
-    context.pushNamed('premium');
+    await context.pushNamed('premium');
+    if (mounted) {
+      ref.invalidate(premiumStatusProvider);
+      ref.invalidate(monetizationStatusProvider);
+    }
   }
 
   void _showHowToPlaySheet() {
