@@ -61,11 +61,28 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     super.dispose();
   }
 
+  Future<void> _ensureCanonicalRevenueCatIdentity() async {
+    final uid = ref.read(supabaseClientProvider).auth.currentUser?.id;
+    if (uid == null || uid.isEmpty)
+      throw StateError('Authenticated user required');
+    await ref.read(revenueCatServiceProvider).initialize(appUserId: uid);
+  }
+
+  Future<void> _syncMonetizationNonFatally() async {
+    try {
+      await ref.read(monetizationServiceProvider).syncRevenueCatEntitlement();
+    } catch (error) {
+      debugPrint('Monetization sync failed: $error');
+    } finally {
+      ref.invalidate(monetizationStatusProvider);
+    }
+  }
+
   Future<void> _loadRevenueCat() async {
     final service = ref.read(revenueCatServiceProvider);
 
     try {
-      await service.initialize();
+      await _ensureCanonicalRevenueCatIdentity();
       final prices = await service.packagePrices();
       final isPremium = await service.isPremium();
 
@@ -85,6 +102,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
     setState(() => _busyPackageIdentifier = packageIdentifier);
 
+    await _ensureCanonicalRevenueCatIdentity();
     final service = ref.read(revenueCatServiceProvider);
     final result = await service.purchasePackage(packageIdentifier);
     ref.invalidate(premiumStatusProvider);
@@ -98,6 +116,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     if (result.cancelled) return;
 
     if (result.success) {
+      if (result.isPremium) unawaited(_syncMonetizationNonFatally());
       _showSuccessDialog(
         'Purchase Successful!',
         'You now have full access to all premium features.',
@@ -115,6 +134,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
     setState(() => _isRestoring = true);
 
+    await _ensureCanonicalRevenueCatIdentity();
     final service = ref.read(revenueCatServiceProvider);
     final result = await service.restorePurchases();
     ref.invalidate(premiumStatusProvider);
@@ -126,6 +146,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     });
 
     if (result.success) {
+      if (result.isPremium) unawaited(_syncMonetizationNonFatally());
+      if (result.isPremium) unawaited(_syncMonetizationNonFatally());
       _showSuccessDialog(
         'Purchases Restored!',
         'Your premium features have been restored successfully.',
