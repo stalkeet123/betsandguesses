@@ -325,18 +325,22 @@ class PartyPollProductionView extends StatelessWidget {
                   color: PartyPalette.orangeSoft.withValues(alpha: .52),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                pickerTitle,
-                style: GoogleFonts.outfit(
-                  color: PartyPalette.cream.withValues(alpha: .78),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .7,
-                  height: 1,
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  pickerTitle,
+                  style: GoogleFonts.outfit(
+                    color: PartyPalette.cream.withValues(alpha: .78),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .7,
+                    height: 1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 5),
               Expanded(
                 child: Container(
                   height: 1,
@@ -358,17 +362,14 @@ class PartyPollProductionView extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   for (final chip in chips)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      child: _selectableChip(
-                        chip,
-                        canEdit && !usedChips.contains(chip),
-                        isSelected: selectedBet != null
-                            ? chip == selectedBetValue
-                            : selectedChipValue == chip,
-                        canEdit: canEdit,
-                        used: usedChips.contains(chip),
-                      ),
+                    _selectableChip(
+                      chip,
+                      canEdit && !usedChips.contains(chip),
+                      isSelected: selectedBet != null
+                          ? chip == selectedBetValue
+                          : selectedChipValue == chip,
+                      canEdit: canEdit,
+                      used: usedChips.contains(chip),
                     ),
                 ],
               ),
@@ -518,9 +519,9 @@ class PartyPollProductionView extends StatelessWidget {
                 'THE ROOM',
                 style: GoogleFonts.outfit(
                   color: PartyPalette.creamMuted,
-                  fontSize: 10,
+                  fontSize: 8,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
+                  letterSpacing: .6,
                 ),
               ),
               const Spacer(),
