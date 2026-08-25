@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/errors/monetization_exceptions.dart';
 import '../models/question_model.dart';
 import '../models/guess_model.dart';
 import '../models/bet_model.dart';
@@ -54,11 +56,20 @@ class GameService {
     required String roomId,
     required int durationSeconds,
   }) async {
-    final response = await _client.rpc(
-      'start_game_v2',
-      params: {'p_room_id': roomId, 'p_duration_seconds': durationSeconds},
-    );
-    return SecureGameStart.fromJson(Map<String, dynamic>.from(response as Map));
+    try {
+      final response = await _client.rpc(
+        'start_game_v4',
+        params: {'p_room_id': roomId, 'p_duration_seconds': durationSeconds},
+      );
+      return SecureGameStart.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
+    } on PostgrestException catch (error) {
+      if (isFreeHostLimitReachedMessage(error.message)) {
+        throw const FreeHostLimitReachedException();
+      }
+      rethrow;
+    }
   }
 
   Future<SecureRoundQuestion?> claimNextQuestion({
@@ -67,7 +78,7 @@ class GameService {
     required int durationSeconds,
   }) async {
     final response = await _client.rpc(
-      'claim_next_question_v2',
+      'claim_next_question_v3',
       params: {
         'p_room_id': roomId,
         'p_round_number': roundNumber,

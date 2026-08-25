@@ -138,8 +138,13 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     if (_isReturningToLobby) return;
     setState(() => _isReturningToLobby = true);
     final room = ref.read(currentRoomProvider);
+    final isHost = ref.read(isHostProvider);
     try {
       if (room != null) {
+        if (!isHost) {
+          _openLobby(room);
+          return;
+        }
         final resetRoom = room.gameMode == GameMode.party
             ? await ref.read(partyGameServiceProvider).resetToLobby(room.id)
             : await ref.read(roomServiceProvider).resetToLobbyAtomic(room.id);
@@ -619,20 +624,17 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
   }
 
   Widget _buildActions() {
-    final isHost = ref.watch(isHostProvider);
     return Column(
       children: [
         SizedBox(
           width: double.infinity,
           child: _buildActionButton(
-            label: isHost
-                ? (_isReturningToLobby
-                      ? 'RETURNING TO LOBBY...'
-                      : 'BACK TO LOBBY')
-                : 'WAITING FOR HOST',
-            icon: isHost ? Icons.groups_rounded : Icons.hourglass_top_rounded,
-            isGold: isHost,
-            onTap: isHost && !_isReturningToLobby ? _backToLobby : null,
+            label: _isReturningToLobby
+                ? 'RETURNING TO LOBBY...'
+                : 'BACK TO LOBBY',
+            icon: Icons.groups_rounded,
+            isGold: true,
+            onTap: !_isReturningToLobby ? _backToLobby : null,
           ),
         ),
         const SizedBox(height: 8),

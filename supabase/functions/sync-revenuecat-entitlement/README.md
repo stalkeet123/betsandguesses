@@ -1,0 +1,1 @@
+Required secrets: REVENUECAT_SECRET_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY. This function is not deployed by this commit.

@@ -1,7 +1,20 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../core/constants/game_constants.dart';
+import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/utils/helpers.dart';
 import '../models/room_model.dart';
+
+Exception? roomCreationExceptionFor(PostgrestException error) {
+  if (isFreeHostLimitReachedMessage(error.message)) {
+    return const FreeHostLimitReachedException();
+  }
+  final requirement = premiumSetupRequirementForMessage(error.message);
+  if (requirement != null) {
+    return PremiumSetupRequiredException(requirement);
+  }
+  return null;
+}
 
 /// Service for room CRUD operations via Supabase
 class RoomService {
@@ -47,29 +60,23 @@ class RoomService {
     for (var attempt = 0; attempt < 12; attempt++) {
       final code = Helpers.generateRoomCode();
       try {
-        final params = <String, dynamic>{
-          'p_code': code,
-          'p_max_rounds': maxRounds,
-          'p_max_players': maxPlayers,
-          'p_category': category == GameConstants.defaultCategory
-              ? null
-              : category,
-        };
-        final response = gameMode == GameMode.classic
-            ? await _client.rpc('create_room_v2', params: params)
-            : await _client.rpc(
-                'create_room_v3',
-                params: {...params, 'p_game_mode': gameMode.name},
-              );
+        final response = await _client.rpc(
+          'create_room_v4',
+          params: {
+            'p_code': code,
+            'p_max_rounds': maxRounds,
+            'p_max_players': maxPlayers,
+            'p_category': category == GameConstants.defaultCategory
+                ? null
+                : category,
+            'p_game_mode': gameMode.name,
+          },
+        );
         return Room.fromJson(Map<String, dynamic>.from(response as Map));
       } on PostgrestException catch (error) {
         if (error.code == '23505') continue;
-        if (gameMode == GameMode.party && error.code == 'PGRST202') {
-          throw StateError(
-            'Party Mode is waiting for its server update. '
-            'Classic rooms are still available.',
-          );
-        }
+        final mappedException = roomCreationExceptionFor(error);
+        if (mappedException != null) throw mappedException;
         rethrow;
       }
     }

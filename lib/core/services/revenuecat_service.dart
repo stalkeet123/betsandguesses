@@ -25,19 +25,29 @@ class RevenueCatService {
   bool get isConfigured => _isConfigured;
 
   Future<void> initialize({String? appUserId}) async {
-    if (_isConfigured) return;
+    if (_isConfigured) {
+      if (appUserId != null && appUserId.trim().isNotEmpty) {
+        final info = await Purchases.logIn(appUserId.trim());
+        _customerInfo = info.customerInfo;
+      }
+      return;
+    }
     if (!RevenueCatConstants.hasApiKey) return;
 
     await Purchases.setLogLevel(LogLevel.warn);
 
-    final configuration = PurchasesConfiguration(RevenueCatConstants.apiKey);
-    if (appUserId != null && appUserId.trim().isNotEmpty) {
-      configuration.appUserID = appUserId.trim();
-    }
-
-    await Purchases.configure(configuration);
+    // Configure anonymously first so a released anonymous RevenueCat identity
+    // can be aliased when it is bound to the canonical Supabase UID.
+    await Purchases.configure(
+      PurchasesConfiguration(RevenueCatConstants.apiKey),
+    );
     _isConfigured = true;
-    await refreshCustomerInfo();
+    if (appUserId != null && appUserId.trim().isNotEmpty) {
+      final result = await Purchases.logIn(appUserId.trim());
+      _customerInfo = result.customerInfo;
+    } else {
+      await refreshCustomerInfo();
+    }
   }
 
   Future<CustomerInfo?> refreshCustomerInfo() async {

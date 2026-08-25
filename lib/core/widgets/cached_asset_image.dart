@@ -9,6 +9,10 @@ class AppAssetPaths {
   static const boardBlack = 'assets/2.webp';
   static const boardGreen = 'assets/3.webp';
   static const boardGold = 'assets/4.webp';
+  static const onboarding1 = 'assets/onboarding/onboarding1.webp';
+  static const onboarding2 = 'assets/onboarding/onboarding2.webp';
+  static const onboarding3 = 'assets/onboarding/onboarding3.webp';
+  static const onboarding4 = 'assets/onboarding/onboarding4.webp';
 
   static const _criticalWarmupAssets = <String, int>{
     background: 1080,

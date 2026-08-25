@@ -1,8 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/providers/core_providers.dart';
 import '../models/party_poll_snapshot.dart';
 import '../services/party_poll_service.dart';
+
+PartyPollSnapshot selectPartyPollSnapshot(
+  PartyPollSnapshot? current,
+  PartyPollSnapshot incoming,
+) {
+  if (current == null || current.room.id != incoming.room.id) return incoming;
+  return incoming.stateVersion >= current.stateVersion ? incoming : current;
+}
 
 class PartyPollSessionState {
   final PartyPollSnapshot? snapshot;
@@ -44,25 +53,32 @@ final partyPollSessionProvider =
     );
 
 class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
+  int _pendingBetCommands = 0;
   PartyPollService get _service => ref.read(partyPollServiceProvider);
+  PartyPollSnapshot _acceptedSnapshot(PartyPollSnapshot incoming) =>
+      selectPartyPollSnapshot(state.snapshot, incoming);
 
   @override
   PartyPollSessionState build() => const PartyPollSessionState();
 
   void setSnapshot(PartyPollSnapshot snapshot) {
-    state = state.copyWith(snapshot: snapshot, clearError: true);
+    state = state.copyWith(
+      snapshot: _acceptedSnapshot(snapshot),
+      clearError: true,
+    );
   }
 
   Future<PartyPollSnapshot?> load(String roomId) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final snapshot = await _service.getSnapshot(roomId);
+      final incoming = await _service.getSnapshot(roomId);
+      final accepted = _acceptedSnapshot(incoming);
       state = state.copyWith(
-        snapshot: snapshot,
+        snapshot: accepted,
         isLoading: false,
         clearError: true,
       );
-      return snapshot;
+      return accepted;
     } catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: '$error');
       return null;
@@ -72,13 +88,31 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   Future<PartyPollSnapshot?> startGame(
     String roomId, {
     int bettingDurationSeconds = 30,
-  }) {
-    return _run(
-      () => _service.startGame(
+  }) async {
+    if (state.isCommandRunning) return state.snapshot;
+    state = state.copyWith(isCommandRunning: true, clearError: true);
+    try {
+      final snapshot = await _service.startGame(
         roomId: roomId,
         bettingDurationSeconds: bettingDurationSeconds,
-      ),
-    );
+      );
+      final accepted = _acceptedSnapshot(snapshot);
+      state = state.copyWith(
+        snapshot: accepted,
+        isCommandRunning: false,
+        clearError: true,
+      );
+      return accepted;
+    } on FreeHostLimitReachedException {
+      state = state.copyWith(
+        isCommandRunning: false,
+        errorMessage: freeHostLimitReachedMessage,
+      );
+      rethrow;
+    } catch (error) {
+      state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
+      return null;
+    }
   }
 
   Future<PartyPollBetPlacement?> placeBet({
@@ -89,7 +123,9 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     double? positionX,
     double? positionY,
   }) async {
-    if (state.isCommandRunning) return null;
+    // Independent actions may be in flight together. The server still
+    // serializes and validates each clientActionId authoritatively.
+    _pendingBetCommands++;
     state = state.copyWith(isCommandRunning: true, clearError: true);
     try {
       final placement = await _service.placeBet(
@@ -101,14 +137,16 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
         positionY: positionY,
       );
       state = state.copyWith(
-        snapshot: placement.snapshot,
-        isCommandRunning: false,
+        snapshot: _acceptedSnapshot(placement.snapshot),
         clearError: true,
       );
       return placement;
     } catch (error) {
-      state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
+      state = state.copyWith(errorMessage: '$error');
       return null;
+    } finally {
+      _pendingBetCommands--;
+      state = state.copyWith(isCommandRunning: _pendingBetCommands > 0);
     }
   }
 
@@ -118,7 +156,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     required String targetPlayerId,
     double? positionX,
     double? positionY,
-  }) => _run(
+  }) => _runBetCommand(
     () => _service.moveBet(
       roomId: roomId,
       betId: betId,
@@ -131,7 +169,29 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   Future<PartyPollSnapshot?> removeBet({
     required String roomId,
     required String betId,
-  }) => _run(() => _service.removeBet(roomId: roomId, betId: betId));
+  }) => _runBetCommand(() => _service.removeBet(roomId: roomId, betId: betId));
+
+  Future<PartyPollSnapshot?> _runBetCommand(
+    Future<PartyPollSnapshot> Function() command,
+  ) async {
+    _pendingBetCommands++;
+    state = state.copyWith(isCommandRunning: true, clearError: true);
+    try {
+      final snapshot = await command();
+      state = state.copyWith(
+        snapshot: _acceptedSnapshot(snapshot),
+        clearError: true,
+      );
+      return snapshot;
+    } catch (error) {
+      state = state.copyWith(errorMessage: '$error');
+      return null;
+    } finally {
+      _pendingBetCommands--;
+      state = state.copyWith(isCommandRunning: _pendingBetCommands > 0);
+    }
+  }
+
   Future<PartyPollSnapshot?> settleRound(String roomId) =>
       _run(() => _service.settleRound(roomId));
 
@@ -154,7 +214,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       if (isSnapshot) {
         final snapshot = PartyPollSnapshot.fromJson(response);
         state = state.copyWith(
-          snapshot: snapshot,
+          snapshot: _acceptedSnapshot(snapshot),
           isCommandRunning: false,
           clearError: true,
         );
@@ -176,7 +236,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     try {
       final snapshot = await command();
       state = state.copyWith(
-        snapshot: snapshot,
+        snapshot: _acceptedSnapshot(snapshot),
         isCommandRunning: false,
         clearError: true,
       );

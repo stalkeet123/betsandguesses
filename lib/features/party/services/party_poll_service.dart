@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/errors/monetization_exceptions.dart';
 import '../models/party_poll_snapshot.dart';
 
 class PartyPollBetPlacement {
@@ -17,10 +18,19 @@ class PartyPollService {
   Future<PartyPollSnapshot> startGame({
     required String roomId,
     int bettingDurationSeconds = 30,
-  }) => _snapshotRpc('start_party_poll_v1', {
-    'p_room_id': roomId,
-    'p_betting_duration_seconds': bettingDurationSeconds,
-  });
+  }) async {
+    try {
+      return await _snapshotRpc('start_party_poll_v2', {
+        'p_room_id': roomId,
+        'p_betting_duration_seconds': bettingDurationSeconds,
+      });
+    } on PostgrestException catch (error) {
+      if (isFreeHostLimitReachedMessage(error.message)) {
+        throw const FreeHostLimitReachedException();
+      }
+      rethrow;
+    }
+  }
 
   Future<PartyPollSnapshot> getSnapshot(String roomId) =>
       _snapshotRpc('get_party_poll_snapshot_v1', {'p_room_id': roomId});

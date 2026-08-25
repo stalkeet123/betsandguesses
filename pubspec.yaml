@@ -50,6 +50,7 @@ flutter:
   assets:
     - assets/
     - assets/sound/
+    - assets/onboarding/
 
 flutter_icons:
   android: true

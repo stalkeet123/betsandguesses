@@ -7,7 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/game_constants.dart';
+import '../../../core/errors/monetization_exceptions.dart';
+import '../../../core/models/monetization_status.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/utils/monetization_copy.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
@@ -15,6 +18,7 @@ import '../../../core/router/app_router.dart';
 import '../../../features/game/screens/debug_scene_editor_screen.dart';
 import '../../../features/party/theme/party_palette.dart';
 import '../../../features/room/providers/room_providers.dart';
+import '../widgets/party_setup_guide_card.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final String? prefilledRoomCode;
@@ -118,11 +122,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    final isPremium = await ref
+    final localPremium = await ref
         .read(premiumStatusProvider.future)
         .catchError((_) => false);
     if (!mounted) return;
 
+    final cachedServerStatus = ref
+        .read(monetizationStatusProvider)
+        .asData
+        ?.value;
+    final monetizationStatusFuture = _readMonetizationStatusSafely();
+    var isPremium = localPremium || (cachedServerStatus?.isPremium ?? false);
+    MonetizationStatus? resolvedMonetizationStatus;
     final categoriesFuture = ref
         .read(gameServiceProvider)
         .getQuestionCategories();
@@ -140,205 +151,318 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       title: 'SETUP',
       icon: Icons.tune_rounded,
       child: StatefulBuilder(
-        builder: (context, setModalState) {
-          final usesPremiumSetup =
-              !isPremium &&
-              (selectedMaxPlayers > GameConstants.freeMaxPlayers ||
-                  selectedRounds > GameConstants.freeMaxRounds ||
-                  (selectedMode == GameMode.classic &&
-                      selectedCategory != GameConstants.defaultCategory));
+        builder: (context, setModalState) => LayoutBuilder(
+          builder: (context, setupConstraints) {
+            final compactSetup = setupConstraints.maxHeight < 700;
+            final gap = compactSetup ? 8.0 : 10.0;
+            final usesPremiumSetup =
+                !isPremium &&
+                (selectedMaxPlayers > GameConstants.freeMaxPlayers ||
+                    selectedRounds > GameConstants.freeMaxRounds ||
+                    (selectedMode == GameMode.classic &&
+                        selectedCategory != GameConstants.defaultCategory));
+            final hostingExhausted =
+                !isPremium &&
+                resolvedMonetizationStatus?.freeHostGamesRemaining == 0;
+            final requiresPremiumAction = usesPremiumSetup || hostingExhausted;
 
-          return Column(
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color:
-                      (selectedMode == GameMode.party
-                              ? PartyPalette.nightDeep
-                              : AppColors.ink)
-                          .withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
+            return Column(
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                FutureBuilder<MonetizationStatus?>(
+                  future: monetizationStatusFuture,
+                  builder: (context, snapshot) {
+                    final freshStatus =
+                        snapshot.connectionState == ConnectionState.done
+                        ? snapshot.data
+                        : null;
+                    final status = freshStatus ?? cachedServerStatus;
+                    if (status == null) return const SizedBox.shrink();
+
+                    final displayPremium = localPremium || status.isPremium;
+                    final statusChanged =
+                        freshStatus != null &&
+                        (resolvedMonetizationStatus?.isPremium !=
+                                freshStatus.isPremium ||
+                            resolvedMonetizationStatus
+                                    ?.freeHostGamesRemaining !=
+                                freshStatus.freeHostGamesRemaining);
+                    if ((displayPremium && !isPremium) || statusChanged) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        setModalState(() {
+                          if (freshStatus != null) {
+                            resolvedMonetizationStatus = freshStatus;
+                          }
+                          if (displayPremium) isPremium = true;
+                        });
+                      });
+                    }
+
+                    return Column(
+                      children: [
+                        _buildFreeHostingBanner(
+                          isPremium: displayPremium,
+                          freeHostGamesRemaining: status.freeHostGamesRemaining,
+                        ),
+                        SizedBox(height: gap),
+                      ],
+                    );
+                  },
+                ),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
                     color:
                         (selectedMode == GameMode.party
-                                ? PartyPalette.orangeSoft
-                                : AppColors.brass)
-                            .withValues(alpha: 0.5),
+                                ? PartyPalette.nightDeep
+                                : AppColors.ink)
+                            .withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color:
+                          (selectedMode == GameMode.party
+                                  ? PartyPalette.orangeSoft
+                                  : AppColors.brass)
+                              .withValues(alpha: 0.5),
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    for (final mode in GameMode.values)
-                      Expanded(
-                        child: _modeSetupButton(
-                          mode: mode,
-                          selected: selectedMode == mode,
-                          onTap: () {
-                            setModalState(() {
-                              selectedMode = mode;
-                              setupThemeMode.value = mode;
-                              if (mode == GameMode.party &&
-                                  selectedMaxPlayers < 3) {
-                                selectedMaxPlayers = 3;
-                              }
-                            });
-                          },
+                  child: Row(
+                    children: [
+                      for (final mode in GameMode.values)
+                        Expanded(
+                          child: _modeSetupButton(
+                            compact: compactSetup,
+                            mode: mode,
+                            selected: selectedMode == mode,
+                            onTap: () {
+                              setModalState(() {
+                                selectedMode = mode;
+                                setupThemeMode.value = mode;
+                                if (mode == GameMode.party &&
+                                    selectedMaxPlayers < 3) {
+                                  selectedMaxPlayers = 3;
+                                }
+                              });
+                            },
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              if (selectedMode == GameMode.classic) ...[
-                _setupSlider(
-                  icon: Icons.casino_rounded,
-                  label: 'ROUNDS',
-                  value: selectedRounds,
-                  min: GameConstants.minRounds,
-                  max: GameConstants.maxRounds,
-                  premiumStart: GameConstants.freeMaxRounds + 1,
-                  isPremiumLocked:
-                      !isPremium &&
-                      selectedRounds > GameConstants.freeMaxRounds,
-                  onChanged: (value) {
-                    setModalState(() => selectedRounds = value);
-                  },
-                ),
-                const SizedBox(height: 10),
-                _setupSlider(
-                  icon: Icons.groups_rounded,
-                  label: 'PLAYERS',
-                  value: selectedMaxPlayers,
-                  min: GameConstants.minPlayers,
-                  max: GameConstants.maxPlayers,
-                  valueText: selectedMaxPlayers == GameConstants.maxPlayers
-                      ? '${GameConstants.maxPlayers}+'
-                      : '$selectedMaxPlayers',
-                  premiumStart: GameConstants.freeMaxPlayers + 1,
-                  isPremiumLocked:
-                      !isPremium &&
-                      selectedMaxPlayers > GameConstants.freeMaxPlayers,
-                  partyTheme: false,
-                  onChanged: (value) {
-                    setModalState(() => selectedMaxPlayers = value);
-                  },
-                ),
-              ] else ...[
-                _setupSlider(
-                  icon: Icons.groups_rounded,
-                  label: 'PLAYERS',
-                  value: selectedMaxPlayers,
-                  min: 3,
-                  max: GameConstants.maxPlayers,
-                  valueText: selectedMaxPlayers == GameConstants.maxPlayers
-                      ? '${GameConstants.maxPlayers}+'
-                      : '$selectedMaxPlayers',
-                  premiumStart: GameConstants.freeMaxPlayers + 1,
-                  isPremiumLocked:
-                      !isPremium &&
-                      selectedMaxPlayers > GameConstants.freeMaxPlayers,
-                  partyTheme: true,
-                  onChanged: (value) {
-                    setModalState(() => selectedMaxPlayers = value);
-                  },
-                ),
-                const SizedBox(height: 10),
-                _setupSlider(
-                  icon: Icons.casino_rounded,
-                  label: 'ROUNDS',
-                  value: selectedRounds,
-                  min: GameConstants.minRounds,
-                  max: GameConstants.maxRounds,
-                  premiumStart: GameConstants.freeMaxRounds + 1,
-                  isPremiumLocked:
-                      !isPremium &&
-                      selectedRounds > GameConstants.freeMaxRounds,
-                  partyTheme: true,
-                  onChanged: (value) {
-                    setModalState(() => selectedRounds = value);
-                  },
-                ),
-              ],
-              if (selectedMode == GameMode.classic) ...[
-                const SizedBox(height: 10),
-                FutureBuilder<List<String>>(
-                  future: categoriesFuture,
-                  builder: (context, snapshot) {
-                    final categories = [
-                      GameConstants.defaultCategory,
-                      ...?snapshot.data,
-                    ];
-                    return _categoryPicker(
-                      categories: categories,
-                      selectedCategory: selectedCategory,
-                      isPremium: isPremium,
-                      onSelected: (category) {
-                        setModalState(() => selectedCategory = category);
+                SizedBox(height: gap),
+                if (selectedMode == GameMode.classic) ...[
+                  _setupSlider(
+                    compact: compactSetup,
+                    icon: Icons.casino_rounded,
+                    label: 'ROUNDS',
+                    value: selectedRounds,
+                    min: GameConstants.minRounds,
+                    max: GameConstants.maxRounds,
+                    premiumStart: GameConstants.freeMaxRounds + 1,
+                    isPremiumLocked:
+                        !isPremium &&
+                        selectedRounds > GameConstants.freeMaxRounds,
+                    onChanged: (value) {
+                      setModalState(() => selectedRounds = value);
+                    },
+                  ),
+                  SizedBox(height: gap),
+                  _setupSlider(
+                    compact: compactSetup,
+                    icon: Icons.groups_rounded,
+                    label: 'PLAYERS',
+                    value: selectedMaxPlayers,
+                    min: GameConstants.minPlayers,
+                    max: GameConstants.maxPlayers,
+                    valueText: selectedMaxPlayers == GameConstants.maxPlayers
+                        ? '${GameConstants.maxPlayers}+'
+                        : '$selectedMaxPlayers',
+                    premiumStart: GameConstants.freeMaxPlayers + 1,
+                    isPremiumLocked:
+                        !isPremium &&
+                        selectedMaxPlayers > GameConstants.freeMaxPlayers,
+                    partyTheme: false,
+                    onChanged: (value) {
+                      setModalState(() => selectedMaxPlayers = value);
+                    },
+                  ),
+                ] else ...[
+                  _setupSlider(
+                    compact: compactSetup,
+                    icon: Icons.groups_rounded,
+                    label: 'PLAYERS',
+                    value: selectedMaxPlayers,
+                    min: 3,
+                    max: GameConstants.maxPlayers,
+                    valueText: selectedMaxPlayers == GameConstants.maxPlayers
+                        ? '${GameConstants.maxPlayers}+'
+                        : '$selectedMaxPlayers',
+                    premiumStart: GameConstants.freeMaxPlayers + 1,
+                    isPremiumLocked:
+                        !isPremium &&
+                        selectedMaxPlayers > GameConstants.freeMaxPlayers,
+                    partyTheme: true,
+                    onChanged: (value) {
+                      setModalState(() => selectedMaxPlayers = value);
+                    },
+                  ),
+                  SizedBox(height: gap),
+                  _setupSlider(
+                    compact: compactSetup,
+                    icon: Icons.casino_rounded,
+                    label: 'ROUNDS',
+                    value: selectedRounds,
+                    min: GameConstants.minRounds,
+                    max: GameConstants.maxRounds,
+                    premiumStart: GameConstants.freeMaxRounds + 1,
+                    isPremiumLocked:
+                        !isPremium &&
+                        selectedRounds > GameConstants.freeMaxRounds,
+                    partyTheme: true,
+                    onChanged: (value) {
+                      setModalState(() => selectedRounds = value);
+                    },
+                  ),
+                ],
+                SizedBox(height: gap),
+                if (selectedMode == GameMode.classic)
+                  Expanded(
+                    child: FutureBuilder<List<String>>(
+                      future: categoriesFuture,
+                      builder: (context, snapshot) {
+                        final categories = [
+                          GameConstants.defaultCategory,
+                          ...?snapshot.data,
+                        ];
+                        return _categoryPicker(
+                          compact: compactSetup,
+                          categories: categories,
+                          selectedCategory: selectedCategory,
+                          isPremium: isPremium,
+                          onSelected: (category) {
+                            setModalState(() => selectedCategory = category);
+                          },
+                        );
                       },
-                    );
-                  },
-                ),
-              ] else ...[
-                const SizedBox(height: 18),
-                Expanded(child: _partyModeGuideCard()),
-              ],
-              if (selectedMode == GameMode.classic) const Spacer(),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                height: 58,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    if (usesPremiumSetup) {
-                      _goPremium();
-                      return;
-                    }
-                    _createRoom(
-                      maxRounds: selectedRounds,
-                      maxPlayers: selectedMaxPlayers,
-                      category: selectedCategory,
-                      gameMode: selectedMode,
-                      partyChallengesPerPlayer:
-                          selectedPartyChallengesPerPlayer,
-                      partyAvailableItems: const <String>[],
-                    );
-                  },
-                  icon: Icon(
-                    usesPremiumSetup
-                        ? Icons.workspace_premium_rounded
-                        : Icons.groups_rounded,
-                    size: 25,
-                  ),
-                  label: Text(
-                    usesPremiumSetup ? 'UPGRADE TO CREATE' : 'CREATE LOBBY',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: usesPremiumSetup
-                        ? AppColors.brassLight
-                        : selectedMode == GameMode.party
-                        ? PartyPalette.orangeSoft
-                        : AppColors.brass,
-                    foregroundColor: AppColors.ink,
-                    elevation: 10,
-                    shadowColor:
-                        (selectedMode == GameMode.party
-                                ? PartyPalette.orange
-                                : AppColors.brass)
-                            .withValues(alpha: 0.38),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  )
+                else
+                  const Expanded(child: PartySetupGuideCard()),
+                SizedBox(height: compactSetup ? 8 : 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: compactSetup ? 50 : 58,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      if (requiresPremiumAction) {
+                        await _goPremium();
+                        return;
+                      }
+                      _createRoom(
+                        maxRounds: selectedRounds,
+                        maxPlayers: selectedMaxPlayers,
+                        category: selectedCategory,
+                        gameMode: selectedMode,
+                        partyChallengesPerPlayer:
+                            selectedPartyChallengesPerPlayer,
+                        partyAvailableItems: const <String>[],
+                      );
+                    },
+                    icon: Icon(
+                      requiresPremiumAction
+                          ? Icons.workspace_premium_rounded
+                          : Icons.groups_rounded,
+                      size: compactSetup ? 22 : 25,
+                    ),
+                    label: Text(
+                      hostingExhausted
+                          ? 'GO PREMIUM'
+                          : usesPremiumSetup
+                          ? 'UPGRADE TO CREATE'
+                          : 'CREATE LOBBY',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: requiresPremiumAction
+                          ? AppColors.brassLight
+                          : selectedMode == GameMode.party
+                          ? PartyPalette.orangeSoft
+                          : AppColors.brass,
+                      foregroundColor: AppColors.ink,
+                      elevation: 10,
+                      shadowColor:
+                          (selectedMode == GameMode.party
+                                  ? PartyPalette.orange
+                                  : AppColors.brass)
+                              .withValues(alpha: 0.38),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
       themeMode: setupThemeMode,
+    );
+  }
+
+  Future<MonetizationStatus?> _readMonetizationStatusSafely() async {
+    try {
+      return await ref.read(monetizationStatusProvider.future);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildFreeHostingBanner({
+    required bool isPremium,
+    required int freeHostGamesRemaining,
+  }) {
+    final active = isPremium || freeHostGamesRemaining > 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: (active ? AppColors.feltDark : AppColors.error).withValues(
+          alpha: 0.82,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (isPremium ? AppColors.neonGreen : AppColors.brassLight)
+              .withValues(alpha: 0.58),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isPremium ? Icons.workspace_premium_rounded : Icons.casino_rounded,
+            color: isPremium ? AppColors.neonGreen : AppColors.brassLight,
+            size: 17,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              setupFreeHostingStatusText(
+                isPremium: isPremium,
+                freeHostGamesRemaining: freeHostGamesRemaining,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.ivory,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -370,13 +494,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ref.read(playerNameProvider.notifier).setName(name);
 
     try {
+      await _refreshPremiumEntitlementBeforeRoomCreate();
+      final finalRounds = maxRounds.clamp(
+        GameConstants.minRounds,
+        GameConstants.maxRounds,
+      );
+      final finalPlayers = maxPlayers.clamp(
+        GameConstants.minPlayers,
+        GameConstants.maxPlayers,
+      );
       final roomService = ref.read(roomServiceProvider);
       final playerService = ref.read(playerServiceProvider);
       final deviceId = ref.read(deviceIdProvider);
       var room = await roomService.createRoom(
         'temp',
-        maxRounds: maxRounds,
-        maxPlayers: maxPlayers,
+        maxRounds: finalRounds,
+        maxPlayers: finalPlayers,
         category: category,
         gameMode: gameMode,
       );
@@ -405,6 +538,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (mounted) {
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
+    } on FreeHostLimitReachedException {
+      ref.invalidate(premiumStatusProvider);
+      ref.invalidate(monetizationStatusProvider);
+      _showSnack("You've used your 3 free hosted games.");
+      if (mounted) await _goPremium();
+    } on PremiumSetupRequiredException catch (error) {
+      ref.invalidate(premiumStatusProvider);
+      ref.invalidate(monetizationStatusProvider);
+      final message = switch (error.requirement) {
+        PremiumSetupRequirement.players =>
+          'More than 4 players requires premium.',
+        PremiumSetupRequirement.rounds =>
+          'More than 6 rounds requires premium.',
+        PremiumSetupRequirement.category =>
+          'Choosing a category requires premium.',
+      };
+      _showSnack(message);
+      if (mounted) await _goPremium();
     } catch (e) {
       _showSnack('Room could not be created: $e');
     } finally {
@@ -479,12 +630,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _goPremium() {
+  Future<bool> _refreshPremiumEntitlementBeforeRoomCreate() async {
+    final fallbackPremium = ref.read(premiumStatusProvider).value ?? false;
+    final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+    if (userId == null) return fallbackPremium;
+
+    try {
+      final revenueCat = ref.read(revenueCatServiceProvider);
+      await revenueCat.initialize(appUserId: userId);
+      await revenueCat.refreshCustomerInfo();
+      final isPremium = await revenueCat.isPremium();
+      if (!mounted) return fallbackPremium;
+
+      ref.invalidate(premiumStatusProvider);
+      if (isPremium) {
+        try {
+          await ref
+              .read(monetizationServiceProvider)
+              .syncRevenueCatEntitlement();
+        } catch (error, stackTrace) {
+          debugPrint(
+            'RevenueCat entitlement sync before room create failed: '
+            '$error\n$stackTrace',
+          );
+        } finally {
+          if (mounted) ref.invalidate(monetizationStatusProvider);
+        }
+      }
+      return isPremium;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'RevenueCat entitlement refresh before room create failed: '
+        '$error\n$stackTrace',
+      );
+      if (mounted) ref.invalidate(premiumStatusProvider);
+      return fallbackPremium;
+    }
+  }
+
+  Future<void> _goPremium() async {
     if (kIsWeb) return;
 
     ref.read(audioServiceProvider).playClick();
     ref.read(audioServiceProvider).startMainBgm();
-    context.pushNamed('premium');
+    await context.pushNamed('premium');
+    if (mounted) {
+      ref.invalidate(premiumStatusProvider);
+      ref.invalidate(monetizationStatusProvider);
+    }
   }
 
   void _showHowToPlaySheet() {
@@ -632,6 +825,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           final accent = isParty
               ? PartyPalette.orangeSoft
               : AppColors.brassLight;
+          final compactPartySetupHeader = isParty && isSetup;
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -683,56 +877,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        children: [
-                          _roundIcon(icon, size: 52, iconSize: 29),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              isParty && title == 'SETUP'
-                                  ? 'PARTY SETUP'
-                                  : title,
-                              style: _homeTextStyle(
+                      if (compactPartySetupHeader)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                onPressed: () => Navigator.of(context).pop(),
+                                icon: const Icon(Icons.close_rounded, size: 22),
                                 color: AppColors.ivory,
-                                size: 34,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close_rounded),
-                            color: AppColors.ivory,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.1,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      if (isSetup)
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              return ClipRect(
-                                child: Align(
-                                  alignment: Alignment.center,
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: Alignment.center,
-                                    child: SizedBox(
-                                      width: constraints.maxWidth,
-                                      height: constraints.maxHeight,
-                                      child: child,
-                                    ),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Colors.white.withValues(
+                                    alpha: 0.1,
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            ),
+                          ],
                         )
+                      else
+                        Row(
+                          children: [
+                            _roundIcon(icon, size: 52, iconSize: 29),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: _homeTextStyle(
+                                  color: AppColors.ivory,
+                                  size: 34,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close_rounded),
+                              color: AppColors.ivory,
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.1,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      SizedBox(height: compactPartySetupHeader ? 4 : 14),
+                      if (isSetup)
+                        Expanded(child: child)
                       else
                         Flexible(
                           child: SingleChildScrollView(
@@ -761,6 +956,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _modeSetupButton({
+    required bool compact,
     required GameMode mode,
     required bool selected,
     required VoidCallback onTap,
@@ -774,142 +970,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: compact ? 8 : 12,
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 isParty ? Icons.celebration_rounded : Icons.casino_rounded,
-                size: 19,
+                size: compact ? 17 : 19,
                 color: selected ? AppColors.ink : accent,
               ),
-              const SizedBox(width: 7),
-              Text(
-                mode.displayName,
-                style: GoogleFonts.outfit(
-                  color: selected ? AppColors.ink : AppColors.ivory,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _partyModeGuideCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-      decoration: BoxDecoration(
-        color: PartyPalette.nightDeep.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: PartyPalette.orangeSoft.withValues(alpha: 0.38),
-          width: 1.2,
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: PartyPalette.orange.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: const Icon(
-                  Icons.how_to_vote_rounded,
-                  color: PartyPalette.orangeSoft,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
+              SizedBox(width: compact ? 5 : 7),
+              Flexible(
                 child: Text(
-                  'PARTY POLL — READ THE ROOM',
+                  mode.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.outfit(
-                    color: PartyPalette.cream,
-                    fontSize: 16,
+                    color: selected ? AppColors.ink : AppColors.ivory,
+                    fontSize: compact ? 14 : 16,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 0.7,
+                    letterSpacing: compact ? 0.5 : 0.8,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          _partyGuideBullet(
-            icon: Icons.groups_rounded,
-            title: 'ONE QUESTION, EVERYONE PLAYS',
-            description:
-                'Pick who fits the prompt. Your pick is your vote; your chip is your risk.',
-          ),
-          const SizedBox(height: 18),
-          _partyGuideBullet(
-            icon: Icons.local_fire_department_rounded,
-            title: 'SPLIT OR COMMIT',
-            description:
-                'Back one player for two votes, or two players for one vote each. Chip value does not change voting power.',
-          ),
-          const SizedBox(height: 18),
-          _partyGuideBullet(
-            icon: Icons.emoji_events_rounded,
-            title: 'REVEAL, THEN SETTLE',
-            description:
-                'Bets stay hidden until the reveal. Winning picks pay 2×; every losing stake is simply lost.',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _partyGuideBullet({
-    required IconData icon,
-    required String title,
-    required String description,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 19, color: PartyPalette.orangeSoft),
-        const SizedBox(width: 8),
-        Expanded(
-          child: RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: '$title: ',
-                  style: GoogleFonts.outfit(
-                    color: PartyPalette.cream,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                TextSpan(
-                  text: description,
-                  style: GoogleFonts.outfit(
-                    color: PartyPalette.creamMuted.withValues(alpha: 0.85),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    height: 1.42,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _setupSlider({
+    bool compact = false,
     bool partyTheme = false,
     required IconData icon,
     required String label,
@@ -927,7 +1022,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : null;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+      padding: EdgeInsets.fromLTRB(14, compact ? 8 : 13, 14, compact ? 5 : 10),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -965,21 +1060,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 color: partyTheme
                     ? PartyPalette.orangeSoft
                     : AppColors.brassLight,
-                size: 24,
+                size: compact ? 20 : 24,
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: compact ? 7 : 10),
               Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: _homeTextStyle(
-                      color: AppColors.ivory,
-                      size: 22,
-                      letterSpacing: 1,
-                    ),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _homeTextStyle(
+                    color: AppColors.ivory,
+                    size: compact ? 18 : 22,
+                    letterSpacing: compact ? 0.7 : 1,
                   ),
                 ),
               ),
@@ -987,7 +1079,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               if (trailing != null) trailing,
               if (premiumRange != null) ...[
                 _premiumBadge('$premiumRange+'),
-                const SizedBox(width: 8),
+                SizedBox(width: compact ? 5 : 8),
               ],
               if (isPremiumLocked) ...[
                 const Icon(
@@ -995,11 +1087,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   color: AppColors.brassLight,
                   size: 18,
                 ),
-                const SizedBox(width: 7),
+                SizedBox(width: compact ? 5 : 7),
               ],
               Container(
-                width: valueText != null && valueText.length > 2 ? 52 : 42,
-                height: 34,
+                width: valueText != null && valueText.length > 2
+                    ? (compact ? 46 : 52)
+                    : (compact ? 38 : 42),
+                height: compact ? 30 : 34,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   gradient: isPremiumLocked
@@ -1020,7 +1114,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   valueText ?? '$value',
                   style: _homeTextStyle(
                     color: AppColors.ink,
-                    size: 22,
+                    size: compact ? 19 : 22,
                     letterSpacing: 0,
                   ),
                 ),
@@ -1039,19 +1133,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               overlayColor:
                   (partyTheme ? PartyPalette.orangeSoft : AppColors.brassLight)
                       .withValues(alpha: 0.18),
-              trackHeight: 6,
+              trackHeight: compact ? 4.5 : 6,
               tickMarkShape: SliderTickMarkShape.noTickMark,
             ),
-            child: Stack(
-              children: [
-                Slider(
-                  min: min.toDouble(),
-                  max: max.toDouble(),
-                  divisions: max - min,
-                  value: value.clamp(min, max).toDouble(),
-                  onChanged: (next) => onChanged(next.round()),
-                ),
-              ],
+            child: SizedBox(
+              height: compact ? 36 : 48,
+              child: Slider(
+                min: min.toDouble(),
+                max: max.toDouble(),
+                divisions: max - min,
+                value: value.clamp(min, max).toDouble(),
+                onChanged: (next) => onChanged(next.round()),
+              ),
             ),
           ),
         ],
@@ -1091,6 +1184,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _categoryPicker({
+    required bool compact,
     required List<String> categories,
     required String selectedCategory,
     required bool isPremium,
@@ -1101,7 +1195,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(15),
+      padding: EdgeInsets.all(compact ? 8 : 15),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -1128,79 +1222,83 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.category_rounded,
                 color: AppColors.brassLight,
-                size: 24,
+                size: compact ? 18 : 24,
               ),
-              const SizedBox(width: 10),
-              Text(
-                'CATEGORY',
-                style: _homeTextStyle(
-                  color: AppColors.ivory,
-                  size: 22,
-                  letterSpacing: 1,
+              SizedBox(width: compact ? 7 : 10),
+              Expanded(
+                child: Text(
+                  'CATEGORY',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _homeTextStyle(
+                    color: AppColors.ivory,
+                    size: compact ? 17 : 22,
+                    letterSpacing: compact ? 0.6 : 1,
+                  ),
                 ),
               ),
-              const Spacer(),
               if (lockedSelection) _premiumBadge('PREMIUM'),
             ],
           ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: AppColors.ivory.withValues(alpha: 0.12),
+          if (!compact) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.ivory.withValues(alpha: 0.12),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    lockedSelection
+                        ? Icons.lock_rounded
+                        : Icons.check_circle_rounded,
+                    color: lockedSelection
+                        ? AppColors.brassLight
+                        : AppColors.neonGreen,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      selectedCategory,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.ivory,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  if (lockedSelection)
+                    const Text(
+                      'PREMIUM',
+                      style: TextStyle(
+                        color: AppColors.brassLight,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 10,
+                      ),
+                    ),
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  lockedSelection
-                      ? Icons.lock_rounded
-                      : Icons.check_circle_rounded,
-                  color: lockedSelection
-                      ? AppColors.brassLight
-                      : AppColors.neonGreen,
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    selectedCategory,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.ivory,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-                if (lockedSelection)
-                  const Text(
-                    'PREMIUM',
-                    style: TextStyle(
-                      color: AppColors.brassLight,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 10,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const gap = 8.0;
-              final itemWidth = (constraints.maxWidth - gap) / 2;
-              return ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 178),
-                child: SingleChildScrollView(
+          ],
+          SizedBox(height: compact ? 6 : 10),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final gap = compact ? 6.0 : 8.0;
+                final itemWidth = (constraints.maxWidth - gap) / 2;
+                return SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: Wrap(
                     spacing: gap,
@@ -1212,14 +1310,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           category != GameConstants.defaultCategory;
                       return SizedBox(
                         width: itemWidth,
-                        height: 46,
+                        height: compact ? 38 : 46,
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
                           onTap: () => onSelected(category),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 160),
                             alignment: Alignment.center,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: compact ? 7 : 10,
+                            ),
                             decoration: BoxDecoration(
                               color: selected
                                   ? AppColors.brassLight
@@ -1245,16 +1345,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                   : null,
                             ),
                             child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 if (locked) ...[
                                   Icon(
                                     Icons.lock_rounded,
-                                    size: 14,
+                                    size: compact ? 12 : 14,
                                     color: selected
                                         ? AppColors.ink
                                         : AppColors.brassLight,
                                   ),
-                                  const SizedBox(width: 5),
+                                  SizedBox(width: compact ? 3 : 5),
                                 ],
                                 Flexible(
                                   child: Text(
@@ -1267,7 +1368,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                           ? AppColors.ink
                                           : AppColors.ivory,
                                       fontWeight: FontWeight.w900,
-                                      fontSize: 16,
+                                      fontSize: compact ? 13 : 16,
                                     ),
                                   ),
                                 ),
@@ -1278,9 +1379,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       );
                     }).toList(),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ],
       ),

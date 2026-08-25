@@ -9,12 +9,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/game_constants.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../room/models/room_model.dart';
 import '../../room/providers/room_providers.dart';
 import '../models/party_poll_snapshot.dart';
 import '../providers/party_poll_session_provider.dart';
-import '../theme/party_palette.dart';
 import '../widgets/party_poll_production_view.dart';
 
 class PartyPollGameScreen extends ConsumerStatefulWidget {
@@ -75,10 +76,12 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   Timer? _revealClinkTimer;
   bool _transitionCommandInFlight = false;
   bool _snapshotLoadInFlight = false;
-  bool _betCommandInFlight = false;
-  _PendingPartyPollBetVisual? _pendingBetVisual;
+  final Map<String, _PendingPartyPollBetVisual> _pendingBetVisuals =
+      <String, _PendingPartyPollBetVisual>{};
   final Set<String> _optimisticallyHiddenBetIds = <String>{};
-  _PendingPartyPollMoveVisual? _pendingMoveVisual;
+  final Map<String, _PendingPartyPollMoveVisual> _pendingMoveVisuals =
+      <String, _PendingPartyPollMoveVisual>{};
+  final Set<String> _removalCommandBetIds = <String>{};
   bool _showPartyRoundTransition = false;
   int? _partyTransitionRound;
   Timer? _partyRoundTransitionTimer;
@@ -410,172 +413,86 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     final round = snapshot.round;
     final content = IgnorePointer(
       child: ColoredBox(
-        color: PartyPalette.nightDeep.withValues(alpha: 0.97),
+        color: AppColors.feltDark.withValues(alpha: .97),
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
+              constraints: const BoxConstraints(maxWidth: 520),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 28),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 5.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: PartyPalette.surfaceRaised,
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(
-                          color: PartyPalette.orangeSoft.withValues(alpha: 0.6),
-                          width: 1.2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: PartyPalette.orange.withValues(alpha: 0.25),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        'ROUND ${round.number} OF ${snapshot.room.maxRounds}',
-                        style: GoogleFonts.outfit(
-                          color: PartyPalette.orangeSoft,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
-                        ),
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: AppColors.brassLight,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'ROUND',
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: .72),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 4),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'ROUND ${round.number}',
+                        '${round.number}',
                         maxLines: 1,
                         style: const TextStyle(
                           fontFamily: 'RehnCondensed',
-                          color: PartyPalette.cream,
-                          fontSize: 96,
+                          color: AppColors.brassLight,
+                          fontSize: 108,
                           fontWeight: FontWeight.w900,
-                          height: 0.88,
+                          height: .9,
                           letterSpacing: 0,
                           shadows: [
-                            Shadow(
-                              color: Colors.black87,
-                              blurRadius: 20,
-                              offset: Offset(0, 4),
-                            ),
-                            Shadow(color: PartyPalette.orange, blurRadius: 28),
+                            Shadow(color: Colors.black54, blurRadius: 18),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(height: 18),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            PartyPalette.surfaceRaised.withValues(alpha: 0.95),
-                            PartyPalette.surface.withValues(alpha: 0.98),
-                          ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: AppColors.brassLight.withValues(alpha: .35),
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: PartyPalette.orangeSoft.withValues(
-                            alpha: 0.45,
+                        const SizedBox(width: 14),
+                        Text(
+                          'PARTY POLL',
+                          style: GoogleFonts.outfit(
+                            color: AppColors.ivory,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
                           ),
-                          width: 1.4,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.4),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: AppColors.brassLight.withValues(alpha: .35),
                           ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const RadialGradient(
-                                colors: [
-                                  PartyPalette.surfaceRaised,
-                                  PartyPalette.nightDeep,
-                                ],
-                              ),
-                              border: Border.all(
-                                color: PartyPalette.orangeSoft,
-                                width: 2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: PartyPalette.orange.withValues(
-                                    alpha: 0.35,
-                                  ),
-                                  blurRadius: 12,
-                                ),
-                              ],
-                            ),
-                            alignment: Alignment.center,
-                            child: const Icon(
-                              Icons.how_to_vote_rounded,
-                              color: PartyPalette.cream,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'GROUP POLL',
-                                  style: GoogleFonts.outfit(
-                                    color: PartyPalette.orangeSoft,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.0,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                const Text(
-                                  'EVERYONE VOTES',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: 'RehnCondensed',
-                                    color: PartyPalette.cream,
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w900,
-                                    height: 0.95,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  'Majority Rules · Pick who fits best!',
-                                  style: GoogleFonts.outfit(
-                                    color: PartyPalette.blueMuted,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '${round.number} / ${snapshot.room.maxRounds}',
+                      style: GoogleFonts.outfit(
+                        color: AppColors.brassLight.withValues(alpha: .72),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
                       ),
                     ),
                   ],
@@ -600,17 +517,21 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _clearStalePendingBetVisual(PartyPollSnapshot snapshot) {
-    final pending = _pendingBetVisual;
-    if (pending == null ||
-        (snapshot.round.phase == PartyPollPhase.betting &&
-            pending.roundNumber == snapshot.round.number)) {
-      return;
+    final staleIds = _pendingBetVisuals.entries
+        .where(
+          (entry) =>
+              snapshot.round.phase != PartyPollPhase.betting ||
+              entry.value.roundNumber != snapshot.round.number,
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    if (staleIds.isNotEmpty && mounted) {
+      setState(() {
+        for (final id in staleIds) {
+          _pendingBetVisuals.remove(id);
+        }
+      });
     }
-    setState(() {
-      if (identical(_pendingBetVisual, pending)) {
-        _pendingBetVisual = null;
-      }
-    });
   }
 
   void _reconcileOptimisticallyHiddenBets(PartyPollSnapshot snapshot) {
@@ -634,39 +555,29 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     double? positionX,
     double? positionY,
   ) async {
-    if (_betCommandInFlight) return;
     final chip = _selectedChipValue;
     if (chip == null || snapshot.round.phase != PartyPollPhase.betting) return;
     final targetExists = snapshot.round.players.any(
       (player) => player.id == targetPlayerId,
     );
     if (!targetExists) return;
-    final ownTargetIds = snapshot.round.bets
-        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
-        .where((bet) => bet.playerId == snapshot.me.playerId)
-        .map((bet) => bet.targetPlayerId)
-        .toSet();
-    if (ownTargetIds.length >= 2 && !ownTargetIds.contains(targetPlayerId)) {
-      _showMessage('You can back up to two players this round.');
-      return;
-    }
     final usedChips = snapshot.round.bets
         .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => bet.playerId == snapshot.me.playerId)
         .map((bet) => bet.chips)
         .toSet();
-    final pendingChip = _pendingBetVisual?.roundNumber == snapshot.round.number
-        ? _pendingBetVisual?.chips
-        : null;
-    if (usedChips.contains(chip) || pendingChip == chip) {
+    final pendingChips = _pendingBetVisuals.values
+        .where((pending) => pending.roundNumber == snapshot.round.number)
+        .map((pending) => pending.chips)
+        .toSet();
+    if (usedChips.contains(chip) || pendingChips.contains(chip)) {
       _showMessage('That chip is already used this round.');
       return;
     }
 
     final clientActionId = const Uuid().v4();
     setState(() {
-      _betCommandInFlight = true;
-      _pendingBetVisual = _PendingPartyPollBetVisual(
+      _pendingBetVisuals[clientActionId] = _PendingPartyPollBetVisual(
         clientActionId: clientActionId,
         roundNumber: snapshot.round.number,
         targetPlayerId: targetPlayerId,
@@ -696,12 +607,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _betCommandInFlight = false;
-          if (_pendingBetVisual?.clientActionId == clientActionId) {
-            _pendingBetVisual = null;
-          }
-        });
+        setState(() => _pendingBetVisuals.remove(clientActionId));
       }
     }
   }
@@ -726,7 +632,9 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     double positionX,
     double positionY,
   ) async {
-    if (_betCommandInFlight || snapshot.round.phase != PartyPollPhase.betting) {
+    if (_removalCommandBetIds.contains(betId) ||
+        _pendingMoveVisuals.containsKey(betId) ||
+        snapshot.round.phase != PartyPollPhase.betting) {
       return;
     }
     PartyPollBet? sourceBet;
@@ -745,20 +653,9 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         !positionY.isFinite) {
       return;
     }
-    final otherTargetIds = snapshot.round.bets
-        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
-        .where((bet) => bet.playerId == snapshot.me.playerId && bet.id != betId)
-        .map((bet) => bet.targetPlayerId)
-        .toSet();
-    if (otherTargetIds.length >= 2 &&
-        !otherTargetIds.contains(targetPlayerId)) {
-      _showMessage('You can back up to two players this round.');
-      return;
-    }
 
     setState(() {
-      _betCommandInFlight = true;
-      _pendingMoveVisual = _PendingPartyPollMoveVisual(
+      _pendingMoveVisuals[betId] = _PendingPartyPollMoveVisual(
         betId: betId,
         roundNumber: snapshot.round.number,
         targetPlayerId: targetPlayerId,
@@ -778,7 +675,6 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             positionY: positionY,
           );
       if (updated == null && mounted) {
-        setState(() => _optimisticallyHiddenBetIds.remove(betId));
         _showMessage(
           ref.read(partyPollSessionProvider).errorMessage ??
               'Bet could not be moved.',
@@ -790,17 +686,14 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         });
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _betCommandInFlight = false;
-          _pendingMoveVisual = null;
-        });
-      }
+      if (mounted) setState(() => _pendingMoveVisuals.remove(betId));
     }
   }
 
   Future<void> _removeBet(PartyPollSnapshot snapshot, String betId) async {
-    if (_betCommandInFlight || snapshot.round.phase != PartyPollPhase.betting) {
+    if (_removalCommandBetIds.contains(betId) ||
+        _pendingMoveVisuals.containsKey(betId) ||
+        snapshot.round.phase != PartyPollPhase.betting) {
       return;
     }
     final isOwnedCurrentBet = snapshot.round.bets.any(
@@ -812,7 +705,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     }
 
     setState(() {
-      _betCommandInFlight = true;
+      _removalCommandBetIds.add(betId);
       _optimisticallyHiddenBetIds.add(betId);
       _selectedBetId = null;
       _selectedChipValue = null;
@@ -830,7 +723,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         );
       }
     } finally {
-      if (mounted) setState(() => _betCommandInFlight = false);
+      if (mounted) setState(() => _removalCommandBetIds.remove(betId));
     }
   }
 
@@ -865,12 +758,11 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => targetSlotByPlayerId.containsKey(bet.targetPlayerId))
         .map((bet) {
-          final pendingMove = _pendingMoveVisual;
+          final pendingMove = _pendingMoveVisuals[bet.id];
           final usePendingMove =
               pendingMove != null &&
               snapshot.round.phase == PartyPollPhase.betting &&
               pendingMove.roundNumber == snapshot.round.number &&
-              pendingMove.betId == bet.id &&
               targetSlotByPlayerId.containsKey(pendingMove.targetPlayerId);
           final targetPlayerId = usePendingMove
               ? pendingMove.targetPlayerId
@@ -888,32 +780,28 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         })
         .toList();
     final isReveal = snapshot.round.phase == PartyPollPhase.reveal;
-    final pending = _pendingBetVisual;
-    final pendingIsAuthoritative =
-        pending != null &&
-        snapshot.round.bets.any(
-          (bet) => bet.clientActionId == pending.clientActionId,
-        );
-    final pendingSlotIndex = pending == null
-        ? null
-        : targetSlotByPlayerId[pending.targetPlayerId];
-    if (pending != null &&
-        snapshot.round.phase == PartyPollPhase.betting &&
-        pending.roundNumber == snapshot.round.number &&
-        !pendingIsAuthoritative &&
-        pendingSlotIndex != null) {
-      viewBets.add(
-        PartyPollViewBet(
-          id: 'pending:${pending.clientActionId}',
-          bettorPlayerId: snapshot.me.playerId,
-          targetPlayerId: pending.targetPlayerId,
-          targetSlotIndex: pendingSlotIndex,
-          chips: pending.chips,
-          positionX: pending.positionX,
-          positionY: pending.positionY,
-          won: null,
-        ),
+    for (final pending in _pendingBetVisuals.values) {
+      final pendingIsAuthoritative = snapshot.round.bets.any(
+        (bet) => bet.clientActionId == pending.clientActionId,
       );
+      final pendingSlotIndex = targetSlotByPlayerId[pending.targetPlayerId];
+      if (snapshot.round.phase == PartyPollPhase.betting &&
+          pending.roundNumber == snapshot.round.number &&
+          !pendingIsAuthoritative &&
+          pendingSlotIndex != null) {
+        viewBets.add(
+          PartyPollViewBet(
+            id: 'pending:${pending.clientActionId}',
+            bettorPlayerId: snapshot.me.playerId,
+            targetPlayerId: pending.targetPlayerId,
+            targetSlotIndex: pendingSlotIndex,
+            chips: pending.chips,
+            positionX: pending.positionX,
+            positionY: pending.positionY,
+            won: null,
+          ),
+        );
+      }
     }
     final effectiveOwnBetTotal = viewBets
         .where((bet) => bet.bettorPlayerId == snapshot.me.playerId)
@@ -1004,24 +892,53 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
 
   Widget _loadingOrError(PartyPollSessionState state) {
     return Scaffold(
-      backgroundColor: PartyPalette.nightDeep,
-      body: Center(
-        child: state.isLoading
-            ? const CircularProgressIndicator(color: PartyPalette.orangeSoft)
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    state.errorMessage ?? 'Loading Party Poll...',
-                    style: const TextStyle(color: PartyPalette.cream),
+      backgroundColor: AppColors.background,
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: CachedAssetImage(
+              AppAssetPaths.background,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned.fill(
+            child: ColoredBox(
+              color: AppColors.background.withValues(alpha: .38),
+            ),
+          ),
+          Center(
+            child: state.isLoading
+                ? const CircularProgressIndicator(color: AppColors.brassLight)
+                : Container(
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    margin: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(20),
+                    decoration: AppColors.leatherPanel(borderRadius: 18),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          state.errorMessage ?? 'Loading Party Poll...',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.outfit(
+                            color: AppColors.ivory,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.brassLight,
+                            side: const BorderSide(color: AppColors.brassLight),
+                          ),
+                          onPressed: _loadSnapshot,
+                          child: const Text('RETRY'),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: _loadSnapshot,
-                    child: const Text('RETRY'),
-                  ),
-                ],
-              ),
+          ),
+        ],
       ),
     );
   }
