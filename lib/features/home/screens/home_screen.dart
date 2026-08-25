@@ -122,8 +122,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    final localPremium = await ref
-        .read(premiumStatusProvider.future)
+    final initialEffectivePremium = await ref
+        .read(effectivePremiumStatusProvider.future)
         .catchError((_) => false);
     if (!mounted) return;
 
@@ -132,8 +132,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         .asData
         ?.value;
     final monetizationStatusFuture = _readMonetizationStatusSafely();
-    var isPremium = localPremium || (cachedServerStatus?.isPremium ?? false);
-    MonetizationStatus? resolvedMonetizationStatus;
+    var isPremium = initialEffectivePremium;
+    MonetizationStatus? resolvedMonetizationStatus = cachedServerStatus;
     final categoriesFuture = ref
         .read(gameServiceProvider)
         .getQuestionCategories();
@@ -179,7 +179,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     final status = freshStatus ?? cachedServerStatus;
                     if (status == null) return const SizedBox.shrink();
 
-                    final displayPremium = localPremium || status.isPremium;
+                    final displayPremium = isPremium;
                     final statusChanged =
                         freshStatus != null &&
                         (resolvedMonetizationStatus?.isPremium !=
@@ -187,14 +187,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             resolvedMonetizationStatus
                                     ?.freeHostGamesRemaining !=
                                 freshStatus.freeHostGamesRemaining);
-                    if ((displayPremium && !isPremium) || statusChanged) {
+                    if (statusChanged) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (!mounted) return;
                         setModalState(() {
-                          if (freshStatus != null) {
-                            resolvedMonetizationStatus = freshStatus;
-                          }
-                          if (displayPremium) isPremium = true;
+                          resolvedMonetizationStatus = freshStatus;
                         });
                       });
                     }
@@ -631,7 +628,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<bool> _refreshPremiumEntitlementBeforeRoomCreate() async {
-    final fallbackPremium = ref.read(premiumStatusProvider).value ?? false;
+    final fallbackPremium =
+        ref.read(effectivePremiumStatusProvider).value ?? false;
     final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
     if (userId == null) return fallbackPremium;
 
@@ -639,11 +637,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final revenueCat = ref.read(revenueCatServiceProvider);
       await revenueCat.initialize(appUserId: userId);
       await revenueCat.refreshCustomerInfo();
-      final isPremium = await revenueCat.isPremium();
+      final revenueCatPremium = await revenueCat.isPremium();
       if (!mounted) return fallbackPremium;
 
       ref.invalidate(premiumStatusProvider);
-      if (isPremium) {
+      if (revenueCatPremium) {
         try {
           await ref
               .read(monetizationServiceProvider)
@@ -653,17 +651,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             'RevenueCat entitlement sync before room create failed: '
             '$error\n$stackTrace',
           );
-        } finally {
-          if (mounted) ref.invalidate(monetizationStatusProvider);
         }
       }
-      return isPremium;
+      ref.invalidate(monetizationStatusProvider);
+      ref.invalidate(effectivePremiumStatusProvider);
+      return await ref
+          .read(effectivePremiumStatusProvider.future)
+          .catchError((_) => fallbackPremium);
     } catch (error, stackTrace) {
       debugPrint(
         'RevenueCat entitlement refresh before room create failed: '
         '$error\n$stackTrace',
       );
-      if (mounted) ref.invalidate(premiumStatusProvider);
+      if (mounted) {
+        ref.invalidate(premiumStatusProvider);
+        ref.invalidate(effectivePremiumStatusProvider);
+      }
       return fallbackPremium;
     }
   }
@@ -699,6 +702,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showSettingsSheet() {
     ref.read(audioServiceProvider).playClick();
     final audioService = ref.read(audioServiceProvider);
+    final debugStatusFuture = kDebugMode
+        ? _readMonetizationStatusSafely()
+        : null;
+    MonetizationStatus? debugStatus = kDebugMode
+        ? ref.read(monetizationStatusProvider).asData?.value
+        : null;
+    var debugActionInFlight = false;
 
     _showHomeSheet(
       title: 'SETTINGS',
@@ -706,6 +716,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       child: StatefulBuilder(
         builder: (context, setModalState) {
           final isMuted = audioService.isMuted;
+
+          Future<void> runDebugAction(
+            Future<MonetizationStatus> Function() action,
+          ) async {
+            if (debugActionInFlight) return;
+            setModalState(() => debugActionInFlight = true);
+            try {
+              final updated = await action();
+              ref.invalidate(monetizationStatusProvider);
+              ref.invalidate(effectivePremiumStatusProvider);
+              ref.invalidate(premiumStatusProvider);
+              if (!context.mounted) return;
+              setModalState(() => debugStatus = updated);
+              if (mounted) setState(() {});
+            } catch (error, stackTrace) {
+              debugPrint(
+                'Debug monetization control failed: $error\n$stackTrace',
+              );
+              final message = '$error'.contains('DEBUG_OVERRIDE_NOT_ALLOWED')
+                  ? 'Debug entitlement is not enabled for this account.'
+                  : 'Debug entitlement update failed: $error';
+              _showSnack(message);
+            } finally {
+              if (context.mounted) {
+                setModalState(() => debugActionInFlight = false);
+              }
+            }
+          }
+
           return Column(
             children: [
               Container(
@@ -789,9 +828,258 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
               ),
+              if (kDebugMode) ...[
+                const SizedBox(height: 12),
+                FutureBuilder<MonetizationStatus?>(
+                  future: debugStatusFuture,
+                  builder: (context, snapshot) {
+                    final status = debugStatus ?? snapshot.data;
+                    if (status == null) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: AppColors.cardFelt(borderRadius: 18),
+                        child: snapshot.hasError
+                            ? Text(
+                                'Developer status unavailable: ${snapshot.error}',
+                                style: const TextStyle(
+                                  color: AppColors.neonRed,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              )
+                            : const Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.brassLight,
+                                ),
+                              ),
+                      );
+                    }
+
+                    return _buildDeveloperSettingsCard(
+                      status: status,
+                      busy: debugActionInFlight,
+                      onPremiumChanged: (value) => runDebugAction(
+                        () => ref
+                            .read(monetizationServiceProvider)
+                            .setDebugPremiumOverride(value),
+                      ),
+                      onGamesUsedChanged: (used) => runDebugAction(
+                        () => ref
+                            .read(monetizationServiceProvider)
+                            .setDebugFreeHostGamesUsed(used),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildDeveloperSettingsCard({
+    required MonetizationStatus status,
+    required bool busy,
+    required Future<void> Function(bool? value) onPremiumChanged,
+    required Future<void> Function(int used) onGamesUsedChanged,
+  }) {
+    final override = status.debugPremiumOverride;
+    final remaining = status.freeHostGamesRemaining.clamp(0, 3);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF123F2D), Color(0xFF08271C)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.brassLight.withValues(alpha: 0.42)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.developer_mode_rounded,
+                color: AppColors.brassLight,
+                size: 21,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'DEVELOPER',
+                  style: _homeTextStyle(
+                    color: AppColors.ivory,
+                    size: 20,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              const Text(
+                'Debug build only',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _debugChoiceButton(
+                  label: 'REAL',
+                  selected: override == null,
+                  enabled: !busy,
+                  onTap: () => onPremiumChanged(null),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _debugChoiceButton(
+                  label: 'FREE',
+                  selected: override == false,
+                  enabled: !busy,
+                  onTap: () => onPremiumChanged(false),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _debugChoiceButton(
+                  label: 'PREMIUM',
+                  selected: override == true,
+                  enabled: !busy,
+                  onTap: () => onPremiumChanged(true),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 12,
+            runSpacing: 3,
+            children: [
+              Text(
+                'Effective: ${status.isPremium ? 'PREMIUM' : 'FREE'}',
+                style: TextStyle(
+                  color: status.isPremium
+                      ? AppColors.neonGreen
+                      : AppColors.brassLight,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                'Real: ${status.realIsPremium ? 'PREMIUM' : 'FREE'}',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 11),
+            child: Divider(height: 1, color: Color(0x33FFD77A)),
+          ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'FREE GAMES USED',
+                  style: TextStyle(
+                    color: AppColors.ivory,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.7,
+                  ),
+                ),
+              ),
+              Text(
+                'Remaining: $remaining / 3',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (var used = 0; used <= 3; used++) ...[
+                if (used > 0) const SizedBox(width: 6),
+                Expanded(
+                  child: _debugChoiceButton(
+                    label: '$used',
+                    selected: status.freeHostGamesUsed == used,
+                    enabled: !busy,
+                    onTap: () => onGamesUsedChanged(used),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (busy) ...[
+            const SizedBox(height: 10),
+            const LinearProgressIndicator(
+              minHeight: 2,
+              color: AppColors.brassLight,
+              backgroundColor: Colors.black26,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _debugChoiceButton({
+    required String label,
+    required bool selected,
+    required bool enabled,
+    required Future<void> Function() onTap,
+  }) {
+    return Material(
+      color: selected
+          ? AppColors.brassLight
+          : Colors.black.withValues(alpha: 0.24),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: enabled ? () async => onTap() : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? AppColors.brass
+                  : AppColors.brassLight.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              color: selected ? AppColors.ink : AppColors.ivory,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
       ),
     );
   }

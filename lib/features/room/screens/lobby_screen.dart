@@ -278,11 +278,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     if (mounted) {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
+      ref.invalidate(effectivePremiumStatusProvider);
     }
   }
 
   Future<bool> _refreshPremiumEntitlementBeforeHostStart() async {
-    final fallbackPremium = ref.read(premiumStatusProvider).value ?? false;
+    final fallbackPremium =
+        ref.read(effectivePremiumStatusProvider).value ?? false;
     final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
     if (userId == null) return fallbackPremium;
 
@@ -290,11 +292,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       final revenueCat = ref.read(revenueCatServiceProvider);
       await revenueCat.initialize(appUserId: userId);
       await revenueCat.refreshCustomerInfo();
-      final isPremium = await revenueCat.isPremium();
+      final revenueCatPremium = await revenueCat.isPremium();
       if (!mounted) return fallbackPremium;
 
       ref.invalidate(premiumStatusProvider);
-      if (isPremium) {
+      if (revenueCatPremium) {
         try {
           await ref
               .read(monetizationServiceProvider)
@@ -304,17 +306,22 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             'RevenueCat entitlement sync before host start failed: '
             '$error\n$stackTrace',
           );
-        } finally {
-          if (mounted) ref.invalidate(monetizationStatusProvider);
         }
       }
-      return isPremium;
+      ref.invalidate(monetizationStatusProvider);
+      ref.invalidate(effectivePremiumStatusProvider);
+      return await ref
+          .read(effectivePremiumStatusProvider.future)
+          .catchError((_) => fallbackPremium);
     } catch (error, stackTrace) {
       debugPrint(
         'RevenueCat entitlement refresh before host start failed: '
         '$error\n$stackTrace',
       );
-      if (mounted) ref.invalidate(premiumStatusProvider);
+      if (mounted) {
+        ref.invalidate(premiumStatusProvider);
+        ref.invalidate(effectivePremiumStatusProvider);
+      }
       return fallbackPremium;
     }
   }
@@ -382,6 +389,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               }),
         );
         ref.invalidate(monetizationStatusProvider);
+        ref.invalidate(effectivePremiumStatusProvider);
         if (mounted) {
           _isNavigatingToGame = true;
           context.goNamed(
@@ -441,12 +449,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       );
 
       ref.invalidate(monetizationStatusProvider);
+      ref.invalidate(effectivePremiumStatusProvider);
       if (mounted) {
         _isNavigatingToGame = true;
         context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
       }
     } on FreeHostLimitReachedException {
       ref.invalidate(monetizationStatusProvider);
+      ref.invalidate(effectivePremiumStatusProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1100,7 +1110,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Widget _buildActionsPanel(bool isHost, Player? currentPlayer) {
-    final isPremium = ref.watch(premiumStatusProvider).value ?? false;
+    final isPremium = ref.watch(effectivePremiumStatusProvider).value ?? false;
     final exceedsLimit =
         !isPremium && _activePlayers.length > GameConstants.freeMaxPlayers;
 

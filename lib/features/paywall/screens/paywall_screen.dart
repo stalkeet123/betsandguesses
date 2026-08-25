@@ -81,6 +81,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       debugPrint('Monetization sync failed: $error');
     } finally {
       ref.invalidate(monetizationStatusProvider);
+      ref.invalidate(effectivePremiumStatusProvider);
     }
   }
 
@@ -138,6 +139,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     final service = ref.read(revenueCatServiceProvider);
     final result = await service.purchasePackage(packageIdentifier);
     ref.invalidate(premiumStatusProvider);
+    ref.invalidate(effectivePremiumStatusProvider);
 
     if (!mounted) return;
     setState(() {
@@ -170,6 +172,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     final service = ref.read(revenueCatServiceProvider);
     final result = await service.restorePurchases();
     ref.invalidate(premiumStatusProvider);
+    ref.invalidate(effectivePremiumStatusProvider);
 
     if (!mounted) return;
     setState(() {
@@ -194,7 +197,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   @override
   Widget build(BuildContext context) {
     final serverStatus = ref.watch(monetizationStatusProvider).asData?.value;
-    final isPremium = _isPremium || (serverStatus?.isPremium ?? false);
+    final effectivePremium = ref.watch(effectivePremiumStatusProvider);
+    final isPremium =
+        effectivePremium.asData?.value ??
+        (serverStatus == null
+            ? _isPremium
+            : resolveEffectivePremiumStatus(
+                revenueCatPremium: _isPremium,
+                serverStatus: serverStatus,
+              ));
 
     return Scaffold(
       body: Stack(

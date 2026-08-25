@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -58,6 +59,19 @@ final premiumStatusProvider = FutureProvider<bool>((ref) async {
   await service.initialize(appUserId: userId);
   return service.isPremium();
 });
+
+bool resolveEffectivePremiumStatus({
+  required bool revenueCatPremium,
+  required MonetizationStatus serverStatus,
+  bool debugMode = kDebugMode,
+}) {
+  if (debugMode &&
+      serverStatus.debugOverrideAllowed &&
+      serverStatus.debugPremiumOverride != null) {
+    return serverStatus.isPremium;
+  }
+  return revenueCatPremium || serverStatus.isPremium;
+}
 
 // ── SharedPreferences ──
 final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
@@ -147,3 +161,14 @@ final monetizationServiceProvider = Provider<MonetizationService>(
 final monetizationStatusProvider = FutureProvider<MonetizationStatus>(
   (ref) => ref.watch(monetizationServiceProvider).getStatus(),
 );
+
+final effectivePremiumStatusProvider = FutureProvider<bool>((ref) async {
+  final results = await Future.wait<Object>([
+    ref.watch(premiumStatusProvider.future),
+    ref.watch(monetizationStatusProvider.future),
+  ]);
+  return resolveEffectivePremiumStatus(
+    revenueCatPremium: results[0] as bool,
+    serverStatus: results[1] as MonetizationStatus,
+  );
+});
