@@ -1665,8 +1665,9 @@ class _AdaptiveQuestionText extends StatelessWidget {
           textAlign: TextAlign.center,
           textDirection: TextDirection.ltr,
           textScaler: TextScaler.noScaling,
-          strutStyle: const StrutStyle(
+          strutStyle: StrutStyle(
             fontFamily: 'RehnCondensed',
+            fontSize: candidate,
             forceStrutHeight: true,
             height: 1.02,
           ),
@@ -1684,8 +1685,9 @@ class _AdaptiveQuestionText extends StatelessWidget {
           textAlign: TextAlign.center,
           softWrap: true,
           textScaler: TextScaler.noScaling,
-          strutStyle: const StrutStyle(
+          strutStyle: StrutStyle(
             fontFamily: 'RehnCondensed',
+            fontSize: low,
             forceStrutHeight: true,
             height: 1.02,
           ),
