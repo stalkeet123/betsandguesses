@@ -1913,22 +1913,55 @@ class _PartyPollSlotLabel extends StatelessWidget {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    spec.title.toUpperCase(),
-                    maxLines: 1,
-                    style: GoogleFonts.rye(
-                      color: AppColors.ivory,
-                      fontSize: 27,
-                      fontWeight: FontWeight.w400,
-                      height: .95,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black.withValues(alpha: .82),
-                          blurRadius: 7,
-                          offset: const Offset(0, 2),
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      Text(
+                        spec.title.toUpperCase(),
+                        maxLines: 1,
+                        style: GoogleFonts.rye(
+                          foreground: Paint()
+                            ..style = PaintingStyle.stroke
+                            ..strokeWidth = spec.isGold ? 2.6 : 3.2
+                            ..color =
+                                (spec.isGold
+                                        ? AppColors.brassLight
+                                        : AppColors.feltDark)
+                                    .withValues(alpha: spec.isGold ? .72 : .78),
+                          fontSize: 27,
+                          fontWeight: FontWeight.w400,
+                          height: .95,
                         ),
-                      ],
-                    ),
+                      ),
+                      Text(
+                        spec.title.toUpperCase(),
+                        maxLines: 1,
+                        style: GoogleFonts.rye(
+                          color: spec.isGold
+                              ? AppColors.mahoganyDark
+                              : AppColors.ivory,
+                          fontSize: 27,
+                          fontWeight: FontWeight.w400,
+                          height: .95,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(
+                                alpha: spec.isGold ? .28 : .75,
+                              ),
+                              blurRadius: spec.isGold ? 2 : 7,
+                              offset: const Offset(0, 2),
+                            ),
+                            if (spec.isGold)
+                              Shadow(
+                                color: AppColors.brassLight.withValues(
+                                  alpha: .34,
+                                ),
+                                blurRadius: 9,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
