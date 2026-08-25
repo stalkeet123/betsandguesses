@@ -5,6 +5,17 @@ import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/utils/helpers.dart';
 import '../models/room_model.dart';
 
+Exception? roomCreationExceptionFor(PostgrestException error) {
+  if (isFreeHostLimitReachedMessage(error.message)) {
+    return const FreeHostLimitReachedException();
+  }
+  final requirement = premiumSetupRequirementForMessage(error.message);
+  if (requirement != null) {
+    return PremiumSetupRequiredException(requirement);
+  }
+  return null;
+}
+
 /// Service for room CRUD operations via Supabase
 class RoomService {
   final SupabaseClient _client;
@@ -64,10 +75,8 @@ class RoomService {
         return Room.fromJson(Map<String, dynamic>.from(response as Map));
       } on PostgrestException catch (error) {
         if (error.code == '23505') continue;
-        final requirement = premiumSetupRequirementForMessage(error.message);
-        if (requirement != null) {
-          throw PremiumSetupRequiredException(requirement);
-        }
+        final mappedException = roomCreationExceptionFor(error);
+        if (mappedException != null) throw mappedException;
         rethrow;
       }
     }
