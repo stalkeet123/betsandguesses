@@ -11,11 +11,10 @@ void main() {
   const phoneSizes = <Size>[
     Size(320, 568),
     Size(360, 640),
-    Size(375, 667),
+    Size(360, 800),
     Size(390, 844),
-    Size(430, 932),
+    Size(412, 915),
   ];
-
   Future<void> pumpPartyView(
     WidgetTester tester, {
     required Size size,
@@ -115,20 +114,36 @@ void main() {
     required bool reveal,
   }) {
     final primary = tester.getRect(
-      find.byKey(ValueKey(reveal ? 'party-result-2' : 'party-question-2')),
+      find.byKey(
+        reveal
+            ? const ValueKey('party-result-2')
+            : const ValueKey('party-question-card'),
+      ),
     );
     final picker = tester.getRect(
-      find.byKey(const ValueKey('party-chip-picker-2')),
+      find.byKey(const ValueKey('party-chip-picker')),
     );
     final leaderboard = tester.getRect(
-      find.byKey(const ValueKey('party-leaderboard-2')),
+      find.byKey(const ValueKey('party-leaderboard')),
     );
     final board = tester.getRect(find.byKey(const ValueKey('party-board-2')));
+    final infoColumn = tester.getRect(
+      find.byKey(const ValueKey('party-betting-info-column')),
+    );
+    final boardColumn = tester.getRect(
+      find.byKey(const ValueKey('party-betting-board-column')),
+    );
 
     expectInside(primary, size, reason: 'primary card at $size');
     expectInside(picker, size, reason: 'chip picker at $size');
     expectInside(leaderboard, size, reason: 'leaderboard at $size');
     expectInside(board, size, reason: 'board at $size');
+    expectInside(infoColumn, size, reason: 'info column at $size');
+    expectInside(boardColumn, size, reason: 'board column at $size');
+    expect(
+      (infoColumn.width - boardColumn.width).abs(),
+      lessThanOrEqualTo(12.1),
+    );
     expect(primary.bottom, lessThanOrEqualTo(picker.top + .01));
     expect(picker.bottom, lessThanOrEqualTo(leaderboard.top + .01));
     expect(primary.right, lessThanOrEqualTo(board.left + .01));
@@ -151,9 +166,9 @@ void main() {
       );
 
       expect(tester.takeException(), isNull, reason: 'betting at $size');
-      expect(find.text('PLACE BET'), findsOneWidget);
+      expect(find.text('TAP A BET AREA'), findsOneWidget);
       final selectorChips = find.descendant(
-        of: find.byKey(const ValueKey('party-chip-picker-2')),
+        of: find.byKey(const ValueKey('party-chip-picker')),
         matching: find.byType(PokerChip),
       );
       expect(selectorChips, findsNWidgets(3));
@@ -169,14 +184,14 @@ void main() {
       }
       expectSceneGeometry(tester, size, reveal: false);
       final questionCard = tester.getRect(
-        find.byKey(const ValueKey('party-question-2')),
+        find.byKey(const ValueKey('party-question-card')),
       );
       final questionText = tester.getRect(find.text(stressQuestion));
       expect(questionCard.contains(questionText.topLeft), isTrue);
       expect(questionCard.contains(questionText.bottomRight), isTrue);
       if (size == const Size(390, 844)) {
         final leaderboard = tester.getRect(
-          find.byKey(const ValueKey('party-leaderboard-2')),
+          find.byKey(const ValueKey('party-leaderboard')),
         );
         expect(leaderboard.height, lessThan(questionCard.height));
       }

@@ -9,12 +9,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/game_constants.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../room/models/room_model.dart';
 import '../../room/providers/room_providers.dart';
 import '../models/party_poll_snapshot.dart';
 import '../providers/party_poll_session_provider.dart';
-import '../theme/party_palette.dart';
 import '../widgets/party_poll_production_view.dart';
 
 class PartyPollGameScreen extends ConsumerStatefulWidget {
@@ -412,7 +413,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     final round = snapshot.round;
     final content = IgnorePointer(
       child: ColoredBox(
-        color: PartyPalette.nightDeep.withValues(alpha: 0.97),
+        color: AppColors.background.withValues(alpha: 0.97),
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -428,15 +429,15 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                         vertical: 5.5,
                       ),
                       decoration: BoxDecoration(
-                        color: PartyPalette.surfaceRaised,
+                        color: AppColors.surfaceLight,
                         borderRadius: BorderRadius.circular(99),
                         border: Border.all(
-                          color: PartyPalette.orangeSoft.withValues(alpha: 0.6),
+                          color: AppColors.brassLight.withValues(alpha: 0.6),
                           width: 1.2,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: PartyPalette.orange.withValues(alpha: 0.25),
+                            color: AppColors.brass.withValues(alpha: 0.25),
                             blurRadius: 10,
                           ),
                         ],
@@ -444,7 +445,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                       child: Text(
                         'ROUND ${round.number} OF ${snapshot.room.maxRounds}',
                         style: GoogleFonts.outfit(
-                          color: PartyPalette.orangeSoft,
+                          color: AppColors.brassLight,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.0,
@@ -459,7 +460,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                         maxLines: 1,
                         style: const TextStyle(
                           fontFamily: 'RehnCondensed',
-                          color: PartyPalette.cream,
+                          color: AppColors.ivory,
                           fontSize: 96,
                           fontWeight: FontWeight.w900,
                           height: 0.88,
@@ -470,7 +471,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                               blurRadius: 20,
                               offset: Offset(0, 4),
                             ),
-                            Shadow(color: PartyPalette.orange, blurRadius: 28),
+                            Shadow(color: AppColors.brass, blurRadius: 28),
                           ],
                         ),
                       ),
@@ -484,15 +485,13 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            PartyPalette.surfaceRaised.withValues(alpha: 0.95),
-                            PartyPalette.surface.withValues(alpha: 0.98),
+                            AppColors.surfaceLight.withValues(alpha: 0.95),
+                            AppColors.surface.withValues(alpha: 0.98),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: PartyPalette.orangeSoft.withValues(
-                            alpha: 0.45,
-                          ),
+                          color: AppColors.brassLight.withValues(alpha: 0.45),
                           width: 1.4,
                         ),
                         boxShadow: [
@@ -513,17 +512,17 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                               shape: BoxShape.circle,
                               gradient: const RadialGradient(
                                 colors: [
-                                  PartyPalette.surfaceRaised,
-                                  PartyPalette.nightDeep,
+                                  AppColors.surfaceLight,
+                                  AppColors.background,
                                 ],
                               ),
                               border: Border.all(
-                                color: PartyPalette.orangeSoft,
+                                color: AppColors.brassLight,
                                 width: 2,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: PartyPalette.orange.withValues(
+                                  color: AppColors.brass.withValues(
                                     alpha: 0.35,
                                   ),
                                   blurRadius: 12,
@@ -533,7 +532,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                             alignment: Alignment.center,
                             child: const Icon(
                               Icons.how_to_vote_rounded,
-                              color: PartyPalette.cream,
+                              color: AppColors.ivory,
                               size: 28,
                             ),
                           ),
@@ -546,7 +545,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                                 Text(
                                   'GROUP POLL',
                                   style: GoogleFonts.outfit(
-                                    color: PartyPalette.orangeSoft,
+                                    color: AppColors.brassLight,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 1.0,
@@ -559,7 +558,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontFamily: 'RehnCondensed',
-                                    color: PartyPalette.cream,
+                                    color: AppColors.ivory,
                                     fontSize: 32,
                                     fontWeight: FontWeight.w900,
                                     height: 0.95,
@@ -569,7 +568,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                                 Text(
                                   'Majority Rules · Pick who fits best!',
                                   style: GoogleFonts.outfit(
-                                    color: PartyPalette.blueMuted,
+                                    color: AppColors.textSecondary,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -977,24 +976,53 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
 
   Widget _loadingOrError(PartyPollSessionState state) {
     return Scaffold(
-      backgroundColor: PartyPalette.nightDeep,
-      body: Center(
-        child: state.isLoading
-            ? const CircularProgressIndicator(color: PartyPalette.orangeSoft)
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    state.errorMessage ?? 'Loading Party Poll...',
-                    style: const TextStyle(color: PartyPalette.cream),
+      backgroundColor: AppColors.background,
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: CachedAssetImage(
+              AppAssetPaths.background,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned.fill(
+            child: ColoredBox(
+              color: AppColors.background.withValues(alpha: .38),
+            ),
+          ),
+          Center(
+            child: state.isLoading
+                ? const CircularProgressIndicator(color: AppColors.brassLight)
+                : Container(
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    margin: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(20),
+                    decoration: AppColors.leatherPanel(borderRadius: 18),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          state.errorMessage ?? 'Loading Party Poll...',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.outfit(
+                            color: AppColors.ivory,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.brassLight,
+                            side: const BorderSide(color: AppColors.brassLight),
+                          ),
+                          onPressed: _loadSnapshot,
+                          child: const Text('RETRY'),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: _loadSnapshot,
-                    child: const Text('RETRY'),
-                  ),
-                ],
-              ),
+          ),
+        ],
       ),
     );
   }
