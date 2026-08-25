@@ -1,13 +1,34 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/features/game/widgets/poker_chip.dart';
 import 'package:witsgame/features/party/widgets/party_poll_production_view.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    final bytes = File(
+      'assets/Rehn Condensed W03 ExtraBold.ttf',
+    ).readAsBytesSync();
+    final data = ByteData.view(
+      bytes.buffer,
+      bytes.offsetInBytes,
+      bytes.lengthInBytes,
+    );
+    await (FontLoader('RehnCondensed')..addFont(Future.value(data))).load();
+  });
   const longQuestion =
       'Who would be most likely to become friends with a complete stranger in five minutes?';
   const stressQuestion =
       'Who would turn a quiet weekend into an unforgettable adventure, invite everyone along, and still somehow have a brilliant story by sunrise?';
+  const longestProductionQuestions = <String>[
+    'Who would be most likely to become a conspiracy theorist about something completely harmless?',
+    'Who would be most likely to convince the group to change all the plans at the last minute?',
+    'Who would be most likely to spend an hour choosing what to watch and then watch nothing?',
+    'Who would make the best reality-show contestant?',
+  ];
   const phoneSizes = <Size>[
     Size(320, 568),
     Size(360, 640),
@@ -187,15 +208,16 @@ void main() {
         find.byKey(const ValueKey('party-question-card')),
       );
       final questionFinder = find.text(stressQuestion);
-      final questionScroll = find.ancestor(
-        of: questionFinder,
-        matching: find.byType(SingleChildScrollView),
+      expect(
+        find.ancestor(
+          of: questionFinder,
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsNothing,
       );
-      final visibleQuestionBounds = questionScroll.evaluate().isEmpty
-          ? tester.getRect(questionFinder)
-          : tester.getRect(questionScroll);
-      expect(questionCard.contains(visibleQuestionBounds.topLeft), isTrue);
-      expect(questionCard.contains(visibleQuestionBounds.bottomRight), isTrue);
+      final questionBounds = tester.getRect(questionFinder);
+      expect(questionCard.contains(questionBounds.topLeft), isTrue);
+      expect(questionCard.contains(questionBounds.bottomRight), isTrue);
       if (size == const Size(390, 844)) {
         final leaderboard = tester.getRect(
           find.byKey(const ValueKey('party-leaderboard')),
@@ -237,7 +259,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expectSceneGeometry(tester, size, reveal: false);
   });
-  testWidgets('mobile question fits at 16..34 or scrolls only at 16', (
+  testWidgets('mobile question always fits fully without scrolling', (
     tester,
   ) async {
     addTearDown(tester.view.resetPhysicalSize);
@@ -253,28 +275,54 @@ void main() {
     final questionFinder = find.text(stressQuestion);
     final question = tester.widget<Text>(questionFinder);
     final fontSize = question.style?.fontSize;
-    final questionScroll = find.ancestor(
-      of: questionFinder,
-      matching: find.byType(SingleChildScrollView),
-    );
     final card = tester.getRect(
       find.byKey(const ValueKey('party-question-card')),
     );
-    final visibleBounds = questionScroll.evaluate().isEmpty
-        ? tester.getRect(questionFinder)
-        : tester.getRect(questionScroll);
+    final questionBounds = tester.getRect(questionFinder);
 
     expect(question.style?.fontFamily, 'RehnCondensed');
-    expect(fontSize, greaterThanOrEqualTo(16));
+    expect(fontSize, greaterThanOrEqualTo(12));
     expect(fontSize, lessThanOrEqualTo(34));
-    expect(card.contains(visibleBounds.topLeft), isTrue);
-    expect(card.contains(visibleBounds.bottomRight), isTrue);
-    if (questionScroll.evaluate().isNotEmpty) {
-      expect(fontSize, 16);
-    }
+    expect(find.byType(SingleChildScrollView), findsNothing);
+    expect(card.contains(questionBounds.topLeft), isTrue);
+    expect(card.contains(questionBounds.bottomRight), isTrue);
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('longest production prompts fully fit at 320x568', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const size = Size(320, 568);
+
+    for (final question in longestProductionQuestions) {
+      await pumpPartyView(
+        tester,
+        size: size,
+        isReveal: false,
+        question: question,
+      );
+
+      final card = tester.getRect(
+        find.byKey(const ValueKey('party-question-card')),
+      );
+      final questionFinder = find.text(question);
+      final questionText = tester.widget<Text>(questionFinder);
+      final text = tester.getRect(questionFinder);
+      expect(card.contains(text.topLeft), isTrue, reason: question);
+      expect(card.contains(text.bottomRight), isTrue, reason: question);
+      expect(
+        find.ancestor(of: questionFinder, matching: find.byType(FittedBox)),
+        findsNothing,
+        reason:
+            'production prompt should fit without emergency scaling: $question',
+      );
+      expect(questionText.style?.fontSize, greaterThanOrEqualTo(12));
+      expect(find.byType(SingleChildScrollView), findsNothing);
+      expect(tester.takeException(), isNull, reason: question);
+    }
+  });
   testWidgets('player names and odds keep the slot centre clear on mobile', (
     tester,
   ) async {

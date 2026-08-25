@@ -1375,94 +1375,108 @@ class PartyPollProductionView extends StatelessWidget {
     );
   }
 
-  Widget _questionCard() => Container(
-    key: const ValueKey('party-question-card'),
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFFFFFBF1), Color(0xFFF6E7C9), Color(0xFFFFFCF4)],
-      ),
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(
-        color: AppColors.ivory.withValues(alpha: .92),
-        width: 1.4,
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: AppColors.brass.withValues(alpha: .24),
-          blurRadius: 0,
-          spreadRadius: 1,
+  Widget _questionCard() => LayoutBuilder(
+    builder: (context, constraints) {
+      final isNarrow = constraints.maxWidth < 160;
+      final horizontalPadding = isNarrow ? 10.0 : 18.0;
+      final verticalPadding = isNarrow ? 9.0 : 14.0;
+      final headerGap = isNarrow ? 5.0 : 8.0;
+      final iconSize = isNarrow ? 10.0 : 12.0;
+
+      return Container(
+        key: const ValueKey('party-question-card'),
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: verticalPadding,
         ),
-        BoxShadow(
-          color: Colors.black.withValues(alpha: .28),
-          blurRadius: 18,
-          offset: const Offset(0, 9),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFFBF1), Color(0xFFF6E7C9), Color(0xFFFFFCF4)],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: AppColors.ivory.withValues(alpha: .92),
+            width: 1.4,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.brass.withValues(alpha: .24),
+              blurRadius: 0,
+              spreadRadius: 1,
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .28),
+              blurRadius: 18,
+              offset: const Offset(0, 9),
+            ),
+          ],
         ),
-      ],
-    ),
-    child: Column(
-      children: [
-        Row(
+        child: Column(
           children: [
-            Expanded(
-              child: Container(
-                height: 1,
-                color: AppColors.brass.withValues(alpha: .52),
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.how_to_vote_rounded,
-              size: 12,
-              color: AppColors.felt,
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              flex: 3,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  'POLL',
-                  maxLines: 1,
-                  style: GoogleFonts.outfit(
-                    color: AppColors.felt,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .8,
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
                     height: 1,
+                    color: AppColors.brass.withValues(alpha: .52),
                   ),
                 ),
-              ),
+                SizedBox(width: headerGap),
+                Icon(
+                  Icons.how_to_vote_rounded,
+                  size: iconSize,
+                  color: AppColors.felt,
+                ),
+                SizedBox(width: headerGap),
+                Flexible(
+                  flex: 3,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'POLL',
+                      maxLines: 1,
+                      style: GoogleFonts.outfit(
+                        color: AppColors.felt,
+                        fontSize: isNarrow ? 12 : 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .8,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: headerGap),
+                Icon(
+                  Icons.how_to_vote_rounded,
+                  size: iconSize,
+                  color: AppColors.felt,
+                ),
+                SizedBox(width: headerGap),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: AppColors.brass.withValues(alpha: .52),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.how_to_vote_rounded,
-              size: 12,
-              color: AppColors.felt,
-            ),
-            const SizedBox(width: 8),
+            SizedBox(height: isNarrow ? 6 : 10),
             Expanded(
-              child: Container(
-                height: 1,
-                color: AppColors.brass.withValues(alpha: .52),
+              child: _AdaptiveQuestionText(
+                text: questionText,
+                color: const Color(0xFF0A2C59),
+                minFontSize: 16,
+                fallbackMinFontSize: 12,
+                maxFontSize: 34,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Expanded(
-          child: _AdaptiveQuestionText(
-            text: questionText,
-            color: const Color(0xFF0A2C59),
-            minFontSize: 16,
-            maxFontSize: 34,
-          ),
-        ),
-      ],
-    ),
+      );
+    },
   );
   Widget _resultRevealCard({required double scale}) {
     final resultGlowSize = (108 * scale).clamp(78.0, 118.0).toDouble();
@@ -1653,11 +1667,13 @@ class _AdaptiveQuestionText extends StatelessWidget {
   final String text;
   final Color color;
   final double minFontSize;
+  final double fallbackMinFontSize;
   final double maxFontSize;
   const _AdaptiveQuestionText({
     required this.text,
     required this.color,
     required this.minFontSize,
+    required this.fallbackMinFontSize,
     required this.maxFontSize,
   });
 
@@ -1666,14 +1682,14 @@ class _AdaptiveQuestionText extends StatelessWidget {
     color: color,
     fontSize: fontSize,
     fontWeight: FontWeight.w900,
-    height: 1.02,
+    height: 1.12,
   );
 
   StrutStyle _strut(double fontSize) => StrutStyle(
     fontFamily: 'RehnCondensed',
     fontSize: fontSize,
     forceStrutHeight: true,
-    height: 1.02,
+    height: 1.12,
   );
 
   @override
@@ -1694,27 +1710,26 @@ class _AdaptiveQuestionText extends StatelessWidget {
         return painter.height <= constraints.maxHeight;
       }
 
-      final overflowsAtMinimum = !fits(minFontSize);
-      if (overflowsAtMinimum) {
-        return SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Center(
-              child: Text(
-                text,
-                textAlign: TextAlign.center,
-                softWrap: true,
-                textScaler: TextScaler.noScaling,
-                strutStyle: _strut(minFontSize),
-                style: _style(minFontSize),
-              ),
+      final preferredMinimumFits = fits(minFontSize);
+      final fallbackMinimumFits = fits(fallbackMinFontSize);
+      if (!fallbackMinimumFits) {
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox(
+            width: constraints.maxWidth,
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              softWrap: true,
+              textScaler: TextScaler.noScaling,
+              strutStyle: _strut(fallbackMinFontSize),
+              style: _style(fallbackMinFontSize),
             ),
           ),
         );
       }
 
-      var low = minFontSize;
+      var low = preferredMinimumFits ? minFontSize : fallbackMinFontSize;
       var high = maxFontSize;
       for (var i = 0; i < 10; i++) {
         final candidate = (low + high) / 2;
