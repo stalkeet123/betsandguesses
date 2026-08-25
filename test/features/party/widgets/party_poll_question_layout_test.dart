@@ -237,7 +237,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expectSceneGeometry(tester, size, reveal: false);
   });
-  testWidgets('question typography never shrinks below Classic 20px floor', (
+  testWidgets('mobile question fits at 16..34 or scrolls only at 16', (
     tester,
   ) async {
     addTearDown(tester.view.resetPhysicalSize);
@@ -250,9 +250,49 @@ void main() {
       question: stressQuestion,
     );
 
-    final question = tester.widget<Text>(find.text(stressQuestion));
+    final questionFinder = find.text(stressQuestion);
+    final question = tester.widget<Text>(questionFinder);
+    final fontSize = question.style?.fontSize;
+    final questionScroll = find.ancestor(
+      of: questionFinder,
+      matching: find.byType(SingleChildScrollView),
+    );
+    final card = tester.getRect(
+      find.byKey(const ValueKey('party-question-card')),
+    );
+    final visibleBounds = questionScroll.evaluate().isEmpty
+        ? tester.getRect(questionFinder)
+        : tester.getRect(questionScroll);
+
     expect(question.style?.fontFamily, 'RehnCondensed');
-    expect(question.style?.fontSize, greaterThanOrEqualTo(20));
+    expect(fontSize, greaterThanOrEqualTo(16));
+    expect(fontSize, lessThanOrEqualTo(34));
+    expect(card.contains(visibleBounds.topLeft), isTrue);
+    expect(card.contains(visibleBounds.bottomRight), isTrue);
+    if (questionScroll.evaluate().isNotEmpty) {
+      expect(fontSize, 16);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('player names and odds keep the slot centre clear on mobile', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpPartyView(tester, size: const Size(360, 800), isReveal: false);
+
+    final board = tester.getRect(find.byKey(const ValueKey('party-board-2')));
+    final playerName = tester.getRect(
+      find.text('EMIRL WITH A LONG NAME').first,
+    );
+    final firstOdds = tester.getRect(find.text('2X').first);
+
+    expect(playerName.left, greaterThanOrEqualTo(board.left));
+    expect(playerName.top, lessThan(board.top + board.height / 3));
+    expect(firstOdds.center.dx, greaterThan(board.center.dx));
+    expect(firstOdds.bottom, lessThanOrEqualTo(board.top + board.height / 3));
     expect(tester.takeException(), isNull);
   });
 }

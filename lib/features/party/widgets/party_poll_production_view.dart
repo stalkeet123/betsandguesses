@@ -1457,7 +1457,7 @@ class PartyPollProductionView extends StatelessWidget {
           child: _AdaptiveQuestionText(
             text: questionText,
             color: const Color(0xFF0A2C59),
-            minFontSize: 20,
+            minFontSize: 16,
             maxFontSize: 34,
           ),
         ),
@@ -1913,14 +1913,14 @@ class _PartyPollSlotLabel extends StatelessWidget {
         children: [
           Positioned.fill(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 50, 4),
+              padding: const EdgeInsets.fromLTRB(16, 7, 50, 4),
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: Alignment.topLeft,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
+                  alignment: Alignment.topLeft,
                   child: Stack(
-                    alignment: Alignment.centerLeft,
+                    alignment: Alignment.topLeft,
                     children: [
                       Text(
                         spec.title.toUpperCase(),
@@ -1974,40 +1974,37 @@ class _PartyPollSlotLabel extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: 0,
-            bottom: 0,
-            right: 10,
-            child: Center(
-              child: Container(
-                height: 26,
-                constraints: const BoxConstraints(minWidth: 36),
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.mahoganyDark.withValues(alpha: .86),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: accent.withValues(alpha: .58),
-                    width: 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: .4),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+            right: 8,
+            bottom: 7,
+            child: Container(
+              height: 22,
+              constraints: const BoxConstraints(minWidth: 32),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.mahoganyDark.withValues(alpha: .86),
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: accent.withValues(alpha: .58),
+                  width: 1.1,
                 ),
-                child: Text(
-                  '${spec.odds}X',
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontFamily: 'RehnCondensed',
-                    color: accent,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    height: .86,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .4),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
+                ],
+              ),
+              child: Text(
+                '${spec.odds}X',
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: 'RehnCondensed',
+                  color: accent,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  height: .86,
                 ),
               ),
             ),
