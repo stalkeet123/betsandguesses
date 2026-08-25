@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/core/models/monetization_status.dart';
 import 'package:witsgame/core/providers/core_providers.dart';
@@ -17,6 +18,18 @@ MonetizationStatus _status({
     premiumExpiresAt: null,
     freeHostGamesUsed: 0,
     freeHostGamesRemaining: 3,
+  );
+}
+
+ProviderContainer _container({
+  required MonetizationStatus serverStatus,
+  required Future<bool> Function() revenueCatStatus,
+}) {
+  return ProviderContainer(
+    overrides: [
+      monetizationStatusProvider.overrideWith((ref) async => serverStatus),
+      premiumStatusProvider.overrideWith((ref) => revenueCatStatus()),
+    ],
   );
 }
 
@@ -73,7 +86,6 @@ void main() {
             realIsPremium: false,
             debugPremiumOverride: true,
           ),
-          debugMode: true,
         ),
         isTrue,
       );
@@ -88,7 +100,6 @@ void main() {
             realIsPremium: true,
             debugPremiumOverride: false,
           ),
-          debugMode: true,
         ),
         isFalse,
       );
@@ -103,9 +114,66 @@ void main() {
             realIsPremium: false,
             debugPremiumOverride: null,
           ),
-          debugMode: true,
         ),
         isTrue,
+      );
+    });
+  });
+
+  group('effectivePremiumStatusProvider resilience', () {
+    test('forced premium short-circuits before RevenueCat', () async {
+      var revenueCatReads = 0;
+      final container = _container(
+        serverStatus: _status(
+          isPremium: true,
+          realIsPremium: false,
+          debugPremiumOverride: true,
+        ),
+        revenueCatStatus: () async {
+          revenueCatReads++;
+          throw Exception('RevenueCat unavailable');
+        },
+      );
+      addTearDown(container.dispose);
+
+      expect(
+        await container.read(effectivePremiumStatusProvider.future),
+        isTrue,
+      );
+      expect(revenueCatReads, 0);
+    });
+
+    test('RevenueCat failure falls back to REAL server premium', () async {
+      final container = _container(
+        serverStatus: _status(
+          isPremium: true,
+          realIsPremium: true,
+          debugOverrideAllowed: false,
+        ),
+        revenueCatStatus: () async => throw Exception('RevenueCat unavailable'),
+      );
+      addTearDown(container.dispose);
+
+      expect(
+        await container.read(effectivePremiumStatusProvider.future),
+        isTrue,
+      );
+    });
+
+    test('RevenueCat failure falls back to REAL server free', () async {
+      final container = _container(
+        serverStatus: _status(
+          isPremium: false,
+          realIsPremium: false,
+          debugOverrideAllowed: false,
+        ),
+        revenueCatStatus: () async => throw Exception('RevenueCat unavailable'),
+      );
+      addTearDown(container.dispose);
+
+      expect(
+        await container.read(effectivePremiumStatusProvider.future),
+        isFalse,
       );
     });
   });

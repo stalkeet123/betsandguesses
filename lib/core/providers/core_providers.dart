@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -58,15 +58,13 @@ final premiumStatusProvider = FutureProvider<bool>((ref) async {
   final userId = Supabase.instance.client.auth.currentUser?.id;
   await service.initialize(appUserId: userId);
   return service.isPremium();
-});
+}, retry: (retryCount, error) => null);
 
 bool resolveEffectivePremiumStatus({
   required bool revenueCatPremium,
   required MonetizationStatus serverStatus,
-  bool debugMode = kDebugMode,
 }) {
-  if (debugMode &&
-      serverStatus.debugOverrideAllowed &&
+  if (serverStatus.debugOverrideAllowed &&
       serverStatus.debugPremiumOverride != null) {
     return serverStatus.isPremium;
   }
@@ -163,12 +161,24 @@ final monetizationStatusProvider = FutureProvider<MonetizationStatus>(
 );
 
 final effectivePremiumStatusProvider = FutureProvider<bool>((ref) async {
-  final results = await Future.wait<Object>([
-    ref.watch(premiumStatusProvider.future),
-    ref.watch(monetizationStatusProvider.future),
-  ]);
-  return resolveEffectivePremiumStatus(
-    revenueCatPremium: results[0] as bool,
-    serverStatus: results[1] as MonetizationStatus,
-  );
+  final serverStatus = await ref.watch(monetizationStatusProvider.future);
+  if (serverStatus.debugOverrideAllowed &&
+      serverStatus.debugPremiumOverride != null) {
+    return serverStatus.isPremium;
+  }
+
+  try {
+    final revenueCatPremium = await ref.watch(premiumStatusProvider.future);
+    return resolveEffectivePremiumStatus(
+      revenueCatPremium: revenueCatPremium,
+      serverStatus: serverStatus,
+    );
+  } catch (error, stackTrace) {
+    debugPrint(
+      'RevenueCat premium status unavailable; '
+      'using server monetization status: '
+      '$error\n$stackTrace',
+    );
+    return serverStatus.isPremium;
+  }
 });
