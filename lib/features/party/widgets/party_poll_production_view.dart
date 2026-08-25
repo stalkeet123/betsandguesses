@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../game/widgets/poker_chip.dart';
+import '../constants/party_poll_rules.dart';
 
 // Keep in sync with the reveal lead in PartyPollGameScreen.
 const _revealChipEntryDurationMs = 350;
@@ -277,7 +278,7 @@ class PartyPollProductionView extends StatelessWidget {
     ),
   );
   Widget _chipPicker({required double scale}) {
-    const chips = [5, 10, 25];
+    const chips = PartyPollRules.chipValues;
     final usedChips = bets
         .where((bet) => bet.bettorPlayerId == currentPlayerId)
         .map((bet) => bet.chips)
@@ -513,7 +514,7 @@ class PartyPollProductionView extends StatelessWidget {
   Color _chipColor(int value) => switch (value) {
     5 => AppColors.feltLight,
     10 => AppColors.neonBlue,
-    25 => AppColors.neonCyan,
+    20 => AppColors.neonCyan,
     _ => AppColors.brass,
   };
 
@@ -1150,7 +1151,6 @@ class PartyPollProductionView extends StatelessWidget {
     final slotLocalY = bet.positionY ?? fallbackY;
     final slotWidth = spec.rect.width * boardSize.width;
     final slotHeight = spec.rect.height * boardSize.height;
-    // No clamping so the chip stays physically exactly where dropped.
     final globalLeft =
         spec.rect.left * boardSize.width +
         (slotLocalX * slotWidth - chipSize / 2);
