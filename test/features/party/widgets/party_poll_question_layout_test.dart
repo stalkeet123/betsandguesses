@@ -3,106 +3,200 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/features/party/widgets/party_poll_production_view.dart';
 
 void main() {
-  const question = 'Who would make the most reality-tv contestant?';
+  const longQuestion =
+      'Who would be most likely to become friends with a complete stranger in five minutes?';
+  const stressQuestion =
+      'Who would turn a quiet weekend into an unforgettable adventure, invite everyone along, and still somehow have a brilliant story by sunrise?';
+  const phoneSizes = <Size>[
+    Size(320, 568),
+    Size(360, 640),
+    Size(375, 667),
+    Size(390, 844),
+    Size(430, 932),
+  ];
 
   Future<void> pumpPartyView(
     WidgetTester tester, {
     required Size size,
-    int? selectedChipValue,
+    required bool isReveal,
+    String question = longQuestion,
+    double textScale = 1,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: PartyPollProductionView(
-            roundNumber: 2,
-            maxRounds: 6,
-            remaining: const Duration(seconds: 25),
-            isReveal: false,
-            questionText: question,
-            players: const [
-              PartyPollViewPlayer(
-                id: 'emirl',
-                slotIndex: 0,
-                name: 'Emirl',
-                score: 40,
-              ),
-              PartyPollViewPlayer(
-                id: 'bb',
-                slotIndex: 1,
-                name: 'BB',
-                score: -30,
-              ),
-              PartyPollViewPlayer(
-                id: 'evil',
-                slotIndex: 2,
-                name: 'Evil',
-                score: -40,
-              ),
-            ],
-            bets: const [],
-            winningPlayerIds: const {},
-            score: 40,
-            betTotal: 0,
-            betLimit: 40,
-            availableChips: 40,
-            selectedChipValue: selectedChipValue,
-            currentPlayerId: 'emirl',
-            selectedBetId: null,
-            emphasizeWinners: false,
-            activeRevealSlotIndex: null,
-            onChipSelected: (_) {},
-            onBetSelected: (_) {},
-            onBetRequested: (_, _, _, _) {},
-            onBetMoveRequested: (_, _, _, _, _) {},
-            onBetRemoveRequested: (_) {},
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: size,
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: Scaffold(
+            body: PartyPollProductionView(
+              roundNumber: 2,
+              maxRounds: 6,
+              remaining: const Duration(seconds: 25),
+              isReveal: isReveal,
+              questionText: question,
+              players: const [
+                PartyPollViewPlayer(
+                  id: 'emirl',
+                  slotIndex: 0,
+                  name: 'Emirl With A Long Name',
+                  score: 40,
+                ),
+                PartyPollViewPlayer(
+                  id: 'bb',
+                  slotIndex: 1,
+                  name: 'BB',
+                  score: -30,
+                ),
+                PartyPollViewPlayer(
+                  id: 'evil',
+                  slotIndex: 2,
+                  name: 'Evil',
+                  score: -40,
+                ),
+              ],
+              bets: isReveal
+                  ? const [
+                      PartyPollViewBet(
+                        id: 'own-5',
+                        bettorPlayerId: 'emirl',
+                        targetPlayerId: 'bb',
+                        targetSlotIndex: 1,
+                        chips: 5,
+                        won: true,
+                      ),
+                      PartyPollViewBet(
+                        id: 'other-10',
+                        bettorPlayerId: 'evil',
+                        targetPlayerId: 'bb',
+                        targetSlotIndex: 1,
+                        chips: 10,
+                        won: true,
+                      ),
+                    ]
+                  : const [],
+              winningPlayerIds: isReveal ? const {'bb'} : const {},
+              score: 40,
+              betTotal: 0,
+              betLimit: 40,
+              availableChips: 40,
+              selectedChipValue: isReveal ? null : 5,
+              currentPlayerId: 'emirl',
+              selectedBetId: null,
+              emphasizeWinners: false,
+              activeRevealSlotIndex: isReveal ? 1 : null,
+              onChipSelected: (_) {},
+              onBetSelected: (_) {},
+              onBetRequested: (_, _, _, _) {},
+              onBetMoveRequested: (_, _, _, _, _) {},
+              onBetRemoveRequested: (_) {},
+            ),
           ),
         ),
       ),
     );
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
   }
 
-  testWidgets(
-    'long poll question uses its measured line height on a small phone',
-    (tester) async {
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await pumpPartyView(tester, size: const Size(390, 844));
+  void expectInside(Rect rect, Size viewport, {required String reason}) {
+    expect(rect.left, greaterThanOrEqualTo(0), reason: reason);
+    expect(rect.top, greaterThanOrEqualTo(0), reason: reason);
+    expect(rect.right, lessThanOrEqualTo(viewport.width), reason: reason);
+    expect(rect.bottom, lessThanOrEqualTo(viewport.height), reason: reason);
+  }
 
-      expect(tester.takeException(), isNull);
-      final questionText = tester.widget<Text>(find.text(question));
-      final questionCard = tester.getRect(
-        find.byKey(const ValueKey('party-question-2')),
-      );
-      final textRect = tester.getRect(find.text(question));
+  void expectSceneGeometry(
+    WidgetTester tester,
+    Size size, {
+    required bool reveal,
+  }) {
+    final primary = tester.getRect(
+      find.byKey(ValueKey(reveal ? 'party-result-2' : 'party-question-2')),
+    );
+    final picker = tester.getRect(
+      find.byKey(const ValueKey('party-chip-picker-2')),
+    );
+    final leaderboard = tester.getRect(
+      find.byKey(const ValueKey('party-leaderboard-2')),
+    );
+    final board = tester.getRect(find.byKey(const ValueKey('party-board-2')));
 
-      expect(questionText.strutStyle?.fontSize, questionText.style?.fontSize);
-      expect(textRect.height, lessThan(questionCard.height));
-    },
-  );
+    expectInside(primary, size, reason: 'primary card at $size');
+    expectInside(picker, size, reason: 'chip picker at $size');
+    expectInside(leaderboard, size, reason: 'leaderboard at $size');
+    expectInside(board, size, reason: 'board at $size');
+    expect(primary.bottom, lessThanOrEqualTo(picker.top + .01));
+    expect(picker.bottom, lessThanOrEqualTo(leaderboard.top + .01));
+    expect(primary.right, lessThanOrEqualTo(board.left + .01));
+    expect(picker.right, lessThanOrEqualTo(board.left + .01));
+    expect(leaderboard.right, lessThanOrEqualTo(board.left + .01));
+  }
 
-  testWidgets('party left rail stays usable on narrow phones', (tester) async {
+  testWidgets('betting scene is responsive on all supported phone sizes', (
+    tester,
+  ) async {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    for (final size in const [Size(320, 568), Size(328, 690)]) {
-      await pumpPartyView(tester, size: size, selectedChipValue: 5);
+    for (final size in phoneSizes) {
+      await pumpPartyView(
+        tester,
+        size: size,
+        isReveal: false,
+        question: stressQuestion,
+      );
 
-      expect(tester.takeException(), isNull, reason: 'viewport $size');
-      expect(find.text('PLACE CHIP'), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'betting at $size');
+      expect(find.text('PLACE BET'), findsOneWidget);
+      expectSceneGeometry(tester, size, reveal: false);
       final questionCard = tester.getRect(
         find.byKey(const ValueKey('party-question-2')),
       );
-      final leaderboard = tester.getRect(
-        find.byKey(const ValueKey('party-leaderboard-2')),
-      );
-      expect(
-        questionCard.height,
-        greaterThan(leaderboard.height),
-        reason: 'viewport $size',
-      );
+      final questionText = tester.getRect(find.text(stressQuestion));
+      expect(questionCard.contains(questionText.topLeft), isTrue);
+      expect(questionCard.contains(questionText.bottomRight), isTrue);
+      if (size == const Size(390, 844)) {
+        final leaderboard = tester.getRect(
+          find.byKey(const ValueKey('party-leaderboard-2')),
+        );
+        expect(leaderboard.height, lessThan(questionCard.height));
+      }
     }
+  });
+
+  testWidgets('reveal scene stays inside every supported phone viewport', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final size in phoneSizes) {
+      await pumpPartyView(tester, size: size, isReveal: true);
+
+      expect(tester.takeException(), isNull, reason: 'reveal at $size');
+      expect(find.text('RESULT'), findsWidgets);
+      expect(find.text('LOCKING RESULT'), findsOneWidget);
+      expectSceneGeometry(tester, size, reveal: true);
+    }
+  });
+
+  testWidgets('320x568 remains stable at 1.2 text scale', (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const size = Size(320, 568);
+
+    await pumpPartyView(
+      tester,
+      size: size,
+      isReveal: false,
+      question: stressQuestion,
+      textScale: 1.2,
+    );
+
+    expect(tester.takeException(), isNull);
+    expectSceneGeometry(tester, size, reveal: false);
   });
 }

@@ -126,92 +126,80 @@ class PartyPollProductionView extends StatelessWidget {
                 builder: (context, constraints) {
                   final width = constraints.maxWidth;
                   final height = constraints.maxHeight;
-                  final compact = height < 700;
-                  final gap = compact ? 6.0 : 8.0;
-                  final logoTop = 6.0;
-                  final logoHeight = compact ? 64.0 : 78.0;
-                  final timerHeight = compact ? 38.0 : 40.0;
-                  final leftColumnWidth = (width - 4) / 2;
-                  final left = 6.0;
-                  final leftWidth = leftColumnWidth - 12;
-                  final narrowLeftColumn = leftWidth < 180;
-                  final boardLeft = leftColumnWidth + 4;
-                  final boardWidth = width - boardLeft;
-                  final timerBetTop = logoTop + logoHeight + 4;
-                  final questionBetTop = timerBetTop + timerHeight + gap;
-                  final chipHeight = compact ? 90.0 : 96.0;
-                  final flexibleColumnHeight = max(
-                    0.0,
-                    height - questionBetTop - chipHeight - (gap * 2) - 8,
-                  );
-                  final narrowPlayersHeight = max(
-                    112.0,
-                    flexibleColumnHeight * .4,
-                  );
-                  final rawQuestionHeight = narrowLeftColumn
-                      ? flexibleColumnHeight - narrowPlayersHeight
-                      : flexibleColumnHeight - (compact ? 100 : 120);
-                  final questionBetHeight = narrowLeftColumn
-                      ? max(104.0, rawQuestionHeight)
-                      : min(
-                          height * (compact ? .24 : .26),
-                          max(compact ? 104.0 : 118.0, rawQuestionHeight),
-                        );
-                  final chipTop = questionBetTop + questionBetHeight + gap;
-                  final playersTop = chipTop + chipHeight + gap;
-                  final playersHeight = max(72.0, height - playersTop - 8);
-                  return Stack(
+                  final scale = min(
+                    width / 390,
+                    height / 844,
+                  ).clamp(.78, 1.12).toDouble();
+                  final widthProgress = ((width - 320) / 110)
+                      .clamp(0.0, 1.0)
+                      .toDouble();
+                  final gutter = (5 * scale).clamp(4.0, 6.0).toDouble();
+                  final leftFraction = .50 - (.02 * widthProgress);
+                  final leftWidth = (width - gutter) * leftFraction;
+                  final gap = (7 * scale).clamp(4.0, 9.0).toDouble();
+                  final logoHeight = (68 * scale).clamp(50.0, 76.0).toDouble();
+                  final timerHeight = (40 * scale).clamp(34.0, 44.0).toDouble();
+                  final pickerHeight = (114 * scale)
+                      .clamp(100.0, 124.0)
+                      .toDouble();
+                  final playerRowHeight = (39 * scale)
+                      .clamp(34.0, 44.0)
+                      .toDouble();
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Positioned(
-                        left: left,
-                        top: logoTop,
+                      SizedBox(
                         width: leftWidth,
-                        height: logoHeight,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          child: CachedAssetImage(
-                            AppAssetPaths.logo,
-                            fit: BoxFit.contain,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              height: logoHeight,
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 10 * scale,
+                                  vertical: 4 * scale,
+                                ),
+                                child: const CachedAssetImage(
+                                  AppAssetPaths.logo,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: gap),
+                            SizedBox(
+                              height: timerHeight,
+                              child: _roundTimer(
+                                scale: scale,
+                                availableWidth: leftWidth,
+                              ),
+                            ),
+                            SizedBox(height: gap),
+                            Expanded(
+                              child: isReveal
+                                  ? _resultRevealCard(scale: scale)
+                                  : _questionCard(),
+                            ),
+                            SizedBox(height: gap),
+                            SizedBox(
+                              height: pickerHeight,
+                              child: _chipPicker(scale: scale),
+                            ),
+                            SizedBox(height: gap),
+                            _playersStrip(
+                              scale: scale,
+                              rowHeight: playerRowHeight,
+                            ),
+                          ],
                         ),
                       ),
-                      Positioned(
-                        left: left,
-                        top: timerBetTop,
-                        width: leftWidth,
-                        height: timerHeight,
-                        child: _roundTimer(narrow: narrowLeftColumn),
-                      ),
-                      Positioned(
-                        left: left,
-                        top: questionBetTop,
-                        width: leftWidth,
-                        height: questionBetHeight,
-                        child: isReveal ? _resultRevealCard() : _questionCard(),
-                      ),
-                      Positioned(
-                        left: left,
-                        top: chipTop,
-                        width: leftWidth,
-                        height: chipHeight,
-                        child: _chipPicker(narrow: narrowLeftColumn),
-                      ),
-                      Positioned(
-                        left: left,
-                        top: playersTop,
-                        width: leftWidth,
-                        height: playersHeight,
-                        child: _playersStrip(narrow: narrowLeftColumn),
-                      ),
-                      Positioned(
-                        left: boardLeft,
-                        top: 0,
-                        width: boardWidth,
-                        height: height,
-                        child: _partyPollBoard(),
+                      SizedBox(width: gutter),
+                      Expanded(
+                        child: KeyedSubtree(
+                          key: ValueKey('party-board-$roundNumber'),
+                          child: _partyPollBoard(),
+                        ),
                       ),
                     ],
                   );
@@ -224,17 +212,21 @@ class PartyPollProductionView extends StatelessWidget {
     );
   }
 
-  Widget _roundTimer({required bool narrow}) {
+  Widget _roundTimer({required double scale, required double availableWidth}) {
     final seconds = max(0, remaining.inSeconds);
+    final compactLabel = availableWidth < 168;
     return Row(
       children: [
         Expanded(
           child: _infoPill(
             Icons.groups_rounded,
-            'Round $roundNumber/$maxRounds',
+            compactLabel
+                ? 'R $roundNumber/$maxRounds'
+                : 'Round $roundNumber/$maxRounds',
+            scale: scale,
           ),
         ),
-        SizedBox(width: narrow ? 4 : 10),
+        SizedBox(width: (6 * scale).clamp(4.0, 8.0)),
         Expanded(
           child: _infoPill(
             isReveal ? Icons.emoji_events_rounded : Icons.timer_rounded,
@@ -243,40 +235,49 @@ class PartyPollProductionView extends StatelessWidget {
                 : seconds > 0
                 ? '0:${seconds.toString().padLeft(2, '0')}'
                 : '--:--',
+            scale: scale,
           ),
         ),
       ],
     );
   }
 
-  Widget _infoPill(IconData icon, String label) => Container(
-    decoration: BoxDecoration(
-      color: PartyPalette.surfaceRaised.withValues(alpha: .92),
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: PartyPalette.orangeSoft.withValues(alpha: .32)),
-    ),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 15, color: PartyPalette.orangeSoft),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.outfit(
-              color: PartyPalette.cream,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .45,
-            ),
+  Widget _infoPill(IconData icon, String label, {required double scale}) =>
+      Container(
+        decoration: BoxDecoration(
+          color: PartyPalette.surfaceRaised.withValues(alpha: .92),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: PartyPalette.orangeSoft.withValues(alpha: .32),
           ),
         ),
-      ],
-    ),
-  );
-  Widget _chipPicker({required bool narrow}) {
+        padding: EdgeInsets.symmetric(horizontal: (5 * scale).clamp(3.0, 7.0)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: (15 * scale).clamp(12.0, 16.0),
+              color: PartyPalette.orangeSoft,
+            ),
+            SizedBox(width: (5 * scale).clamp(3.0, 6.0)),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream,
+                  fontSize: (11 * scale).clamp(9.0, 12.0),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+  Widget _chipPicker({required double scale}) {
     const chips = [5, 10, 25];
     final usedChips = bets
         .where((bet) => bet.bettorPlayerId == currentPlayerId)
@@ -294,25 +295,22 @@ class PartyPollProductionView extends StatelessWidget {
     }
     final selectedBetValue = selectedBet?.chips;
     final canEdit = !isReveal;
-    final pickerTitle = narrow
-        ? !canEdit
-              ? 'CHIPS LOCKED'
-              : selectedBet != null
-              ? 'TAP TO RECALL'
-              : selectedChipValue == null
-              ? 'PICK A CHIP'
-              : 'PLACE CHIP'
-        : !canEdit
-        ? 'CHIPS LOCKED'
+    final pickerTitle = !canEdit
+        ? 'LOCKED'
         : selectedBet != null
-        ? 'TAP CHIP TO RECALL'
+        ? 'RECALL'
         : selectedChipValue == null
-        ? 'ONE OF EACH · PER ROUND'
-        : 'TAP A BET AREA';
+        ? 'CHIPS'
+        : 'PLACE BET';
     return AnimatedContainer(
       key: ValueKey('party-chip-picker-$roundNumber'),
       duration: const Duration(milliseconds: 120),
-      padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+      padding: EdgeInsets.fromLTRB(
+        (6 * scale).clamp(4.0, 7.0),
+        (5 * scale).clamp(4.0, 6.0),
+        (6 * scale).clamp(4.0, 7.0),
+        (5 * scale).clamp(4.0, 6.0),
+      ),
       decoration: BoxDecoration(
         color: PartyPalette.surface.withValues(alpha: .88),
         borderRadius: BorderRadius.circular(18),
@@ -341,25 +339,20 @@ class PartyPollProductionView extends StatelessWidget {
                   color: PartyPalette.orangeSoft.withValues(alpha: .52),
                 ),
               ),
-              const SizedBox(width: 5),
-              Flexible(
-                flex: narrow ? 4 : 1,
-                fit: narrow ? FlexFit.tight : FlexFit.loose,
-                child: Text(
-                  pickerTitle,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.outfit(
-                    color: PartyPalette.cream.withValues(alpha: .78),
-                    fontSize: narrow ? 10 : 12,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: narrow ? .35 : .7,
-                    height: 1,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              SizedBox(width: (5 * scale).clamp(3.0, 6.0)),
+              Text(
+                pickerTitle,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.cream.withValues(alpha: .78),
+                  fontSize: (10.5 * scale).clamp(8.5, 11.5),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .45,
+                  height: 1,
                 ),
+                maxLines: 1,
               ),
-              const SizedBox(width: 5),
+              SizedBox(width: (5 * scale).clamp(3.0, 6.0)),
               Expanded(
                 child: Container(
                   height: 1,
@@ -368,7 +361,7 @@ class PartyPollProductionView extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 5),
+          SizedBox(height: (4 * scale).clamp(3.0, 5.0)),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -380,9 +373,9 @@ class PartyPollProductionView extends StatelessWidget {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final chipSize = min(
-                    42.0,
-                    min(constraints.maxHeight, constraints.maxWidth / 3.25),
-                  );
+                    constraints.maxHeight,
+                    constraints.maxWidth / 3.25,
+                  ).clamp(44.0, 58.0).toDouble();
                   return Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -403,24 +396,24 @@ class PartyPollProductionView extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: (4 * scale).clamp(3.0, 5.0)),
           SizedBox(
-            height: 26,
+            height: (26 * scale).clamp(23.0, 28.0),
             child: Row(
               children: [
                 Expanded(
                   child: _chipStatPill(
-                    'PROFIT',
+                    'P&L',
                     _formatProfit(score),
-                    narrow: narrow,
+                    scale: scale,
                   ),
                 ),
-                SizedBox(width: narrow ? 4 : 8),
+                SizedBox(width: (6 * scale).clamp(4.0, 8.0)),
                 Expanded(
                   child: _chipStatPill(
-                    'CHIPS LEFT',
+                    'LEFT',
                     isReveal ? '--' : '$availableChips',
-                    narrow: narrow,
+                    scale: scale,
                   ),
                 ),
               ],
@@ -481,7 +474,7 @@ class PartyPollProductionView extends StatelessWidget {
       ),
     ),
   );
-  Widget _chipStatPill(String label, String value, {required bool narrow}) =>
+  Widget _chipStatPill(String label, String value, {required double scale}) =>
       DecoratedBox(
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: .22),
@@ -492,7 +485,9 @@ class PartyPollProductionView extends StatelessWidget {
           ),
         ),
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: narrow ? 4 : 9),
+          padding: EdgeInsets.symmetric(
+            horizontal: (6 * scale).clamp(4.0, 8.0),
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -500,22 +495,21 @@ class PartyPollProductionView extends StatelessWidget {
                 child: Text(
                   label,
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.outfit(
                     color: PartyPalette.cream.withValues(alpha: .72),
-                    fontSize: narrow ? 7 : 8,
+                    fontSize: (8 * scale).clamp(7.0, 9.0),
                     fontWeight: FontWeight.w900,
                     height: 1,
-                    letterSpacing: narrow ? .15 : .4,
+                    letterSpacing: .3,
                   ),
                 ),
               ),
-              SizedBox(width: narrow ? 2 : 5),
+              SizedBox(width: (4 * scale).clamp(2.0, 5.0)),
               Text(
                 value,
                 style: GoogleFonts.outfit(
                   color: PartyPalette.orangeSoft,
-                  fontSize: narrow ? 11 : 13,
+                  fontSize: (13 * scale).clamp(10.0, 14.0),
                   fontWeight: FontWeight.w900,
                   height: 1,
                 ),
@@ -537,17 +531,18 @@ class PartyPollProductionView extends StatelessWidget {
   };
   String _formatProfit(int value) => value > 0 ? '+$value' : '$value';
 
-  Widget _playersStrip({required bool narrow}) {
+  Widget _playersStrip({required double scale, required double rowHeight}) {
     final sorted = [...players]..sort((a, b) => b.score.compareTo(a.score));
     final visiblePlayers = sorted.take(3).toList();
+    final horizontalPadding = (9 * scale).clamp(7.0, 11.0).toDouble();
+    final verticalPadding = (7 * scale).clamp(5.0, 8.0).toDouble();
+    final rowGap = (4 * scale).clamp(3.0, 5.0).toDouble();
     return Container(
       key: ValueKey('party-leaderboard-$roundNumber'),
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(
-        narrow ? 7 : 12,
-        narrow ? 7 : 10,
-        narrow ? 7 : 12,
-        narrow ? 7 : 10,
+      padding: EdgeInsets.symmetric(
+        horizontal: horizontalPadding,
+        vertical: verticalPadding,
       ),
       decoration: BoxDecoration(
         color: PartyPalette.surface.withValues(alpha: .88),
@@ -555,107 +550,90 @@ class PartyPollProductionView extends StatelessWidget {
         border: Border.all(color: PartyPalette.cream.withValues(alpha: .09)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              if (narrow)
-                Expanded(
-                  child: Text(
-                    'THE ROOM',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.outfit(
-                      color: PartyPalette.creamMuted,
-                      fontSize: 7,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: .25,
-                    ),
-                  ),
-                )
-              else
-                Text(
-                  'THE ROOM',
-                  style: GoogleFonts.outfit(
-                    color: PartyPalette.creamMuted,
-                    fontSize: 8,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .6,
-                  ),
-                ),
-              if (narrow) const SizedBox(width: 4) else const Spacer(),
               Text(
-                'PROFIT',
+                'ROOM',
+                style: GoogleFonts.outfit(
+                  color: PartyPalette.creamMuted,
+                  fontSize: (8 * scale).clamp(7.0, 9.0),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .45,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'P&L',
                 style: GoogleFonts.outfit(
                   color: PartyPalette.orangeSoft,
-                  fontSize: narrow ? 8 : 9,
+                  fontSize: (9 * scale).clamp(8.0, 10.0),
                   fontWeight: FontWeight.w900,
-                  letterSpacing: narrow ? .45 : 1.1,
+                  letterSpacing: .7,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 7),
-          Expanded(
-            child: Column(
-              children: [
-                for (var i = 0; i < visiblePlayers.length; i++)
-                  Expanded(
-                    child: Container(
-                      margin: EdgeInsets.only(
-                        bottom: i == visiblePlayers.length - 1 ? 0 : 5,
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
+          SizedBox(height: (6 * scale).clamp(4.0, 7.0)),
+          for (var i = 0; i < visiblePlayers.length; i++) ...[
+            SizedBox(
+              height: rowHeight,
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: (9 * scale).clamp(7.0, 10.0),
+                ),
+                decoration: BoxDecoration(
+                  color: i == 0
+                      ? PartyPalette.orange.withValues(alpha: .12)
+                      : Colors.white.withValues(alpha: .035),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                    color: i == 0
+                        ? PartyPalette.orangeSoft.withValues(alpha: .24)
+                        : Colors.white.withValues(alpha: .05),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      '${i + 1}',
+                      style: GoogleFonts.outfit(
                         color: i == 0
-                            ? PartyPalette.orange.withValues(alpha: .12)
-                            : Colors.white.withValues(alpha: .035),
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(
-                          color: i == 0
-                              ? PartyPalette.orangeSoft.withValues(alpha: .24)
-                              : Colors.white.withValues(alpha: .05),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            '${i + 1}',
-                            style: GoogleFonts.outfit(
-                              color: i == 0
-                                  ? PartyPalette.orangeSoft
-                                  : PartyPalette.blueMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              visiblePlayers[i].name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(
-                                color: PartyPalette.cream,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            _formatProfit(visiblePlayers[i].score),
-                            style: GoogleFonts.outfit(
-                              color: PartyPalette.orangeSoft,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
+                            ? PartyPalette.orangeSoft
+                            : PartyPalette.blueMuted,
+                        fontSize: (11 * scale).clamp(9.0, 12.0),
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                  ),
-              ],
+                    SizedBox(width: (8 * scale).clamp(5.0, 9.0)),
+                    Expanded(
+                      child: Text(
+                        visiblePlayers[i].name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
+                          color: PartyPalette.cream,
+                          fontSize: (13 * scale).clamp(10.0, 14.0),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: (4 * scale).clamp(2.0, 5.0)),
+                    Text(
+                      _formatProfit(visiblePlayers[i].score),
+                      style: GoogleFonts.outfit(
+                        color: PartyPalette.orangeSoft,
+                        fontSize: (14 * scale).clamp(11.0, 15.0),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
+            if (i != visiblePlayers.length - 1) SizedBox(height: rowGap),
+          ],
         ],
       ),
     );
@@ -1115,7 +1093,7 @@ class PartyPollProductionView extends StatelessWidget {
             spec.targetPlayerId != bet.targetPlayerId)) {
       return const SizedBox.shrink();
     }
-    const chipSize = 42.0;
+    final chipSize = (boardSize.width * .22).clamp(40.0, 48.0).toDouble();
     final fallbackX = .5 + ((index % 3) - 1) * .14;
     final fallbackY = .52 + ((index ~/ 3) % 2) * .16;
     final slotLocalX = bet.positionX ?? fallbackX;
@@ -1404,7 +1382,7 @@ class PartyPollProductionView extends StatelessWidget {
             child: _AdaptiveQuestionText(
               text: questionText,
               color: AppColors.mahoganyDark,
-              minFontSize: 21,
+              minFontSize: 11,
               maxFontSize: 34,
             ),
           ),
@@ -1413,7 +1391,8 @@ class PartyPollProductionView extends StatelessWidget {
     ),
   );
 
-  Widget _resultRevealCard() {
+  Widget _resultRevealCard({required double scale}) {
+    final resultGlowSize = (108 * scale).clamp(78.0, 118.0).toDouble();
     final resultSettled = isReveal && emphasizeWinners;
     final orderedPlayers = [...players]
       ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
@@ -1435,7 +1414,7 @@ class PartyPollProductionView extends StatelessWidget {
     final didWin = resultSettled && netProfit > 0;
     final accent = didWin ? AppColors.chipGold : AppColors.brassLight;
     final banner = !resultSettled
-        ? 'LOCKING WINNING RANGE'
+        ? 'LOCKING RESULT'
         : netProfit > 0
         ? 'YOU WON +$netProfit'
         : netProfit < 0
@@ -1443,6 +1422,7 @@ class PartyPollProductionView extends StatelessWidget {
         : 'BREAK EVEN';
     final headlineColor = didWin ? AppColors.mahoganyDark : Colors.white;
     return AnimatedContainer(
+          key: ValueKey('party-result-$roundNumber'),
           duration: const Duration(milliseconds: 280),
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -1490,7 +1470,7 @@ class PartyPollProductionView extends StatelessWidget {
           child: Column(
             children: [
               Text(
-                'ANSWER',
+                'RESULT',
                 style: GoogleFonts.outfit(
                   color: didWin
                       ? AppColors.mahoganyDark.withValues(alpha: .72)
@@ -1508,8 +1488,8 @@ class PartyPollProductionView extends StatelessWidget {
                     alignment: Alignment.center,
                     children: [
                       Container(
-                            width: 108,
-                            height: 108,
+                            width: resultGlowSize,
+                            height: resultGlowSize,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: RadialGradient(
@@ -1705,7 +1685,7 @@ class _AdaptiveQuestionText extends StatelessWidget {
 
       // Measure the same wrapped text that we render. The lower floor applies
       // only to long prompts, so short prompts retain the production scale.
-      final lowerBound = min(minFontSize, max(14.0, minFontSize * .66));
+      final lowerBound = min(minFontSize, max(10.5, minFontSize * .66));
       var low = lowerBound;
       var high = maxFontSize;
       for (var i = 0; i < 12; i++) {
