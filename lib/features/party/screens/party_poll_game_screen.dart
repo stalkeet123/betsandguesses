@@ -413,170 +413,86 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     final round = snapshot.round;
     final content = IgnorePointer(
       child: ColoredBox(
-        color: AppColors.background.withValues(alpha: 0.97),
+        color: AppColors.feltDark.withValues(alpha: .97),
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
+              constraints: const BoxConstraints(maxWidth: 520),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 28),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 5.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(
-                          color: AppColors.brassLight.withValues(alpha: 0.6),
-                          width: 1.2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.brass.withValues(alpha: 0.25),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        'ROUND ${round.number} OF ${snapshot.room.maxRounds}',
-                        style: GoogleFonts.outfit(
-                          color: AppColors.brassLight,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
-                        ),
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: AppColors.brassLight,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'ROUND',
+                      style: GoogleFonts.outfit(
+                        color: AppColors.ivory.withValues(alpha: .72),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 4),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'ROUND ${round.number}',
+                        '${round.number}',
                         maxLines: 1,
                         style: const TextStyle(
                           fontFamily: 'RehnCondensed',
-                          color: AppColors.ivory,
-                          fontSize: 96,
+                          color: AppColors.brassLight,
+                          fontSize: 108,
                           fontWeight: FontWeight.w900,
-                          height: 0.88,
+                          height: .9,
                           letterSpacing: 0,
                           shadows: [
-                            Shadow(
-                              color: Colors.black87,
-                              blurRadius: 20,
-                              offset: Offset(0, 4),
-                            ),
-                            Shadow(color: AppColors.brass, blurRadius: 28),
+                            Shadow(color: Colors.black54, blurRadius: 18),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(height: 18),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.surfaceLight.withValues(alpha: 0.95),
-                            AppColors.surface.withValues(alpha: 0.98),
-                          ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: AppColors.brassLight.withValues(alpha: .35),
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: AppColors.brassLight.withValues(alpha: 0.45),
-                          width: 1.4,
+                        const SizedBox(width: 14),
+                        Text(
+                          'PARTY POLL',
+                          style: GoogleFonts.outfit(
+                            color: AppColors.ivory,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
+                          ),
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.4),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: AppColors.brassLight.withValues(alpha: .35),
                           ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const RadialGradient(
-                                colors: [
-                                  AppColors.surfaceLight,
-                                  AppColors.background,
-                                ],
-                              ),
-                              border: Border.all(
-                                color: AppColors.brassLight,
-                                width: 2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.brass.withValues(
-                                    alpha: 0.35,
-                                  ),
-                                  blurRadius: 12,
-                                ),
-                              ],
-                            ),
-                            alignment: Alignment.center,
-                            child: const Icon(
-                              Icons.how_to_vote_rounded,
-                              color: AppColors.ivory,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'GROUP POLL',
-                                  style: GoogleFonts.outfit(
-                                    color: AppColors.brassLight,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.0,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                const Text(
-                                  'EVERYONE VOTES',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: 'RehnCondensed',
-                                    color: AppColors.ivory,
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w900,
-                                    height: 0.95,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  'Majority Rules · Pick who fits best!',
-                                  style: GoogleFonts.outfit(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '${round.number} / ${snapshot.room.maxRounds}',
+                      style: GoogleFonts.outfit(
+                        color: AppColors.brassLight.withValues(alpha: .72),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
                       ),
                     ),
                   ],

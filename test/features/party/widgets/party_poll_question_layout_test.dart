@@ -186,9 +186,16 @@ void main() {
       final questionCard = tester.getRect(
         find.byKey(const ValueKey('party-question-card')),
       );
-      final questionText = tester.getRect(find.text(stressQuestion));
-      expect(questionCard.contains(questionText.topLeft), isTrue);
-      expect(questionCard.contains(questionText.bottomRight), isTrue);
+      final questionFinder = find.text(stressQuestion);
+      final questionScroll = find.ancestor(
+        of: questionFinder,
+        matching: find.byType(SingleChildScrollView),
+      );
+      final visibleQuestionBounds = questionScroll.evaluate().isEmpty
+          ? tester.getRect(questionFinder)
+          : tester.getRect(questionScroll);
+      expect(questionCard.contains(visibleQuestionBounds.topLeft), isTrue);
+      expect(questionCard.contains(visibleQuestionBounds.bottomRight), isTrue);
       if (size == const Size(390, 844)) {
         final leaderboard = tester.getRect(
           find.byKey(const ValueKey('party-leaderboard')),
@@ -229,5 +236,23 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expectSceneGeometry(tester, size, reveal: false);
+  });
+  testWidgets('question typography never shrinks below Classic 20px floor', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpPartyView(
+      tester,
+      size: const Size(320, 568),
+      isReveal: false,
+      question: stressQuestion,
+    );
+
+    final question = tester.widget<Text>(find.text(stressQuestion));
+    expect(question.style?.fontFamily, 'RehnCondensed');
+    expect(question.style?.fontSize, greaterThanOrEqualTo(20));
+    expect(tester.takeException(), isNull);
   });
 }

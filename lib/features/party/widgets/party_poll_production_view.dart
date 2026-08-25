@@ -142,15 +142,9 @@ class PartyPollProductionView extends StatelessWidget {
                               children: [
                                 Expanded(
                                   flex: isCompact ? 18 : 20,
-                                  child: const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    child: CachedAssetImage(
-                                      AppAssetPaths.logo,
-                                      fit: BoxFit.contain,
-                                    ),
+                                  child: const CachedAssetImage(
+                                    AppAssetPaths.logo,
+                                    fit: BoxFit.contain,
                                   ),
                                 ),
                                 SizedBox(height: gapTight),
@@ -1463,7 +1457,7 @@ class PartyPollProductionView extends StatelessWidget {
           child: _AdaptiveQuestionText(
             text: questionText,
             color: const Color(0xFF0A2C59),
-            minFontSize: 16,
+            minFontSize: 20,
             maxFontSize: 34,
           ),
         ),
@@ -1667,6 +1661,21 @@ class _AdaptiveQuestionText extends StatelessWidget {
     required this.maxFontSize,
   });
 
+  TextStyle _style(double fontSize) => TextStyle(
+    fontFamily: 'RehnCondensed',
+    color: color,
+    fontSize: fontSize,
+    fontWeight: FontWeight.w900,
+    height: 1.02,
+  );
+
+  StrutStyle _strut(double fontSize) => StrutStyle(
+    fontFamily: 'RehnCondensed',
+    fontSize: fontSize,
+    forceStrutHeight: true,
+    height: 1.02,
+  );
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -1674,34 +1683,42 @@ class _AdaptiveQuestionText extends StatelessWidget {
         return const SizedBox.shrink();
       }
 
-      // Measure the same wrapped text that we render. The lower floor applies
-      // only to long prompts, so short prompts retain the production scale.
-      final lowerBound = min(minFontSize, max(10.5, minFontSize * .66));
-      var low = lowerBound;
-      var high = maxFontSize;
-      for (var i = 0; i < 12; i++) {
-        final candidate = (low + high) / 2;
+      bool fits(double fontSize) {
         final painter = TextPainter(
-          text: TextSpan(
-            text: text,
-            style: TextStyle(
-              fontFamily: 'RehnCondensed',
-              fontSize: candidate,
-              fontWeight: FontWeight.w900,
-              height: 1.02,
-            ),
-          ),
+          text: TextSpan(text: text, style: _style(fontSize)),
           textAlign: TextAlign.center,
           textDirection: TextDirection.ltr,
           textScaler: TextScaler.noScaling,
-          strutStyle: StrutStyle(
-            fontFamily: 'RehnCondensed',
-            fontSize: candidate,
-            forceStrutHeight: true,
-            height: 1.02,
-          ),
+          strutStyle: _strut(fontSize),
         )..layout(maxWidth: constraints.maxWidth);
-        if (painter.height <= constraints.maxHeight) {
+        return painter.height <= constraints.maxHeight;
+      }
+
+      final overflowsAtMinimum = !fits(minFontSize);
+      if (overflowsAtMinimum) {
+        return SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                softWrap: true,
+                textScaler: TextScaler.noScaling,
+                strutStyle: _strut(minFontSize),
+                style: _style(minFontSize),
+              ),
+            ),
+          ),
+        );
+      }
+
+      var low = minFontSize;
+      var high = maxFontSize;
+      for (var i = 0; i < 10; i++) {
+        final candidate = (low + high) / 2;
+        if (fits(candidate)) {
           low = candidate;
         } else {
           high = candidate;
@@ -1714,19 +1731,8 @@ class _AdaptiveQuestionText extends StatelessWidget {
           textAlign: TextAlign.center,
           softWrap: true,
           textScaler: TextScaler.noScaling,
-          strutStyle: StrutStyle(
-            fontFamily: 'RehnCondensed',
-            fontSize: low,
-            forceStrutHeight: true,
-            height: 1.02,
-          ),
-          style: TextStyle(
-            fontFamily: 'RehnCondensed',
-            color: color,
-            fontSize: low,
-            fontWeight: FontWeight.w900,
-            height: 1.02,
-          ),
+          strutStyle: _strut(low),
+          style: _style(low),
         ),
       );
     },
