@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:witsgame/features/game/widgets/poker_chip.dart';
 import 'package:witsgame/features/party/widgets/party_poll_production_view.dart';
 
 void main() {
@@ -151,6 +152,21 @@ void main() {
 
       expect(tester.takeException(), isNull, reason: 'betting at $size');
       expect(find.text('PLACE BET'), findsOneWidget);
+      final selectorChips = find.descendant(
+        of: find.byKey(const ValueKey('party-chip-picker-2')),
+        matching: find.byType(PokerChip),
+      );
+      expect(selectorChips, findsNWidgets(3));
+      final chipRects = [
+        for (var i = 0; i < 3; i++) tester.getRect(selectorChips.at(i)),
+      ];
+      for (var i = 0; i < chipRects.length - 1; i++) {
+        expect(
+          chipRects[i].right,
+          lessThanOrEqualTo(chipRects[i + 1].left),
+          reason: 'selector chip overlap at $size',
+        );
+      }
       expectSceneGeometry(tester, size, reveal: false);
       final questionCard = tester.getRect(
         find.byKey(const ValueKey('party-question-2')),

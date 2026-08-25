@@ -377,7 +377,7 @@ class PartyPollProductionView extends StatelessWidget {
                     constraints.maxWidth / 3.25,
                   ).clamp(44.0, 58.0).toDouble();
                   return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       for (final chip in chips)
                         _selectableChip(
