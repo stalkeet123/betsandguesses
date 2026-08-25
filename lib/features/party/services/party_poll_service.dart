@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/errors/monetization_exceptions.dart';
+import '../constants/party_poll_rules.dart';
 import '../models/party_poll_snapshot.dart';
 
 class PartyPollBetPlacement {
@@ -43,6 +44,14 @@ class PartyPollService {
     double? positionX,
     double? positionY,
   }) async {
+    if (!PartyPollRules.isValidChip(chips)) {
+      throw ArgumentError.value(
+        chips,
+        'chips',
+        'Expected one of ${PartyPollRules.chipValues}.',
+      );
+    }
+
     final response = await _client.rpc(
       'place_party_poll_bet_v1',
       params: {
