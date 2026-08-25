@@ -64,10 +64,6 @@ bool resolveEffectivePremiumStatus({
   required bool revenueCatPremium,
   required MonetizationStatus serverStatus,
 }) {
-  if (serverStatus.debugOverrideAllowed &&
-      serverStatus.debugPremiumOverride != null) {
-    return serverStatus.isPremium;
-  }
   return revenueCatPremium || serverStatus.isPremium;
 }
 
@@ -162,10 +158,6 @@ final monetizationStatusProvider = FutureProvider<MonetizationStatus>(
 
 final effectivePremiumStatusProvider = FutureProvider<bool>((ref) async {
   final serverStatus = await ref.watch(monetizationStatusProvider.future);
-  if (serverStatus.debugOverrideAllowed &&
-      serverStatus.debugPremiumOverride != null) {
-    return serverStatus.isPremium;
-  }
 
   try {
     final revenueCatPremium = await ref.watch(premiumStatusProvider.future);
