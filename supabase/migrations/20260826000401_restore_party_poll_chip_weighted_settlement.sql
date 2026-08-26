@@ -44,11 +44,17 @@ $weighted$;
 begin
   select pg_get_functiondef(v_oid) into v_def;
 
+  -- Fresh/replayed repo chains can already be weighted because the historical
+  -- legacy-compat migration existed in production but is not present locally.
+  if position('sum(b.chips) AS total_chip_weight' in v_def) > 0 then
+    return;
+  end if;
+
   v_start := position('  -- Legacy/native-compatible confidence voting:' in v_def);
   v_end := position('  SELECT coalesce(min(array_position' in v_def);
 
   if v_start = 0 or v_end = 0 or v_end <= v_start then
-    raise exception 'settle_party_poll_round_v1 legacy voting markers were not found';
+    raise exception 'settle_party_poll_round_v1 voting block was neither weighted nor recognized legacy form';
   end if;
 
   v_next := substring(v_def from 1 for v_start - 1)
