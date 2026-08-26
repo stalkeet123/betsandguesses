@@ -1,24 +1,24 @@
 {
-    "name": "Bets & Guesses",
-    "short_name": "Bets & Guesses",
-    "start_url": ".",
-    "display": "standalone",
-    "background_color": "#0F0805",
-    "theme_color": "#0F0805",
-    "description": "Bets & Guesses - The ultimate party trivia game.",
-    "orientation": "portrait-primary",
-    "prefer_related_applications": false,
-    "icons": [
-        {
-            "src": "icons/logo.webp",
-            "sizes": "512x512",
-            "type": "image/webp"
-        },
-        {
-            "src": "icons/logo.webp",
-            "sizes": "512x512",
-            "type": "image/webp",
-            "purpose": "maskable"
-        }
-    ]
+  "name": "Bets & Guesses",
+  "short_name": "Bets & Guesses",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0F0805",
+  "theme_color": "#0F0805",
+  "description": "Play Classic trivia betting or Party Poll with friends. Host on iPhone and join from a browser.",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/logo.webp",
+      "sizes": "512x512",
+      "type": "image/webp"
+    },
+    {
+      "src": "icons/logo.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "maskable"
+    }
+  ]
 }

@@ -1,37 +1,30 @@
-<!DOCTYPE html><html><head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
   <base href="$FLUTTER_BASE_HREF">
-
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Play Bets & Guesses with friends: numeric trivia betting in Classic Mode and social Party Poll rounds. Host on iPhone and join from a browser.">
+  <meta name="theme-color" content="#0F0805">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://bets-and-guesses.com/">
 
-  <!-- iOS meta tags & icons -->
+  <meta property="og:title" content="Bets & Guesses | Play with friends">
+  <meta property="og:description" content="Guess, bet, reveal. Play Classic trivia or Party Poll together in one room.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://bets-and-guesses.com/">
+  <meta property="og:image" content="https://bets-and-guesses.com/screenshots/game-bet.webp">
+  <meta name="twitter:card" content="summary_large_image">
+
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Bets & Guesses">
   <link rel="apple-touch-icon" href="icons/logo.webp">
-
-  <!-- Favicon -->
   <link rel="icon" type="image/webp" href="favicon.webp">
-
-  <title>Bets & Guesses</title>
   <link rel="manifest" href="manifest.json">
-  
-  
-  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
+  <title>Bets & Guesses | Party Game</title>
+
   <style id="splash-screen-style">
     html {
       height: 100%;
@@ -59,24 +52,26 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      -ms-transform: translate(-50%, -50%);
       transform: translate(-50%, -50%);
     }
 
     .contain {
-      display:block;
-      width:100%; height:100%;
+      display: block;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
     }
 
     .stretch {
-      display:block;
-      width:100%; height:100%;
+      display: block;
+      width: 100%;
+      height: 100%;
     }
 
     .cover {
-      display:block;
-      width:100%; height:100%;
+      display: block;
+      width: 100%;
+      height: 100%;
       object-fit: cover;
     }
 
@@ -84,7 +79,6 @@
       position: absolute;
       bottom: 0;
       left: 50%;
-      -ms-transform: translate(-50%, 0);
       transform: translate(-50%, 0);
     }
 
@@ -101,11 +95,10 @@
     }
 
     @media (prefers-color-scheme: dark) {
-      body {
-        background-color: #0F0805;
-      }
+      body { background-color: #0F0805; }
     }
   </style>
+
   <script id="splash-screen-script">
     function removeSplashFromWeb() {
       document.getElementById("splash")?.remove();
@@ -113,7 +106,6 @@
       document.body.style.background = "#0F0805";
     }
 
-    // Universal iOS/Android Screen Awake (WakeLock & Visibility Manager)
     let wakeLockSentinel = null;
 
     async function acquireWakeLock() {
@@ -125,25 +117,21 @@
           });
         }
       } catch (err) {
-        // WakeLock request ignored or unsupported
+        // WakeLock may be unavailable or blocked by the browser.
       }
     }
 
-    const unlockWakeLock = () => {
-      acquireWakeLock();
-    };
-
+    const unlockWakeLock = () => acquireWakeLock();
     window.addEventListener('touchstart', unlockWakeLock, { passive: true });
     window.addEventListener('click', unlockWakeLock, { passive: true });
 
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        acquireWakeLock();
-      }
+      if (document.visibilityState === 'visible') acquireWakeLock();
     });
   </script>
 </head>
 <body>
   <script src="assets/packages/flutter_soloud/web/libflutter_soloud_plugin.js"></script>
-  <script src="flutter_bootstrap.js" async=""></script>
-</body></html>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
