@@ -21,9 +21,13 @@ void main() {
   });
   const longQuestion =
       'Who would be most likely to become friends with a complete stranger in five minutes?';
+  const failingProductionQuestion =
+      'Who would be most likely to turn up to the wrong event?';
+  const shortQuestion = 'Who is most likely to win?';
   const stressQuestion =
       'Who would turn a quiet weekend into an unforgettable adventure, invite everyone along, and still somehow have a brilliant story by sunrise?';
   const longestProductionQuestions = <String>[
+    failingProductionQuestion,
     'Who would be most likely to become a conspiracy theorist about something completely harmless?',
     'Who would be most likely to convince the group to change all the plans at the last minute?',
     'Who would be most likely to spend an hour choosing what to watch and then watch nothing?',
@@ -281,7 +285,6 @@ void main() {
     final questionBounds = tester.getRect(questionFinder);
 
     expect(question.style?.fontFamily, 'RehnCondensed');
-    expect(fontSize, greaterThanOrEqualTo(12));
     expect(fontSize, lessThanOrEqualTo(34));
     expect(find.byType(SingleChildScrollView), findsNothing);
     expect(card.contains(questionBounds.topLeft), isTrue);
@@ -308,7 +311,6 @@ void main() {
         find.byKey(const ValueKey('party-question-card')),
       );
       final questionFinder = find.text(question);
-      final questionText = tester.widget<Text>(questionFinder);
       final text = tester.getRect(questionFinder);
       expect(card.contains(text.topLeft), isTrue, reason: question);
       expect(card.contains(text.bottomRight), isTrue, reason: question);
@@ -318,10 +320,90 @@ void main() {
         reason:
             'production prompt should fit without emergency scaling: $question',
       );
-      expect(questionText.style?.fontSize, greaterThanOrEqualTo(12));
       expect(find.byType(SingleChildScrollView), findsNothing);
       expect(tester.takeException(), isNull, reason: question);
     }
+  });
+  testWidgets('exact real-device question stays inside the paint-safe body', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final size in phoneSizes) {
+      await pumpPartyView(
+        tester,
+        size: size,
+        isReveal: false,
+        question: failingProductionQuestion,
+      );
+
+      final questionFinder = find.byKey(const ValueKey('party-question-text'));
+      final rendered = tester.widget<Text>(questionFinder);
+      final safeArea = tester.getRect(
+        find.byKey(const ValueKey('party-question-text-area')),
+      );
+      final textRect = tester.getRect(questionFinder);
+
+      expect(find.text(failingProductionQuestion), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: questionFinder,
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsNothing,
+      );
+      expect(rendered.style?.fontFamily, 'RehnCondensed');
+      expect(rendered.maxLines, isNull);
+      expect(rendered.softWrap, isTrue);
+      expect(rendered.overflow, TextOverflow.visible);
+      expect(rendered.style?.fontSize, lessThanOrEqualTo(34));
+      final fitter = tester.getRect(
+        find.byKey(const ValueKey('party-question-fitter')),
+      );
+      expect(textRect.left, greaterThanOrEqualTo(safeArea.left));
+      expect(textRect.right, lessThanOrEqualTo(safeArea.right + 0.01));
+      expect(textRect.top, greaterThanOrEqualTo(safeArea.top));
+      expect(textRect.bottom, lessThanOrEqualTo(safeArea.bottom + 0.01));
+      expect(textRect.top, greaterThan(fitter.top));
+      expect(textRect.bottom, lessThan(fitter.bottom));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('short Party question stays larger than a long question', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const size = Size(320, 568);
+
+    await pumpPartyView(
+      tester,
+      size: size,
+      isReveal: false,
+      question: shortQuestion,
+    );
+    final shortSize = tester
+        .widget<Text>(find.byKey(const ValueKey('party-question-text')))
+        .style!
+        .fontSize!;
+
+    await pumpPartyView(
+      tester,
+      size: size,
+      isReveal: false,
+      question: stressQuestion,
+    );
+    final longSize = tester
+        .widget<Text>(find.byKey(const ValueKey('party-question-text')))
+        .style!
+        .fontSize!;
+
+    expect(shortSize, greaterThan(longSize));
+    expect(shortSize, lessThanOrEqualTo(34));
+    expect(longSize, greaterThanOrEqualTo(8));
+    expect(tester.takeException(), isNull);
   });
   testWidgets('player names and odds keep the slot centre clear on mobile', (
     tester,

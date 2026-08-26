@@ -15,6 +15,7 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/services/audio_service.dart';
 import '../../../core/services/realtime_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/adaptive_question_text.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../features/game/models/bet_model.dart';
 import '../../../features/game/models/guess_model.dart';
@@ -2853,11 +2854,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
           Expanded(
             child: gameState.currentQuestion == null
                 ? const _QuestionLoadingText(color: Color(0xFF0A2C59))
-                : _AdaptiveQuestionText(
+                : AdaptiveQuestionText(
+                    key: const ValueKey('classic-betting-question-fitter'),
                     text: gameState.currentQuestion!.getText(locale: 'en'),
                     color: const Color(0xFF0A2C59),
-                    minFontSize: 20,
+                    preferredMinFontSize: 20,
                     maxFontSize: 34,
+                    safeAreaKey: const ValueKey(
+                      'classic-betting-question-text-area',
+                    ),
+                    textKey: const ValueKey('classic-betting-question-text'),
                   ),
           ),
         ],
@@ -2955,14 +2961,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
           Expanded(
             child: gameState.currentQuestion == null
                 ? const _QuestionLoadingText(color: PartyPalette.blueMuted)
-                : _AdaptiveQuestionText(
+                : AdaptiveQuestionText(
                     text: _partyQuestionForViewer(
                       text: gameState.currentQuestion!.getText(locale: 'en'),
                       round: round,
                       isPerformer: isPerformer,
                     ),
                     color: PartyPalette.cream,
-                    minFontSize: 20,
+                    preferredMinFontSize: 20,
                     maxFontSize: 33,
                   ),
           ),
@@ -3902,13 +3908,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 : Column(
                     children: [
                       Expanded(
-                        child: _AdaptiveQuestionText(
+                        child: AdaptiveQuestionText(
+                          key: const ValueKey(
+                            'classic-guessing-question-fitter',
+                          ),
                           text: gameState.currentQuestion!.getText(
                             locale: 'en',
                           ),
                           color: AppColors.feltDark,
-                          minFontSize: 22,
+                          preferredMinFontSize: 22,
                           maxFontSize: 46,
+                          safeAreaKey: const ValueKey(
+                            'classic-guessing-question-text-area',
+                          ),
+                          textKey: const ValueKey(
+                            'classic-guessing-question-text',
+                          ),
                         ),
                       ),
                       if (ref.read(currentRoomProvider)?.gameMode ==
@@ -6204,10 +6219,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: _AdaptiveQuestionText(
+              child: AdaptiveQuestionText(
                 text: slot.title,
                 color: PartyPalette.cream,
-                minFontSize: 15,
+                preferredMinFontSize: 15,
                 maxFontSize: 26,
               ),
             ),
@@ -7893,123 +7908,6 @@ class _QuestionLoadingText extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _AdaptiveQuestionText extends StatelessWidget {
-  final String text;
-  final Color color;
-  final double minFontSize;
-  final double maxFontSize;
-
-  const _AdaptiveQuestionText({
-    required this.text,
-    required this.color,
-    required this.minFontSize,
-    required this.maxFontSize,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final height = constraints.maxHeight;
-        if (width <= 0 || height <= 0) return const SizedBox.shrink();
-
-        final fontSize = _largestFittingFontSize(
-          text: text,
-          maxWidth: width,
-          maxHeight: height,
-          minFontSize: minFontSize,
-          maxFontSize: maxFontSize,
-        );
-        final overflowsAtMinimum = !_fits(
-          text: text,
-          fontSize: minFontSize,
-          maxWidth: width,
-          maxHeight: height,
-        );
-
-        final textWidget = Center(
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'RehnCondensed',
-              color: color,
-              fontSize: overflowsAtMinimum ? minFontSize : fontSize,
-              fontWeight: FontWeight.w900,
-              height: 1.02,
-              letterSpacing: 0,
-            ),
-          ),
-        );
-
-        if (!overflowsAtMinimum) return textWidget;
-
-        return SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: height),
-            child: textWidget,
-          ),
-        );
-      },
-    );
-  }
-
-  static double _largestFittingFontSize({
-    required String text,
-    required double maxWidth,
-    required double maxHeight,
-    required double minFontSize,
-    required double maxFontSize,
-  }) {
-    var low = minFontSize;
-    var high = maxFontSize;
-
-    for (var i = 0; i < 10; i++) {
-      final mid = (low + high) / 2;
-      if (_fits(
-        text: text,
-        fontSize: mid,
-        maxWidth: maxWidth,
-        maxHeight: maxHeight,
-      )) {
-        low = mid;
-      } else {
-        high = mid;
-      }
-    }
-
-    return low.clamp(minFontSize, maxFontSize).toDouble();
-  }
-
-  static bool _fits({
-    required String text,
-    required double fontSize,
-    required double maxWidth,
-    required double maxHeight,
-  }) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontFamily: 'RehnCondensed',
-          fontSize: fontSize,
-          fontWeight: FontWeight.w900,
-          height: 1.02,
-          letterSpacing: 0,
-        ),
-      ),
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-      textScaler: TextScaler.noScaling,
-      maxLines: null,
-    )..layout(maxWidth: maxWidth);
-
-    return painter.width <= maxWidth && painter.height <= maxHeight;
   }
 }
 

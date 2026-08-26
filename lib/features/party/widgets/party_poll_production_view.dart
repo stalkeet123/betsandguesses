@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/adaptive_question_text.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../game/widgets/poker_chip.dart';
 import '../constants/party_poll_rules.dart';
@@ -1465,12 +1466,14 @@ class PartyPollProductionView extends StatelessWidget {
             ),
             SizedBox(height: isNarrow ? 6 : 10),
             Expanded(
-              child: _AdaptiveQuestionText(
+              child: AdaptiveQuestionText(
+                key: const ValueKey('party-question-fitter'),
                 text: questionText,
                 color: const Color(0xFF0A2C59),
-                minFontSize: 16,
-                fallbackMinFontSize: 12,
+                preferredMinFontSize: 16,
                 maxFontSize: 34,
+                safeAreaKey: const ValueKey('party-question-text-area'),
+                textKey: const ValueKey('party-question-text'),
               ),
             ),
           ],
@@ -1661,97 +1664,6 @@ class PartyPollProductionView extends StatelessWidget {
         .fadeIn(duration: 180.ms)
         .scale(begin: const Offset(.97, .97), duration: 260.ms);
   }
-}
-
-class _AdaptiveQuestionText extends StatelessWidget {
-  final String text;
-  final Color color;
-  final double minFontSize;
-  final double fallbackMinFontSize;
-  final double maxFontSize;
-  const _AdaptiveQuestionText({
-    required this.text,
-    required this.color,
-    required this.minFontSize,
-    required this.fallbackMinFontSize,
-    required this.maxFontSize,
-  });
-
-  TextStyle _style(double fontSize) => TextStyle(
-    fontFamily: 'RehnCondensed',
-    color: color,
-    fontSize: fontSize,
-    fontWeight: FontWeight.w900,
-    height: 1.12,
-  );
-
-  StrutStyle _strut(double fontSize) => StrutStyle(
-    fontFamily: 'RehnCondensed',
-    fontSize: fontSize,
-    forceStrutHeight: true,
-    height: 1.12,
-  );
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-        return const SizedBox.shrink();
-      }
-
-      bool fits(double fontSize) {
-        final painter = TextPainter(
-          text: TextSpan(text: text, style: _style(fontSize)),
-          textAlign: TextAlign.center,
-          textDirection: TextDirection.ltr,
-          textScaler: TextScaler.noScaling,
-          strutStyle: _strut(fontSize),
-        )..layout(maxWidth: constraints.maxWidth);
-        return painter.height <= constraints.maxHeight;
-      }
-
-      final preferredMinimumFits = fits(minFontSize);
-      final fallbackMinimumFits = fits(fallbackMinFontSize);
-      if (!fallbackMinimumFits) {
-        return FittedBox(
-          fit: BoxFit.scaleDown,
-          child: SizedBox(
-            width: constraints.maxWidth,
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              softWrap: true,
-              textScaler: TextScaler.noScaling,
-              strutStyle: _strut(fallbackMinFontSize),
-              style: _style(fallbackMinFontSize),
-            ),
-          ),
-        );
-      }
-
-      var low = preferredMinimumFits ? minFontSize : fallbackMinFontSize;
-      var high = maxFontSize;
-      for (var i = 0; i < 10; i++) {
-        final candidate = (low + high) / 2;
-        if (fits(candidate)) {
-          low = candidate;
-        } else {
-          high = candidate;
-        }
-      }
-
-      return Center(
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          softWrap: true,
-          textScaler: TextScaler.noScaling,
-          strutStyle: _strut(low),
-          style: _style(low),
-        ),
-      );
-    },
-  );
 }
 
 class _PollPayoutToken {
