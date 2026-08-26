@@ -1,9 +1,50 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/providers/core_providers.dart';
 import '../models/party_poll_snapshot.dart';
 import '../services/party_poll_service.dart';
+
+class PartyPollErrorDetails {
+  final String message;
+  final String? backendCode;
+
+  const PartyPollErrorDetails({required this.message, this.backendCode});
+}
+
+final _partyPollBackendMarker = RegExp(r'\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b');
+
+PartyPollErrorDetails partyPollErrorDetails(Object error) {
+  if (error is PostgrestException) {
+    final marker = _partyPollBackendMarker.firstMatch(error.message)?.group(0);
+    final message = switch (marker) {
+      'POLL_MAX_THREE_TARGETS' => 'You can bet on up to 3 players per round.',
+      'POLL_CHIP_ALREADY_USED' => 'That chip is already used this round.',
+      'INVALID_PARTY_POLL_CHIP' => 'Choose an available 5, 10, or 20 chip.',
+      'INSUFFICIENT_CHIPS' => 'You do not have enough chips left this round.',
+      'INVALID_POLL_TARGET' => 'That player is not available for betting.',
+      'BETTING_WINDOW_CLOSED' ||
+      'BETTING_DEADLINE_MISSING' => 'Betting has closed for this round.',
+      'INVALID_BET_MOVE' ||
+      'INVALID_BET_POSITION' => 'That bet can no longer be moved.',
+      _ => 'Party Poll request failed. Please try again.',
+    };
+    return PartyPollErrorDetails(
+      message: message,
+      backendCode: marker ?? error.code,
+    );
+  }
+  if (error is ArgumentError && error.name == 'chips') {
+    return const PartyPollErrorDetails(
+      message: 'Choose an available 5, 10, or 20 chip.',
+      backendCode: 'INVALID_PARTY_POLL_CHIP',
+    );
+  }
+  return const PartyPollErrorDetails(
+    message: 'Party Poll request failed. Please try again.',
+  );
+}
 
 PartyPollSnapshot selectPartyPollSnapshot(
   PartyPollSnapshot? current,
@@ -18,12 +59,14 @@ class PartyPollSessionState {
   final bool isLoading;
   final bool isCommandRunning;
   final String? errorMessage;
+  final String? errorCode;
 
   const PartyPollSessionState({
     this.snapshot,
     this.isLoading = false,
     this.isCommandRunning = false,
     this.errorMessage,
+    this.errorCode,
   });
 
   PartyPollSessionState copyWith({
@@ -32,6 +75,7 @@ class PartyPollSessionState {
     bool? isLoading,
     bool? isCommandRunning,
     String? errorMessage,
+    String? errorCode,
     bool clearError = false,
   }) {
     return PartyPollSessionState(
@@ -39,6 +83,7 @@ class PartyPollSessionState {
       isLoading: isLoading ?? this.isLoading,
       isCommandRunning: isCommandRunning ?? this.isCommandRunning,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
+      errorCode: clearError ? null : errorCode ?? this.errorCode,
     );
   }
 }
@@ -57,6 +102,16 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
   PartyPollService get _service => ref.read(partyPollServiceProvider);
   PartyPollSnapshot _acceptedSnapshot(PartyPollSnapshot incoming) =>
       selectPartyPollSnapshot(state.snapshot, incoming);
+
+  void _setError(Object error, {bool? isLoading, bool? isCommandRunning}) {
+    final details = partyPollErrorDetails(error);
+    state = state.copyWith(
+      isLoading: isLoading,
+      isCommandRunning: isCommandRunning,
+      errorMessage: details.message,
+      errorCode: details.backendCode,
+    );
+  }
 
   @override
   PartyPollSessionState build() => const PartyPollSessionState();
@@ -80,7 +135,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       );
       return accepted;
     } catch (error) {
-      state = state.copyWith(isLoading: false, errorMessage: '$error');
+      _setError(error, isLoading: false);
       return null;
     }
   }
@@ -110,7 +165,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       );
       rethrow;
     } catch (error) {
-      state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
+      _setError(error, isCommandRunning: false);
       return null;
     }
   }
@@ -142,7 +197,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       );
       return placement;
     } catch (error) {
-      state = state.copyWith(errorMessage: '$error');
+      _setError(error);
       return null;
     } finally {
       _pendingBetCommands--;
@@ -184,7 +239,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       );
       return snapshot;
     } catch (error) {
-      state = state.copyWith(errorMessage: '$error');
+      _setError(error);
       return null;
     } finally {
       _pendingBetCommands--;
@@ -223,7 +278,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       }
       return response;
     } catch (error) {
-      state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
+      _setError(error, isCommandRunning: false);
       return null;
     }
   }
@@ -242,7 +297,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
       );
       return snapshot;
     } catch (error) {
-      state = state.copyWith(isCommandRunning: false, errorMessage: '$error');
+      _setError(error, isCommandRunning: false);
       return null;
     }
   }

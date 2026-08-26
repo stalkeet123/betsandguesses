@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/features/game/widgets/poker_chip.dart';
+import 'package:witsgame/features/party/constants/party_poll_rules.dart';
 import 'package:witsgame/features/party/widgets/party_poll_production_view.dart';
 
 void main() {
@@ -106,8 +107,8 @@ void main() {
               winningPlayerIds: isReveal ? const {'bb'} : const {},
               score: 40,
               betTotal: 0,
-              betLimit: 40,
-              availableChips: 40,
+              betLimit: PartyPollRules.roundStakeLimit,
+              availableChips: PartyPollRules.roundStakeLimit,
               selectedChipValue: isReveal ? null : 5,
               currentPlayerId: 'emirl',
               selectedBetId: null,
@@ -197,6 +198,17 @@ void main() {
         matching: find.byType(PokerChip),
       );
       expect(selectorChips, findsNWidgets(3));
+      final chipPicker = find.byKey(const ValueKey('party-chip-picker'));
+      for (final value in PartyPollRules.chipValues) {
+        expect(
+          find.descendant(of: chipPicker, matching: find.text('$value')),
+          findsOneWidget,
+        );
+      }
+      expect(
+        find.descendant(of: chipPicker, matching: find.text('25')),
+        findsNothing,
+      );
       final chipRects = [
         for (var i = 0; i < 3; i++) tester.getRect(selectorChips.at(i)),
       ];

@@ -14,6 +14,7 @@ import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../room/models/room_model.dart';
 import '../../room/providers/room_providers.dart';
+import '../constants/party_poll_rules.dart';
 import '../models/party_poll_snapshot.dart';
 import '../providers/party_poll_session_provider.dart';
 import '../widgets/party_poll_production_view.dart';
@@ -549,6 +550,31 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     }
   }
 
+  Set<String> _effectiveOwnTargetPlayerIds(
+    PartyPollSnapshot snapshot, {
+    String? excludingBetId,
+  }) {
+    final targets = <String>{};
+    for (final bet in snapshot.round.bets) {
+      if (bet.playerId != snapshot.me.playerId || bet.id == excludingBetId) {
+        continue;
+      }
+      final pendingMove = _pendingMoveVisuals[bet.id];
+      final targetPlayerId =
+          pendingMove != null &&
+              pendingMove.roundNumber == snapshot.round.number
+          ? pendingMove.targetPlayerId
+          : bet.targetPlayerId;
+      targets.add(targetPlayerId);
+    }
+    for (final pending in _pendingBetVisuals.values) {
+      if (pending.roundNumber == snapshot.round.number) {
+        targets.add(pending.targetPlayerId);
+      }
+    }
+    return targets;
+  }
+
   Future<void> _placeBet(
     PartyPollSnapshot snapshot,
     String targetPlayerId,
@@ -562,7 +588,6 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     );
     if (!targetExists) return;
     final usedChips = snapshot.round.bets
-        .where((bet) => !_optimisticallyHiddenBetIds.contains(bet.id))
         .where((bet) => bet.playerId == snapshot.me.playerId)
         .map((bet) => bet.chips)
         .toSet();
@@ -570,11 +595,25 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         .where((pending) => pending.roundNumber == snapshot.round.number)
         .map((pending) => pending.chips)
         .toSet();
-    if (usedChips.contains(chip) || pendingChips.contains(chip)) {
+    final effectiveUsedChips = <int>{...usedChips, ...pendingChips};
+    if (!PartyPollRules.isValidChip(chip)) {
+      _showMessage('Choose an available 5, 10, or 20 chip.');
+      return;
+    }
+    if (!PartyPollRules.isChipAvailable(
+      chip: chip,
+      usedChips: effectiveUsedChips,
+    )) {
       _showMessage('That chip is already used this round.');
       return;
     }
-
+    if (!PartyPollRules.canTargetPlayer(
+      occupiedTargetPlayerIds: _effectiveOwnTargetPlayerIds(snapshot),
+      targetPlayerId: targetPlayerId,
+    )) {
+      _showMessage('You can bet on up to 3 players per round.');
+      return;
+    }
     final clientActionId = const Uuid().v4();
     setState(() {
       _pendingBetVisuals[clientActionId] = _PendingPartyPollBetVisual(
@@ -654,6 +693,16 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       return;
     }
 
+    if (!PartyPollRules.canTargetPlayer(
+      occupiedTargetPlayerIds: _effectiveOwnTargetPlayerIds(
+        snapshot,
+        excludingBetId: betId,
+      ),
+      targetPlayerId: targetPlayerId,
+    )) {
+      _showMessage('You can bet on up to 3 players per round.');
+      return;
+    }
     setState(() {
       _pendingMoveVisuals[betId] = _PendingPartyPollMoveVisual(
         betId: betId,
@@ -811,7 +860,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         : snapshot.me.betTotal;
     final presentationAvailableChips =
         snapshot.round.phase == PartyPollPhase.betting
-        ? max(0, 40 - effectiveOwnBetTotal)
+        ? PartyPollRules.availableChipsForStake(effectiveOwnBetTotal)
         : snapshot.me.availableChips;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _observePresentationSnapshot(snapshot);
