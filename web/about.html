@@ -3,200 +3,94 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Bets & Guesses is a multiplayer party game with two ways to play: numeric trivia betting in Classic Mode and social Party Poll rounds with friends.">
+  <meta name="description" content="Bets & Guesses is a multiplayer party game with Classic trivia betting and Party Poll rounds about your friends.">
   <meta name="theme-color" content="#07180f">
   <meta name="robots" content="index,follow">
   <meta property="og:title" content="Bets & Guesses | One room. Two ways to play.">
-  <meta property="og:description" content="Play Classic trivia betting or turn your friends into the answers in Party Poll. Host on iPhone and join from a browser.">
+  <meta property="og:description" content="Play Classic trivia betting or make your friends the answers in Party Poll. Host on iPhone and join from a browser.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://bets-and-guesses.com/about.html">
   <meta property="og:image" content="https://bets-and-guesses.com/screenshots/game-bet.webp">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="canonical" href="https://bets-and-guesses.com/about.html">
-  <title>Bets &amp; Guesses | One room. Two ways to play.</title>
-  <link rel="stylesheet" href="/style.css?v=20260826-1">
   <link rel="icon" href="/icons/logo.webp" type="image/webp">
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "Bets & Guesses",
-    "applicationCategory": "GameApplication",
-    "operatingSystem": "iOS, Web",
-    "description": "A multiplayer party game with Classic trivia betting and social Party Poll rounds."
-  }
-  </script>
+  <link rel="stylesheet" href="/about.css?v=20260826-1">
+  <title>Bets &amp; Guesses | One room. Two ways to play.</title>
 </head>
-<body class="about-page">
-  <header class="site-header">
-    <div class="site-header-inner">
-      <a class="brand" href="/about.html" aria-label="Bets & Guesses home">
-        <img src="/icons/logo.webp" alt="" width="48" height="37">
-        <span>Bets &amp; Guesses</span>
-      </a>
-      <nav class="site-nav" aria-label="Main navigation">
-        <a href="#modes">Game modes</a>
-        <a href="#how-it-works">How it works</a>
-        <a href="/support.html">Support</a>
-        <a class="nav-primary" href="/">Play on Web</a>
-      </nav>
-    </div>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/about.html" aria-label="Bets & Guesses home">
+      <img src="/icons/logo.webp" alt="" width="42" height="32">
+      <span>Bets &amp; Guesses</span>
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="/support.html">Support</a>
+      <a class="nav-play" href="/">Play</a>
+    </nav>
   </header>
 
   <main>
-    <section class="marketing-hero">
-      <div class="shell hero-grid">
-        <div class="hero-copy">
-          <p class="eyebrow">A party game built for the same room</p>
-          <h1>One room.<br>Two ways to play.</h1>
-          <p class="hero-intro">Guess the number and bet where the truth lands in Classic Mode — or make your friends the answers in Party Poll.</p>
-          <div class="button-row">
-            <a class="button button-primary" href="/">Play on Web</a>
-            <a class="button button-dark" href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">Get the iPhone App</a>
-          </div>
-          <p class="hero-note">Guests can join with a room code from a browser. No separate guest download required.</p>
+    <section class="hero">
+      <div class="hero-inner">
+        <img class="hero-logo" src="/icons/logo.webp" alt="Bets & Guesses" width="560" height="430">
+        <p class="kicker">A party game for the same room</p>
+        <h1>One room.<br>Two ways to play.</h1>
+        <p class="hero-copy">Guess the number and bet where the truth lands in <strong>Classic</strong>, or turn your friends into the answers in <strong>Party Poll</strong>.</p>
+        <div class="actions">
+          <a class="button primary" href="/">Play on Web</a>
+          <a class="button secondary" href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">Get the iPhone App</a>
         </div>
-
-        <div class="hero-mode-stack" aria-label="Bets & Guesses game modes">
-          <article class="hero-mode-card classic-peek">
-            <span class="mode-badge">Classic</span>
-            <h2>Guess. Then bet.</h2>
-            <p>Everyone submits a number. The table becomes the betting board.</p>
-            <div class="mini-board" aria-hidden="true"><span>4×</span><span>3×</span><span>2×</span><span>3×</span><span>4×</span></div>
-          </article>
-          <article class="hero-mode-card party-peek">
-            <span class="mode-badge">Party Poll</span>
-            <h2>Your friends are the answers.</h2>
-            <p>Read the prompt, read the room, and put your chips on the people you think the group will choose.</p>
-            <div class="poll-chips" aria-hidden="true"><span>5</span><span>10</span><span>25</span></div>
-          </article>
-        </div>
+        <p class="room-note">Guests join with a room code from a browser.</p>
       </div>
     </section>
 
-    <section class="trust-band" aria-label="Game highlights">
-      <div class="shell trust-grid">
-        <div><strong>2 game modes</strong><span>Classic + Party Poll</span></div>
-        <div><strong>One room code</strong><span>Get everyone to the same table fast</span></div>
-        <div><strong>Browser-friendly guests</strong><span>Join from a phone without a guest install</span></div>
+    <section class="modes" aria-labelledby="modes-title">
+      <div class="section-head">
+        <p class="kicker">Two game modes</p>
+        <h2 id="modes-title">Pick the mood.</h2>
+      </div>
+      <div class="mode-grid">
+        <article class="mode-card">
+          <div class="mode-top"><span>CLASSIC</span><strong>4× · 3× · 2× · 3× · 4×</strong></div>
+          <h3>Guess. Then bet.</h3>
+          <p>Everyone submits a number. Those guesses shape the betting board. Put your chips where you think the real answer will land.</p>
+          <div class="steps"><span>Guess</span><i>→</i><span>Bet</span><i>→</i><span>Reveal</span></div>
+        </article>
+        <article class="mode-card party">
+          <div class="mode-top"><span>PARTY POLL</span><strong>5 · 10 · 25</strong></div>
+          <h3>Your friends are the answers.</h3>
+          <p>Read a social prompt, choose the people you think the room will pick, and put your round chips behind those choices.</p>
+          <div class="steps"><span>Read</span><i>→</i><span>Pick</span><i>→</i><span>Reveal</span></div>
+        </article>
       </div>
     </section>
 
-    <section id="modes" class="modes-band">
-      <div class="shell">
-        <div class="section-heading section-heading-wide">
-          <p class="eyebrow">Choose the mood</p>
-          <h2>Smart guesses or social chaos.</h2>
-          <p>Classic rewards estimation and betting instincts. Party Poll turns the people in the room into the game.</p>
-        </div>
-
-        <div class="mode-grid">
-          <article class="mode-card classic-card">
-            <div class="mode-card-topline"><span class="mode-number">01</span><span class="mode-badge">Classic</span></div>
-            <h3>Trivia where knowing the answer is only half the game.</h3>
-            <p>Every question has a numeric answer. First everyone guesses. Then the guesses shape the board and the whole table bets on where the real answer will land.</p>
-            <ol class="mode-steps">
-              <li><strong>Guess</strong><span>Submit your best number before seeing the spread.</span></li>
-              <li><strong>Bet</strong><span>Place chips across the live board and chase the best payout.</span></li>
-              <li><strong>Reveal</strong><span>Watch the answer land, collect winnings, and climb the bank.</span></li>
-            </ol>
-          </article>
-
-          <article class="mode-card party-card">
-            <div class="mode-card-topline"><span class="mode-number">02</span><span class="mode-badge">Party Poll</span></div>
-            <h3>Prompts about the group. Bets about each other.</h3>
-            <p>The question is social instead of numeric. Put your chips on the people you think the room will choose, then reveal the table's verdict together.</p>
-            <ol class="mode-steps">
-              <li><strong>Read the room</strong><span>A social prompt puts everyone at the center of the round.</span></li>
-              <li><strong>Back your picks</strong><span>Use your round chips to show where your confidence is.</span></li>
-              <li><strong>Reveal the vote</strong><span>Winning picks add to your score; misses cost you.</span></li>
-            </ol>
-          </article>
-        </div>
+    <section class="screens" aria-labelledby="screens-title">
+      <div class="section-head centered">
+        <p class="kicker">Classic in action</p>
+        <h2 id="screens-title">Simple to join. Fast to play.</h2>
+      </div>
+      <div class="phone-row">
+        <figure><img src="/screenshots/game-guess.webp" alt="Numeric guess entry in Classic mode" width="460" height="996" loading="lazy"><figcaption>Guess</figcaption></figure>
+        <figure><img src="/screenshots/game-bet.webp" alt="Classic betting board" width="460" height="996" loading="lazy"><figcaption>Bet</figcaption></figure>
+        <figure><img src="/screenshots/game-reveal.webp" alt="Classic answer reveal" width="460" height="996" loading="lazy"><figcaption>Reveal</figcaption></figure>
       </div>
     </section>
 
-    <section class="showcase-band" aria-labelledby="showcase-title">
-      <div class="shell">
-        <div class="section-heading showcase-heading">
-          <p class="eyebrow">Classic in action</p>
-          <h2 id="showcase-title">The table changes every round.</h2>
-          <p>Guess, watch the board form, move your chips, and see the answer settle everything.</p>
-        </div>
-        <div class="screenshot-grid">
-          <figure>
-            <img src="/screenshots/game-guess.webp" alt="Numeric guess entry during a Bets & Guesses Classic round" width="460" height="996" loading="lazy">
-            <figcaption>Make your guess</figcaption>
-          </figure>
-          <figure>
-            <img src="/screenshots/game-bet.webp" alt="Classic betting board with chips and answer ranges" width="460" height="996" loading="lazy">
-            <figcaption>Bet on the board</figcaption>
-          </figure>
-          <figure>
-            <img src="/screenshots/game-reveal.webp" alt="Answer reveal during a Bets & Guesses Classic round" width="460" height="996" loading="lazy">
-            <figcaption>Reveal the answer</figcaption>
-          </figure>
-          <figure>
-            <img src="/screenshots/game-results.webp" alt="Final Bets & Guesses leaderboard" width="460" height="996" loading="lazy">
-            <figcaption>Win the table</figcaption>
-          </figure>
-        </div>
-      </div>
-    </section>
-
-    <section id="how-it-works" class="how-band">
-      <div class="shell">
-        <div class="section-heading compact-heading">
-          <p class="eyebrow">Game night, without the setup</p>
-          <h2>From room code to first round in minutes.</h2>
-        </div>
-        <ol class="game-flow">
-          <li><span>01</span><div><h3>Host a room</h3><p>Choose the game setup and put the room code where everyone can see it.</p></div></li>
-          <li><span>02</span><div><h3>Everyone joins</h3><p>Guests open the web game, enter the code, pick a name, and get ready.</p></div></li>
-          <li><span>03</span><div><h3>Play together</h3><p>Rounds stay synchronized so the whole table guesses, bets, and reveals at the same time.</p></div></li>
-        </ol>
-      </div>
-    </section>
-
-    <section class="feature-band">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">Made for the room you're already in</p>
-          <h2>Less setup. More table talk.</h2>
-        </div>
-        <div class="feature-grid">
-          <article><span>ROOM CODE</span><h3>Easy to bring everyone in</h3><p>One shared room keeps the group together without passing one phone around.</p></article>
-          <article><span>REAL TIME</span><h3>One table, one moment</h3><p>Questions, timers, bets, and reveals stay centered on the same live round.</p></article>
-          <article><span>TWO MOODS</span><h3>Switch the kind of fun</h3><p>Go competitive with Classic trivia or make it personal with Party Poll.</p></article>
-        </div>
-      </div>
-    </section>
-
-    <section class="play-band">
-      <div class="shell play-layout">
-        <div>
-          <p class="eyebrow">Ready for the table?</p>
-          <h2>Start the room. Send the code. Let the arguments begin.</h2>
-          <p>Host from the iPhone app or open the web game. Guests can join from a modern browser.</p>
-        </div>
-        <div class="play-actions">
-          <a class="button button-primary" href="/">Play on Web</a>
-          <a class="button button-light" href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">Get the iPhone App</a>
-        </div>
+    <section class="final-cta">
+      <p class="kicker">Ready?</p>
+      <h2>Start a room. Send the code.</h2>
+      <p>Host on iPhone or open the web game. Everyone else joins from their phone.</p>
+      <div class="actions centered-actions">
+        <a class="button primary" href="/">Play on Web</a>
+        <a class="text-link" href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">App Store ↗</a>
       </div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="shell footer-layout">
-      <p>&copy; 2026 Bets &amp; Guesses. All rights reserved.</p>
-      <div class="footer-links">
-        <a href="/about.html">About</a>
-        <a href="/support.html">Support</a>
-        <a href="/privacy.html">Privacy</a>
-        <a href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">App Store</a>
-      </div>
-    </div>
+  <footer>
+    <span>© 2026 Bets &amp; Guesses</span>
+    <div><a href="/support.html">Support</a><a href="/privacy.html">Privacy</a></div>
   </footer>
 </body>
 </html>
