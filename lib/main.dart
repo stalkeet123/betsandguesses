@@ -13,6 +13,7 @@ import 'core/widgets/cached_asset_image.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/providers/core_providers.dart';
+import 'core/services/analytics_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -113,12 +114,27 @@ class _TahminAppState extends ConsumerState<TahminApp>
     with WidgetsBindingObserver {
   bool _didWarmUpImages = false;
   bool _hasInteracted = false;
+  bool _didTrackAppOpen = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setScreenAwake(true);
+    _trackAppOpen();
+  }
+
+  void _trackAppOpen() {
+    if (_didTrackAppOpen) return;
+    _didTrackAppOpen = true;
+    unawaited(
+      ref
+          .read(analyticsServiceProvider)
+          .track(
+            AnalyticsEventName.appOpen,
+            properties: {'surface': kIsWeb ? 'web' : 'app'},
+          ),
+    );
   }
 
   void _setScreenAwake(bool enabled) {

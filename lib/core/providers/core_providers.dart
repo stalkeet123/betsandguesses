@@ -7,6 +7,7 @@ import '../services/realtime_service.dart';
 import '../services/audio_service.dart';
 import '../services/revenuecat_service.dart';
 import '../services/monetization_service.dart';
+import '../services/analytics_service.dart';
 import '../models/monetization_status.dart';
 import '../../features/room/services/room_service.dart';
 import '../../features/player/services/player_service.dart';
@@ -151,6 +152,9 @@ final isHostProvider = Provider<bool>((ref) {
 
 final monetizationServiceProvider = Provider<MonetizationService>(
   (ref) => MonetizationService(ref.watch(supabaseClientProvider)),
+);
+final analyticsServiceProvider = Provider<AnalyticsService>(
+  (ref) => AnalyticsService(ref.watch(supabaseClientProvider)),
 );
 final monetizationStatusProvider = FutureProvider<MonetizationStatus>(
   (ref) => ref.watch(monetizationServiceProvider).getStatus(),

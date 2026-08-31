@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/core_providers.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 
@@ -97,19 +98,31 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  Future<void> _finish() async {
+  Future<void> _finish({required String method}) async {
     HapticFeedback.mediumImpact();
     ref.read(audioServiceProvider).playClick();
+    unawaited(
+      ref
+          .read(analyticsServiceProvider)
+          .track(
+            AnalyticsEventName.onboardingCompleted,
+            properties: {'method': method},
+          ),
+    );
     await ref.read(onboardingSeenProvider.notifier).markSeen();
     if (!mounted) return;
-    context.goNamed(kIsWeb ? 'home' : 'premium');
+    if (kIsWeb) {
+      context.goNamed('home');
+    } else {
+      context.goNamed('premium', extra: 'onboarding');
+    }
   }
 
   void _next() {
     HapticFeedback.lightImpact();
     ref.read(audioServiceProvider).playClick();
     if (_pageIndex == _slides.length - 1) {
-      unawaited(_finish());
+      unawaited(_finish(method: 'completed'));
       return;
     }
     _pageController.nextPage(
@@ -265,7 +278,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           SizedBox(
             height: compact ? 40 : 44,
             child: TextButton(
-              onPressed: _finish,
+              onPressed: () => _finish(method: 'skip'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.brassLight,
                 padding: const EdgeInsets.symmetric(horizontal: 13),

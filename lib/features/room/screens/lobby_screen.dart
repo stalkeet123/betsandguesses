@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/constants/game_constants.dart';
 import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
@@ -273,8 +274,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     }
   }
 
-  Future<void> _openPaywall() async {
-    await context.pushNamed('premium');
+  Future<void> _openPaywall({required String entryPoint}) async {
+    await context.pushNamed('premium', extra: entryPoint);
     if (mounted) {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
@@ -333,7 +334,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     try {
       final isPremium = await _refreshPremiumEntitlementBeforeHostStart();
       if (!isPremium && _activePlayers.length > GameConstants.freeMaxPlayers) {
-        await _openPaywall();
+        await _openPaywall(entryPoint: 'lobby_player_limit');
         return;
       }
 
@@ -463,7 +464,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             content: Text("You've used your 3 free hosted games."),
           ),
         );
-        await _openPaywall();
+        await _openPaywall(entryPoint: 'host_limit');
       }
     } catch (e) {
       if (mounted) {
@@ -575,8 +576,23 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     return '$defaultWebUrl/#/?room=${widget.roomCode}';
   }
 
-  Future<void> _copyText(String text, String message) async {
+  Future<void> _copyText(
+    String text,
+    String message, {
+    bool trackInvitationLink = false,
+  }) async {
     await Clipboard.setData(ClipboardData(text: text));
+    if (trackInvitationLink) {
+      unawaited(
+        ref
+            .read(analyticsServiceProvider)
+            .track(
+              AnalyticsEventName.inviteLinkCopied,
+              roomId: ref.read(currentRoomProvider)?.id,
+              properties: {'surface': kIsWeb ? 'web' : 'app'},
+            ),
+      );
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
@@ -915,7 +931,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           SizedBox(
             height: 36,
             child: ElevatedButton.icon(
-              onPressed: () => _copyText(qrData, 'Invitation link copied.'),
+              onPressed: () => _copyText(
+                qrData,
+                'Invitation link copied.',
+                trackInvitationLink: true,
+              ),
               icon: const Icon(Icons.link_rounded, size: 18),
               label: const Text('COPY INVITE LINK'),
               style: ElevatedButton.styleFrom(

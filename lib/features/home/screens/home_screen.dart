@@ -357,7 +357,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     onPressed: () async {
                       Navigator.of(context).pop();
                       if (requiresPremiumAction) {
-                        await _goPremium();
+                        await _goPremium(
+                          entryPoint: hostingExhausted
+                              ? 'host_limit'
+                              : 'setup_limit',
+                        );
                         return;
                       }
                       _createRoom(
@@ -542,7 +546,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
       _showSnack("You've used your 3 free hosted games.");
-      if (mounted) await _goPremium();
+      if (mounted) await _goPremium(entryPoint: 'host_limit');
     } on PremiumSetupRequiredException catch (error) {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
@@ -555,7 +559,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           'Choosing a category requires premium.',
       };
       _showSnack(message);
-      if (mounted) await _goPremium();
+      if (mounted) await _goPremium(entryPoint: 'setup_limit');
     } catch (e) {
       _showSnack('Room could not be created: $e');
     } finally {
@@ -668,12 +672,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  Future<void> _goPremium() async {
+  Future<void> _goPremium({String entryPoint = 'home'}) async {
     if (kIsWeb) return;
 
     ref.read(audioServiceProvider).playClick();
     ref.read(audioServiceProvider).startMainBgm();
-    await context.pushNamed('premium');
+    await context.pushNamed('premium', extra: entryPoint);
     if (mounted) {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
