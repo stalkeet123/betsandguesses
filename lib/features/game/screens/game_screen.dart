@@ -385,20 +385,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
             gameNotifier.setRound(round);
             gameNotifier.updatePhase(phase);
-            GameTraceService.instance.trace('phase_applied', {
-              'source': 'broadcast_phase_change',
-              'round': round,
-              'phase': phase.name,
-              if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
-              'server_now_utc': ref
-                  .read(roomServiceProvider)
-                  .serverNow
-                  .toIso8601String(),
-              if (deadline != null)
-                'remaining_ms': deadline
-                    .difference(ref.read(roomServiceProvider).serverNow)
-                    .inMilliseconds,
-            });
+            _traceAppliedRoomPhase(
+              'broadcast_phase_change',
+              ref.read(currentRoomProvider),
+              roundOverride: round,
+              phaseOverride: phase,
+              deadlineOverride: deadline,
+              stateVersionOverride: (payload['state_version'] as num?)?.toInt(),
+              priorPhase: currentState.phase,
+            );
             _syncAudioForPhase(phase);
 
             if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
@@ -526,6 +521,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             roundOverride: round,
             phaseOverride: phase,
             deadlineOverride: deadline,
+            stateVersionOverride: (payload['state_version'] as num?)?.toInt(),
             priorPhase: priorPhase,
           );
           if (!_usedQuestionIds.contains(question.id)) {
@@ -810,17 +806,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
     int? roundOverride,
     RoundPhase? phaseOverride,
     DateTime? deadlineOverride,
+    int? stateVersionOverride,
     RoundPhase? priorPhase,
   }) {
     final deadline = deadlineOverride ?? room?.phaseEndsAt;
     final serverNow = ref.read(roomServiceProvider).serverNow;
     final round = roundOverride ?? room?.currentRound;
     final phase = phaseOverride ?? room?.roundPhase;
+    final stateVersion = stateVersionOverride ?? room?.stateVersion;
     GameTraceService.instance.trace('phase_applied', {
       'source': source,
       if (round != null) 'round': round,
       if (phase != null) 'phase': phase.name,
-      if (room != null) 'state_version': room.stateVersion,
+      if (stateVersion != null) 'state_version': stateVersion,
       if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
       'server_now_utc': serverNow.toIso8601String(),
       if (deadline != null)

@@ -422,12 +422,17 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     _partyTransitionRound = snapshot.round.number;
     _partyRoundTransitionTimer?.cancel();
     _showPartyRoundTransition = true;
+    final deadline = snapshot.round.phaseEndsAt;
+    final serverNow = ref.read(roomServiceProvider).serverNow;
     GameTraceService.instance.trace('party_transition_show', {
       'round': snapshot.round.number,
       'phase': snapshot.round.phase.name,
       'state_version': snapshot.stateVersion,
-      if (snapshot.round.phaseEndsAt != null)
-        'deadline_utc': snapshot.round.phaseEndsAt!.toIso8601String(),
+      'phase_started_at_utc': snapshot.round.phaseStartedAt.toIso8601String(),
+      if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+      'server_now_utc': serverNow.toIso8601String(),
+      if (deadline != null)
+        'remaining_ms': deadline.difference(serverNow).inMilliseconds,
     });
     unawaited(ref.read(audioServiceProvider).playQuestionReveal());
     setState(() {});
@@ -465,8 +470,17 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         'round': snapshot.round.number,
         'phase': snapshot.round.phase.name,
         'state_version': snapshot.stateVersion,
+        'phase_started_at_utc': snapshot.round.phaseStartedAt.toIso8601String(),
         if (snapshot.round.phaseEndsAt != null)
           'deadline_utc': snapshot.round.phaseEndsAt!.toIso8601String(),
+        'server_now_utc': ref
+            .read(roomServiceProvider)
+            .serverNow
+            .toIso8601String(),
+        if (snapshot.round.phaseEndsAt != null)
+          'remaining_ms': snapshot.round.phaseEndsAt!
+              .difference(ref.read(roomServiceProvider).serverNow)
+              .inMilliseconds,
       });
     }
     _clearStalePendingBetVisual(snapshot);

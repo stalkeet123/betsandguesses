@@ -120,13 +120,13 @@ class AudioService {
     if (_disposed || !_engineReady) return null;
 
     final loading = _sourceLoadFutures.putIfAbsent(asset, () async {
-      final startedAt = DateTime.now();
+      final loadWatch = Stopwatch()..start();
       GameTraceService.instance.trace('audio_load_begin', {'audio_key': asset});
       try {
         final source = await SoLoud.instance.loadAsset(asset);
         GameTraceService.instance.trace('audio_load_end', {
           'audio_key': asset,
-          'duration_ms': DateTime.now().difference(startedAt).inMilliseconds,
+          'duration_ms': loadWatch.elapsedMilliseconds,
           'success': true,
         });
         if (!_disposed) cache(source);
@@ -134,7 +134,7 @@ class AudioService {
       } catch (error) {
         GameTraceService.instance.trace('audio_load_failed', {
           'audio_key': asset,
-          'duration_ms': DateTime.now().difference(startedAt).inMilliseconds,
+          'duration_ms': loadWatch.elapsedMilliseconds,
           'error_type': error.runtimeType.toString(),
         });
         debugPrint('Audio load failed for $asset: $error');
@@ -344,6 +344,14 @@ class AudioService {
           _isMuted ||
           !_isAppActive ||
           requestId != _bgmRequestId) {
+        if (requestId != _bgmRequestId) {
+          GameTraceService.instance.trace('bgm_request_superseded', {
+            'audio_key': bgmKey,
+            'request_id': requestId,
+            'current_request_id': _bgmRequestId,
+            'after_play': true,
+          });
+        }
         await _safeStop(newHandle);
         return;
       }
@@ -402,12 +410,21 @@ class AudioService {
     _bgmRequestId++;
 
     final currentHandle = _bgmHandle;
+    final currentKey = _currentBgmKey;
     final handles = <SoundHandle>{
       if (currentHandle != null) currentHandle,
       ...?_backgroundSource?.handles,
       ...?_elevatorSource?.handles,
       ...?_questionSuspenseSource?.handles,
     };
+    if (handles.isNotEmpty) {
+      GameTraceService.instance.trace('bgm_stop', {
+        'audio_key': currentKey,
+        'handle_count': handles.length,
+        'immediate': immediate,
+        'preserve_desired': preserveDesired,
+      });
+    }
     _bgmHandle = null;
     _currentBgmSource = null;
     _currentBgmKey = null;
