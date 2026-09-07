@@ -14,6 +14,7 @@ import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/services/audio_service.dart';
 import '../../../core/services/realtime_service.dart';
+import '../../../core/services/game_trace_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../features/game/models/bet_model.dart';
@@ -296,10 +297,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _playQuestionRevealForRoundOnce(int round) {
     if (_revealedQuestionAudioRound == round) return;
     _revealedQuestionAudioRound = round;
+    GameTraceService.instance.trace('question_reveal_marked_round', {
+      'round': round,
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      GameTraceService.instance.trace('question_reveal_postframe', {
+        'round': round,
+      });
       if (!_canUseRef) return;
       final state = ref.read(gameStateProvider);
       if (state.currentRound != round || state.phase != RoundPhase.question) {
+        GameTraceService.instance.trace('question_reveal_postframe_skipped', {
+          'round': round,
+          'current_round': state.currentRound,
+          'phase': state.phase.name,
+        });
         return;
       }
       unawaited(ref.read(audioServiceProvider).playQuestionReveal());
@@ -344,6 +356,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
             final phase = RoundPhase.fromString(
               payload['phase'] as String? ?? 'idle',
             );
+            GameTraceService.instance.trace('phase_event_received', {
+              'source': 'broadcast_phase_change',
+              if (payload['round'] is num)
+                'round': (payload['round'] as num).toInt(),
+              'phase': phase.name,
+              if (payload['state_version'] is num)
+                'state_version': (payload['state_version'] as num).toInt(),
+              if (payload['phase_ends_at'] != null) 'deadline_utc': '',
+            });
             final round = (payload['round'] as num?)?.toInt();
             if (round == null) return;
             final currentState = ref.read(gameStateProvider);
@@ -363,6 +384,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
             gameNotifier.setRound(round);
             gameNotifier.updatePhase(phase);
+            GameTraceService.instance.trace('phase_applied', {
+              'source': 'broadcast_phase_change',
+              'round': round,
+              'phase': phase.name,
+              if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+              'server_now_utc': ref
+                  .read(roomServiceProvider)
+                  .serverNow
+                  .toIso8601String(),
+              if (deadline != null)
+                'remaining_ms': deadline
+                    .difference(ref.read(roomServiceProvider).serverNow)
+                    .inMilliseconds,
+            });
             _syncAudioForPhase(phase);
 
             if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
@@ -762,6 +797,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (!_canUseRef) return;
     if (_isResyncing) {
       _resyncRequested = true;
+      GameTraceService.instance.trace('classic_resync_requested_while_busy');
       return;
     }
     final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
@@ -778,6 +814,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _isResyncing = true;
     _resyncRequested = false;
     _pendingBetEvents.clear();
+    final traceWatch = Stopwatch()..start();
+    GameTraceService.instance.trace('classic_resync_begin', {
+      'source': 'classic_resync_snapshot',
+      'round': currentRoom.currentRound,
+      'phase': currentRoom.roundPhase.name,
+    });
     try {
       if (refreshRealtime) await _setupRealtime();
 
@@ -929,6 +971,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
       if (mounted) setState(() {});
     } finally {
+      GameTraceService.instance.trace('classic_resync_end', {
+        'source': 'classic_resync_snapshot',
+        'duration_ms': traceWatch.elapsedMilliseconds,
+      });
       _isResyncing = false;
       final shouldResyncAgain = _resyncRequested;
       _resyncRequested = false;
@@ -946,6 +992,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (!_canUseRef) return;
     if (_isResyncing) {
       _resyncRequested = true;
+      GameTraceService.instance.trace('classic_resync_requested_while_busy');
       return;
     }
     final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
@@ -1429,6 +1476,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _startRound(int round) async {
+    GameTraceService.instance.trace('classic_start_round_begin', {
+      'round': round,
+    });
     final room = ref.read(currentRoomProvider);
     if (room == null ||
         room.currentRound != round ||
@@ -1459,6 +1509,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     gameNotifier.setQuestion(question);
     gameNotifier.updatePhase(RoundPhase.guessing);
     _syncAudioForPhase(RoundPhase.guessing);
+    GameTraceService.instance.trace('classic_start_round_end', {
+      'round': round,
+      'phase': RoundPhase.guessing.name,
+    });
     _cancelRevealEffects();
     _roundWinners.clear();
     _roundPayouts.clear();
@@ -1993,7 +2047,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final failoverGrace = primary
         ? Duration.zero
         : const Duration(milliseconds: 250);
+    GameTraceService.instance.trace('classic_question_start_scheduled', {
+      'round': room.currentRound,
+      if (room.phaseEndsAt != null)
+        'deadline_utc': room.phaseEndsAt!.toIso8601String(),
+      'server_now_utc': ref
+          .read(roomServiceProvider)
+          .serverNow
+          .toIso8601String(),
+      'delay_ms': delay.inMilliseconds + failoverGrace.inMilliseconds,
+    });
     _questionStartTimer = Timer(delay + failoverGrace, () {
+      GameTraceService.instance.trace('classic_question_start_timer_fired', {
+        'round': room.currentRound,
+      });
       if (!_canUseRef) return;
       final latestRoom = ref.read(currentRoomProvider);
       if (latestRoom?.currentRound == room.currentRound &&

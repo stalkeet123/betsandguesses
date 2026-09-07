@@ -5,6 +5,8 @@ import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'game_trace_service.dart';
+
 class AudioService {
   final SharedPreferences _prefs;
   bool _isMuted = false;
@@ -67,6 +69,7 @@ class AudioService {
       kIsWeb ? _webEngineReady : SoLoud.instance.isInitialized;
 
   Future<void> _initPlayers() async {
+    GameTraceService.instance.trace('audio_init_begin');
     Object? lastError;
     final attempts = kIsWeb ? 20 : 1;
     final bufferSize =
@@ -82,6 +85,7 @@ class AudioService {
         if (kIsWeb) _webEngineReady = true;
         SoLoud.instance.setMaxActiveVoiceCount(16);
         await _applyVolumes();
+        GameTraceService.instance.trace('audio_init_success');
         return;
       } catch (error) {
         lastError = error;
@@ -92,6 +96,9 @@ class AudioService {
     }
 
     _initFuture = null;
+    GameTraceService.instance.trace('audio_init_failed', {
+      'error_type': lastError?.runtimeType.toString(),
+    });
     debugPrint('SoLoud init failed: $lastError');
   }
 
@@ -113,11 +120,23 @@ class AudioService {
     if (_disposed || !_engineReady) return null;
 
     final loading = _sourceLoadFutures.putIfAbsent(asset, () async {
+      final startedAt = DateTime.now();
+      GameTraceService.instance.trace('audio_load_begin', {'audio_key': asset});
       try {
         final source = await SoLoud.instance.loadAsset(asset);
+        GameTraceService.instance.trace('audio_load_end', {
+          'audio_key': asset,
+          'duration_ms': DateTime.now().difference(startedAt).inMilliseconds,
+          'success': true,
+        });
         if (!_disposed) cache(source);
         return source;
       } catch (error) {
+        GameTraceService.instance.trace('audio_load_failed', {
+          'audio_key': asset,
+          'duration_ms': DateTime.now().difference(startedAt).inMilliseconds,
+          'error_type': error.runtimeType.toString(),
+        });
         debugPrint('Audio load failed for $asset: $error');
         return null;
       }
@@ -199,10 +218,12 @@ class AudioService {
 
   Future<void> unlockFromUserGesture() async {
     if (!kIsWeb || _disposed) return;
+    GameTraceService.instance.trace('audio_web_unlock_begin');
     _webUserGestureReceived = true;
     await _ensureInitialized();
     await _applyVolumes();
     if (!_isMuted && _isAppActive) await _resumeDesiredBgm();
+    GameTraceService.instance.trace('audio_web_unlock_success');
   }
 
   Future<void> _applyVolumes() async {
@@ -220,10 +241,18 @@ class AudioService {
     String? bgmKey,
     Duration fadeDuration = const Duration(milliseconds: 300),
   }) async {
+    GameTraceService.instance.trace('bgm_request', {
+      'audio_key': bgmKey,
+      'desired_bgm': _desiredBgmKey,
+      'current_bgm': _currentBgmKey,
+    });
     if (bgmKey != null) {
       _desiredBgmKey = bgmKey;
       if (_currentBgmKey == bgmKey && _bgmHandle != null) {
         _pendingBgmKey = null;
+        GameTraceService.instance.trace('bgm_request_deduped', {
+          'audio_key': bgmKey,
+        });
         return;
       }
     }
@@ -239,6 +268,11 @@ class AudioService {
     if (bgmKey != null) _pendingBgmKey = bgmKey;
     final requestId = ++_bgmRequestId;
     final source = await loadSource();
+    GameTraceService.instance.trace('bgm_source_ready', {
+      'audio_key': bgmKey,
+      'request_id': requestId,
+      'source_ready': source != null,
+    });
     if (_isMuted ||
         !_isAppActive ||
         _disposed ||
@@ -269,6 +303,9 @@ class AudioService {
     _currentBgmKey = null;
     _bgmPausedForLifecycle = false;
     if (oldHandle != null) {
+      GameTraceService.instance.trace('bgm_old_handle_fade', {
+        'audio_key': _currentBgmKey,
+      });
       try {
         SoLoud.instance.fadeVolume(oldHandle, 0.0, fadeDuration);
         _scheduleHandleStop(oldHandle, fadeDuration);
@@ -278,6 +315,10 @@ class AudioService {
     }
 
     try {
+      GameTraceService.instance.trace('bgm_play_begin', {
+        'audio_key': bgmKey,
+        'request_id': requestId,
+      });
       final newHandle = await SoLoud.instance.play(
         source,
         volume: 0.0,
@@ -296,7 +337,16 @@ class AudioService {
       _bgmPausedForLifecycle = false;
       SoLoud.instance.setProtectVoice(newHandle, true);
       SoLoud.instance.fadeVolume(newHandle, volume, fadeDuration);
+      GameTraceService.instance.trace('bgm_play_success', {
+        'audio_key': bgmKey,
+        'request_id': requestId,
+      });
     } catch (error) {
+      GameTraceService.instance.trace('bgm_play_failed', {
+        'audio_key': bgmKey,
+        'request_id': requestId,
+        'error_type': error.runtimeType.toString(),
+      });
       debugPrint('Fade to BGM failed: $error');
     }
   }
@@ -409,7 +459,18 @@ class AudioService {
   }
 
   Future<void> startTicking() {
+    GameTraceService.instance.trace('ticking_request', {
+      'handle_count': _tickingClockSource?.handles.length ?? 0,
+    });
     if (_isMuted || !_isAppActive || _isTickingPlaying || _disposed) {
+      GameTraceService.instance.trace('sfx_skipped', {
+        'audio_key': 'clock/ticking',
+        'reason': _isMuted
+            ? 'muted'
+            : (!_isAppActive
+                  ? 'inactive'
+                  : (_disposed ? 'disposed' : 'existing_handle')),
+      });
       return Future<void>.value();
     }
     final pendingStart = _tickingStartFuture;
@@ -427,6 +488,9 @@ class AudioService {
   }
 
   Future<void> _startTicking(int generation) async {
+    GameTraceService.instance.trace('ticking_load_wait', {
+      'generation': generation,
+    });
     final source = await _loadTickingClockSource();
     if (_isMuted ||
         !_isAppActive ||
@@ -439,6 +503,7 @@ class AudioService {
 
     // Clean up any loop left by an older race before starting the sole timer.
     for (final handle in source.handles.toList(growable: false)) {
+      GameTraceService.instance.trace('ticking_existing_handles_cleanup');
       await _safeStop(handle);
     }
     if (generation != _tickingGeneration || !_isAppActive || _isMuted) return;
@@ -459,12 +524,18 @@ class AudioService {
       SoLoud.instance.setProtectVoice(handle, true);
       _tickingHandle = handle;
       _isTickingPlaying = true;
+      GameTraceService.instance.trace('ticking_start', {
+        'generation': generation,
+      });
     } catch (error) {
       debugPrint('Audio ticking failed: $error');
     }
   }
 
   Future<void> stopTicking() async {
+    GameTraceService.instance.trace('ticking_stop', {
+      'handle_count': _tickingClockSource?.handles.length ?? 0,
+    });
     _tickingGeneration++;
     _tickingStartFuture = null;
     _isTickingPlaying = false;
@@ -506,6 +577,9 @@ class AudioService {
 
   Future<void> setAppActive(bool active) async {
     if (_disposed || _isAppActive == active) return;
+    GameTraceService.instance.trace(
+      active ? 'audio_app_active' : 'audio_app_inactive',
+    );
     _isAppActive = active;
     if (!active) {
       _bgmRequestId++;
@@ -571,16 +645,30 @@ class AudioService {
     Duration minInterval = const Duration(milliseconds: 45),
     int maxInstances = 3,
   }) async {
+    GameTraceService.instance.trace('sfx_request', {'audio_key': key});
     if (_isMuted ||
         !_isAppActive ||
         _disposed ||
-        (kIsWeb && !_webUserGestureReceived))
+        (kIsWeb && !_webUserGestureReceived)) {
+      GameTraceService.instance.trace('sfx_skipped', {
+        'audio_key': key,
+        'reason': _isMuted
+            ? 'muted'
+            : (!_isAppActive
+                  ? 'inactive'
+                  : (_disposed ? 'disposed' : 'web_not_unlocked')),
+      });
       return;
+    }
 
     final requestedAt = DateTime.now();
     final previousRequest = _lastSfxPlayedAt[key];
     if (previousRequest != null &&
         requestedAt.difference(previousRequest) < minInterval) {
+      GameTraceService.instance.trace('sfx_skipped', {
+        'audio_key': key,
+        'reason': 'min_interval',
+      });
       return;
     }
 
@@ -598,11 +686,18 @@ class AudioService {
     if (previousPlay != null && playAt.difference(previousPlay) < minInterval) {
       return;
     }
-    if (source.handles.length >= maxInstances) return;
+    if (source.handles.length >= maxInstances) {
+      GameTraceService.instance.trace('sfx_skipped', {
+        'audio_key': key,
+        'reason': 'max_instances',
+      });
+      return;
+    }
 
     _lastSfxPlayedAt[key] = playAt;
     try {
       await SoLoud.instance.play(source, volume: volume);
+      GameTraceService.instance.trace('sfx_play', {'audio_key': key});
     } catch (error) {
       debugPrint('Audio sfx failed for $key: $error');
     }

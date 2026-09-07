@@ -1,5 +1,8 @@
 import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'game_trace_service.dart';
 
 typedef BetRowChangeCallback =
     void Function(Map<String, dynamic> record, bool isDelete);
@@ -34,6 +37,10 @@ class RealtimeService {
     RoomRowChangeCallback? onRoomRowChanged,
   }) {
     final channelName = 'room:$roomCode';
+    GameTraceService.instance.trace('realtime_join_requested', {
+      'source': 'broadcast',
+      'has_room_row_subscription': roomId != null && onRoomRowChanged != null,
+    });
 
     return _enqueueChannelOperation(channelName, () async {
       final existingChannel = _channels.remove(channelName);
@@ -66,14 +73,44 @@ class RealtimeService {
           .onPresenceSync((_) {
             onPresenceChanged?.call(currentPresenceDeviceIds());
           })
-          .onBroadcast(event: 'phase_change', callback: onPhaseChange)
+          .onBroadcast(
+            event: 'phase_change',
+            callback: (payload) {
+              GameTraceService.instance.trace('phase_change', {
+                'source': 'broadcast',
+                if (payload['round'] is num)
+                  'round': (payload['round'] as num).toInt(),
+                if (payload['phase'] != null) 'phase': '',
+                if (payload['state_version'] is num)
+                  'state_version': (payload['state_version'] as num).toInt(),
+                if (payload['phase_ends_at'] != null) 'deadline_utc': '',
+              });
+              onPhaseChange(payload);
+            },
+          )
           .onBroadcast(event: 'guess_submitted', callback: onGuessSubmitted)
           .onBroadcast(event: 'guesses_revealed', callback: onGuessesRevealed)
           .onBroadcast(event: 'bet_placed', callback: onBetPlaced)
           .onBroadcast(event: 'bet_removed', callback: onBetRemoved)
           .onBroadcast(event: 'score_update', callback: onScoreUpdate)
-          .onBroadcast(event: 'answer_revealed', callback: onAnswerRevealed)
-          .onBroadcast(event: 'game_started', callback: onGameStarted)
+          .onBroadcast(
+            event: 'answer_revealed',
+            callback: (payload) {
+              GameTraceService.instance.trace('answer_revealed', {
+                'source': 'broadcast',
+              });
+              onAnswerRevealed(payload);
+            },
+          )
+          .onBroadcast(
+            event: 'game_started',
+            callback: (payload) {
+              GameTraceService.instance.trace('game_started', {
+                'source': 'broadcast',
+              });
+              onGameStarted(payload);
+            },
+          )
           .onBroadcast(event: 'game_ended', callback: onGameEnded)
           .onBroadcast(
             event: 'player_joined',
@@ -114,7 +151,17 @@ class RealtimeService {
           ),
           callback: (payload) {
             if (payload.newRecord.isNotEmpty) {
-              onRoomRowChanged(payload.newRecord);
+              final record = payload.newRecord;
+              GameTraceService.instance.trace('room_row_received', {
+                'source': 'postgres',
+                if (record['current_round'] is num)
+                  'round': (record['current_round'] as num).toInt(),
+                if (record['round_phase'] != null) 'phase': '',
+                if (record['state_version'] is num)
+                  'state_version': (record['state_version'] as num).toInt(),
+                if (record['phase_ends_at'] != null) 'deadline_utc': '',
+              });
+              onRoomRowChanged(record);
             }
           },
         );
@@ -123,6 +170,9 @@ class RealtimeService {
       final subscriptionReady = Completer<void>();
       channel.subscribe((status, error) async {
         if (status == RealtimeSubscribeStatus.subscribed) {
+          GameTraceService.instance.trace('realtime_subscribed', {
+            'source': 'broadcast',
+          });
           if (!subscriptionReady.isCompleted) subscriptionReady.complete();
           if (presencePayload != null) {
             try {
@@ -139,6 +189,10 @@ class RealtimeService {
             (status == RealtimeSubscribeStatus.channelError ||
                 status == RealtimeSubscribeStatus.closed ||
                 status == RealtimeSubscribeStatus.timedOut)) {
+          GameTraceService.instance.trace('realtime_join_failed', {
+            'source': 'broadcast',
+            'status': status.name,
+          });
           subscriptionReady.completeError(
             StateError('Realtime subscription failed: $status ($error)'),
           );
@@ -182,6 +236,7 @@ class RealtimeService {
   /// Leave a room channel
   Future<void> leaveRoom(String roomCode) {
     final channelName = 'room:$roomCode';
+    GameTraceService.instance.trace('realtime_leave', {'source': 'broadcast'});
     return _enqueueChannelOperation(channelName, () async {
       final channel = _channels.remove(channelName);
       if (channel != null) await _client.removeChannel(channel);

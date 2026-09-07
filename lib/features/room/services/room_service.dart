@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/utils/helpers.dart';
+import '../../../core/services/game_trace_service.dart';
 import '../models/room_model.dart';
 
 Exception? roomCreationExceptionFor(PostgrestException error) {
@@ -34,11 +35,23 @@ class RoomService {
         lastSync != null &&
         DateTime.now().toUtc().difference(lastSync) <
             _serverClockCacheDuration) {
+      GameTraceService.instance.trace('server_clock_sync_cache_hit');
       return serverNow;
     }
 
+    GameTraceService.instance.trace('server_clock_sync_begin', {
+      'force': force,
+    });
     final requestStartedAt = DateTime.now().toUtc();
-    final response = await _client.rpc('game_server_time');
+    dynamic response;
+    try {
+      response = await _client.rpc('game_server_time');
+    } catch (error) {
+      GameTraceService.instance.trace('server_clock_sync_failed', {
+        'error_type': error.runtimeType.toString(),
+      });
+      rethrow;
+    }
     final requestFinishedAt = DateTime.now().toUtc();
     final serverTime = _parseServerTime(response);
     final midpoint = requestStartedAt.add(
@@ -46,6 +59,10 @@ class RoomService {
     );
     _serverClockOffset = serverTime.difference(midpoint);
     _lastServerClockSyncAt = requestFinishedAt;
+    GameTraceService.instance.trace('server_clock_sync_end', {
+      'rtt_ms': requestFinishedAt.difference(requestStartedAt).inMilliseconds,
+      'computed_offset_ms': _serverClockOffset.inMilliseconds,
+    });
     return serverNow;
   }
 

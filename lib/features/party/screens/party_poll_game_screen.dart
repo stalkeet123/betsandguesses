@@ -12,6 +12,7 @@ import '../../../core/constants/game_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/services/game_trace_service.dart';
 import '../../room/models/room_model.dart';
 import '../../room/providers/room_providers.dart';
 import '../models/party_poll_snapshot.dart';
@@ -93,6 +94,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   int? _activeRevealSlotIndex;
   bool _emphasizeRevealWinners = false;
   int? _lastDisplayedRemainingSecond;
+  String? _lastTracedSnapshotKey;
 
   @override
   void initState() {
@@ -292,15 +294,32 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
     _snapshotLoadInFlight = true;
+    final traceWatch = Stopwatch()..start();
+    GameTraceService.instance.trace('party_resync_begin', {
+      'source': 'party_snapshot',
+    });
     try {
       final snapshot = await ref
           .read(partyPollSessionProvider.notifier)
           .load(room.id);
       if (snapshot != null && mounted) {
+        GameTraceService.instance.trace('party_snapshot_applied', {
+          'source': 'party_resync_snapshot',
+          'round': snapshot.round.number,
+          'phase': snapshot.round.phase.name,
+          'state_version': snapshot.stateVersion,
+          if (snapshot.round.phaseEndsAt != null)
+            'deadline_utc': snapshot.round.phaseEndsAt!.toIso8601String(),
+          'duration_ms': traceWatch.elapsedMilliseconds,
+        });
         ref.read(currentRoomProvider.notifier).set(snapshot.room);
         if (connectRealtime) unawaited(_connectRealtime(snapshot));
       }
     } finally {
+      GameTraceService.instance.trace('party_resync_end', {
+        'source': 'party_snapshot',
+        'duration_ms': traceWatch.elapsedMilliseconds,
+      });
       _snapshotLoadInFlight = false;
     }
   }
@@ -316,7 +335,17 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             presencePayload: player == null
                 ? null
                 : {'device_id': player.deviceId, 'player_id': player.id},
-            onPhaseChange: (_) => _scheduleSnapshotReload(),
+            onPhaseChange: (payload) {
+              GameTraceService.instance.trace('party_phase_hint_received', {
+                'source': 'broadcast',
+                if (payload['round'] is num)
+                  'round': (payload['round'] as num).toInt(),
+                if (payload['phase'] != null) 'phase': '',
+                if (payload['state_version'] is num)
+                  'state_version': (payload['state_version'] as num).toInt(),
+              });
+              _scheduleSnapshotReload();
+            },
             onGuessSubmitted: (_) => _scheduleSnapshotReload(),
             onGuessesRevealed: (_) => _scheduleSnapshotReload(),
             onBetPlaced: (_) => _scheduleSnapshotReload(),
@@ -325,7 +354,17 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             onAnswerRevealed: (_) => _scheduleSnapshotReload(),
             onGameStarted: (_) => _scheduleSnapshotReload(),
             onGameEnded: (_) => _scheduleSnapshotReload(),
-            onRoomRowChanged: (_) => _scheduleSnapshotReload(),
+            onRoomRowChanged: (record) {
+              GameTraceService.instance.trace('party_phase_hint_received', {
+                'source': 'postgres',
+                if (record['current_round'] is num)
+                  'round': (record['current_round'] as num).toInt(),
+                if (record['round_phase'] != null) 'phase': '',
+                if (record['state_version'] is num)
+                  'state_version': (record['state_version'] as num).toInt(),
+              });
+              _scheduleSnapshotReload();
+            },
           );
     } catch (_) {
       // Periodic snapshot refresh remains the recovery path.
@@ -333,6 +372,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _scheduleSnapshotReload() {
+    GameTraceService.instance.trace('party_resync_scheduled', {
+      'source': 'party_snapshot',
+      'delay_ms': 350,
+    });
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 350), () {
       unawaited(_loadSnapshot());
@@ -378,9 +421,21 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     _partyTransitionRound = snapshot.round.number;
     _partyRoundTransitionTimer?.cancel();
     _showPartyRoundTransition = true;
+    GameTraceService.instance.trace('party_transition_show', {
+      'round': snapshot.round.number,
+      'phase': snapshot.round.phase.name,
+      'state_version': snapshot.stateVersion,
+      if (snapshot.round.phaseEndsAt != null)
+        'deadline_utc': snapshot.round.phaseEndsAt!.toIso8601String(),
+    });
     unawaited(ref.read(audioServiceProvider).playQuestionReveal());
     setState(() {});
     _partyRoundTransitionTimer = Timer(const Duration(milliseconds: 2100), () {
+      GameTraceService.instance.trace('party_transition_hide', {
+        'round': snapshot.round.number,
+        'phase': snapshot.round.phase.name,
+        'elapsed_visible_ms': 2100,
+      });
       if (mounted) setState(() => _showPartyRoundTransition = false);
     });
   }
@@ -400,6 +455,18 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _observePresentationSnapshot(PartyPollSnapshot snapshot) {
+    final traceKey = '::';
+    if (_lastTracedSnapshotKey != traceKey) {
+      _lastTracedSnapshotKey = traceKey;
+      GameTraceService.instance.trace('phase_applied', {
+        'source': 'party_snapshot',
+        'round': snapshot.round.number,
+        'phase': snapshot.round.phase.name,
+        'state_version': snapshot.stateVersion,
+        if (snapshot.round.phaseEndsAt != null)
+          'deadline_utc': snapshot.round.phaseEndsAt!.toIso8601String(),
+      });
+    }
     _clearStalePendingBetVisual(snapshot);
     _reconcileOptimisticallyHiddenBets(snapshot);
     _observeRevealSnapshot(snapshot);

@@ -14,9 +14,23 @@ import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/providers/core_providers.dart';
 import 'core/services/analytics_service.dart';
+import 'core/services/game_trace_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (GameTraceService.instance.enabled) {
+    WidgetsBinding.instance.addTimingsCallback((timings) {
+      for (final timing in timings) {
+        final total = timing.totalSpan;
+        if (total.inMilliseconds <= 32) continue;
+        GameTraceService.instance.trace('frame_jank', {
+          'build_ms': timing.buildDuration.inMilliseconds,
+          'raster_ms': timing.rasterDuration.inMilliseconds,
+          'total_ms': total.inMilliseconds,
+        });
+      }
+    });
+  }
 
   final imageCache = PaintingBinding.instance.imageCache;
   imageCache.maximumSize = 50;
@@ -197,29 +211,31 @@ class _TahminAppState extends ConsumerState<TahminApp>
       theme: AppTheme.darkTheme,
       routerConfig: appRouter,
       builder: (context, child) {
-        return Container(
-          color: const Color(
-            0xFF0F0805,
-          ), // Dark luxury casino leather background for desktop borders
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: child != null
-                  ? kIsWeb
-                        ? Listener(
-                            behavior: HitTestBehavior.translucent,
-                            onPointerDown: (_) {
-                              if (!_hasInteracted) {
-                                _hasInteracted = true;
-                                ref
-                                    .read(audioServiceProvider)
-                                    .unlockFromUserGesture();
-                              }
-                            },
-                            child: ClipRect(child: child),
-                          )
-                        : ClipRect(child: child)
-                  : const SizedBox.shrink(),
+        return GameTraceOverlay(
+          child: Container(
+            color: const Color(
+              0xFF0F0805,
+            ), // Dark luxury casino leather background for desktop borders
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: child != null
+                    ? kIsWeb
+                          ? Listener(
+                              behavior: HitTestBehavior.translucent,
+                              onPointerDown: (_) {
+                                if (!_hasInteracted) {
+                                  _hasInteracted = true;
+                                  ref
+                                      .read(audioServiceProvider)
+                                      .unlockFromUserGesture();
+                                }
+                              },
+                              child: ClipRect(child: child),
+                            )
+                          : ClipRect(child: child)
+                    : const SizedBox.shrink(),
+              ),
             ),
           ),
         );
