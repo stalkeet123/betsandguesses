@@ -340,7 +340,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                 'source': 'broadcast',
                 if (payload['round'] is num)
                   'round': (payload['round'] as num).toInt(),
-                if (payload['phase'] != null) 'phase': '',
+                if (payload['phase'] != null) 'phase': '${payload['phase']}',
                 if (payload['state_version'] is num)
                   'state_version': (payload['state_version'] as num).toInt(),
               });
@@ -359,7 +359,8 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                 'source': 'postgres',
                 if (record['current_round'] is num)
                   'round': (record['current_round'] as num).toInt(),
-                if (record['round_phase'] != null) 'phase': '',
+                if (record['round_phase'] != null)
+                  'phase': '${record['round_phase']}',
                 if (record['state_version'] is num)
                   'state_version': (record['state_version'] as num).toInt(),
               });
@@ -455,7 +456,8 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _observePresentationSnapshot(PartyPollSnapshot snapshot) {
-    final traceKey = '::';
+    final traceKey =
+        '${snapshot.round.number}:${snapshot.round.phase.name}:${snapshot.stateVersion}';
     if (_lastTracedSnapshotKey != traceKey) {
       _lastTracedSnapshotKey = traceKey;
       GameTraceService.instance.trace('phase_applied', {

@@ -363,7 +363,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
               'phase': phase.name,
               if (payload['state_version'] is num)
                 'state_version': (payload['state_version'] as num).toInt(),
-              if (payload['phase_ends_at'] != null) 'deadline_utc': '',
+              if (payload['phase_ends_at'] != null)
+                'deadline_utc': '${payload['phase_ends_at']}',
             });
             final round = (payload['round'] as num?)?.toInt();
             if (round == null) return;
@@ -512,11 +513,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
           );
           final deadline = _deadlineFromPayload(payload);
           final gameNotifier = ref.read(gameStateProvider.notifier);
+          final priorPhase = ref.read(gameStateProvider).phase;
           gameNotifier.startGame(
             round: round,
             phase: phase,
             question: question,
             scores: scores,
+          );
+          _traceAppliedRoomPhase(
+            'game_started_broadcast',
+            ref.read(currentRoomProvider),
+            roundOverride: round,
+            phaseOverride: phase,
+            deadlineOverride: deadline,
+            priorPhase: priorPhase,
           );
           if (!_usedQuestionIds.contains(question.id)) {
             _usedQuestionIds.add(question.id);
@@ -721,6 +731,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
         notifier.updatePhase(room.roundPhase);
       }
 
+      _traceAppliedRoomPhase(
+        'postgres_room_row',
+        room,
+        priorPhase: gameState.phase,
+      );
       _syncAudioForPhase(room.roundPhase);
       if (room.roundPhase == RoundPhase.question) {
         _playQuestionRevealForRoundOnce(max(1, room.currentRound));
@@ -789,6 +804,52 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  void _traceAppliedRoomPhase(
+    String source,
+    Room? room, {
+    int? roundOverride,
+    RoundPhase? phaseOverride,
+    DateTime? deadlineOverride,
+    RoundPhase? priorPhase,
+  }) {
+    final deadline = deadlineOverride ?? room?.phaseEndsAt;
+    final serverNow = ref.read(roomServiceProvider).serverNow;
+    final round = roundOverride ?? room?.currentRound;
+    final phase = phaseOverride ?? room?.roundPhase;
+    GameTraceService.instance.trace('phase_applied', {
+      'source': source,
+      if (round != null) 'round': round,
+      if (phase != null) 'phase': phase.name,
+      if (room != null) 'state_version': room.stateVersion,
+      if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+      'server_now_utc': serverNow.toIso8601String(),
+      if (deadline != null)
+        'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+    });
+    if (priorPhase != null && priorPhase != phase) {
+      if (phase == RoundPhase.question) {
+        GameTraceService.instance.trace('classic_transition_enter', {
+          'source': source,
+          if (round != null) 'round': round,
+          if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+          'server_now_utc': serverNow.toIso8601String(),
+          if (deadline != null)
+            'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+        });
+      } else if (priorPhase == RoundPhase.question) {
+        GameTraceService.instance.trace('classic_transition_exit', {
+          'source': source,
+          if (round != null) 'round': round,
+          if (phase != null) 'phase': phase.name,
+          if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+          'server_now_utc': serverNow.toIso8601String(),
+          if (deadline != null)
+            'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+        });
+      }
+    }
+  }
+
   Future<void> _resyncFromServer({
     bool refreshRealtime = false,
     Room? roomOverride,
@@ -827,6 +888,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final playerService = ref.read(playerServiceProvider);
       final gameService = ref.read(gameServiceProvider);
       final gameNotifier = ref.read(gameStateProvider.notifier);
+      final stageWatch = Stopwatch()..start();
 
       if (synchronizeClock) {
         try {
@@ -834,9 +896,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
         } catch (_) {
           // The local fallback remains available for older schemas or outages.
         }
+        GameTraceService.instance.trace('classic_resync_clock_sync', {
+          'duration_ms': stageWatch.elapsedMilliseconds,
+        });
+        stageWatch
+          ..reset()
+          ..start();
       }
 
       final room = roomOverride ?? await roomService.getRoom(currentRoom.id);
+      GameTraceService.instance.trace('classic_resync_room_fetch', {
+        'duration_ms': stageWatch.elapsedMilliseconds,
+        if (roomOverride != null) 'skipped': true,
+      });
+      stageWatch
+        ..reset()
+        ..start();
       ref.read(currentRoomProvider.notifier).set(room);
 
       if (room.status == RoomStatus.finished) {
@@ -850,6 +925,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
 
       _players = await playerService.getPlayers(room.id);
+      GameTraceService.instance.trace('classic_resync_players_fetch', {
+        'duration_ms': stageWatch.elapsedMilliseconds,
+      });
+      stageWatch
+        ..reset()
+        ..start();
       final currentPlayer = _restoreCurrentPlayer(room.id);
       final scores = <String, int>{
         for (final player in _players) player.id: player.score,
@@ -894,6 +975,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
       }
 
+      GameTraceService.instance.trace('classic_resync_game_data_fetch', {
+        'duration_ms': stageWatch.elapsedMilliseconds,
+        if (round <= 0) 'skipped': true,
+      });
       gameNotifier.applySnapshot(
         roomId: room.id,
         roomCode: room.code,
@@ -912,6 +997,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         hasSubmittedGuess:
             currentPlayer != null &&
             enrichedGuesses.any((guess) => guess.playerId == currentPlayer.id),
+      );
+      _traceAppliedRoomPhase(
+        'classic_resync_snapshot',
+        room,
+        roundOverride: round,
+        phaseOverride: phase,
+        priorPhase: oldState.phase,
       );
       if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
         _playQuestionRevealOnce(question);
@@ -1508,6 +1600,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
     gameNotifier.setRound(round);
     gameNotifier.setQuestion(question);
     gameNotifier.updatePhase(RoundPhase.guessing);
+    _traceAppliedRoomPhase(
+      'host_local_claim',
+      claimedRoom,
+      roundOverride: round,
+      phaseOverride: RoundPhase.guessing,
+      priorPhase: room.roundPhase,
+    );
     _syncAudioForPhase(RoundPhase.guessing);
     GameTraceService.instance.trace('classic_start_round_end', {
       'round': round,
@@ -1587,6 +1686,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
       gameNotifier.setGuesses(enrichedGuesses);
       gameNotifier.updatePhase(RoundPhase.betting);
+      _traceAppliedRoomPhase(
+        'host_local_claim',
+        claimedRoom,
+        roundOverride: gameState.currentRound,
+        phaseOverride: RoundPhase.betting,
+        priorPhase: gameState.phase,
+      );
       _syncAudioForPhase(RoundPhase.betting);
       _stopTimer();
 
@@ -2022,6 +2128,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ref
           .read(gameStateProvider.notifier)
           .beginAuthoritativeRound(nextRound, RoundPhase.question);
+      _traceAppliedRoomPhase(
+        'host_local_claim',
+        claimedRoom,
+        roundOverride: nextRound,
+        phaseOverride: RoundPhase.question,
+        priorPhase: gameState.phase,
+      );
       _syncAudioForPhase(RoundPhase.question);
       _playQuestionRevealForRoundOnce(nextRound);
       if (mounted) setState(() {});

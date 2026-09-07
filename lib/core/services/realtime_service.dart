@@ -80,10 +80,11 @@ class RealtimeService {
                 'source': 'broadcast',
                 if (payload['round'] is num)
                   'round': (payload['round'] as num).toInt(),
-                if (payload['phase'] != null) 'phase': '',
+                if (payload['phase'] != null) 'phase': '${payload['phase']}',
                 if (payload['state_version'] is num)
                   'state_version': (payload['state_version'] as num).toInt(),
-                if (payload['phase_ends_at'] != null) 'deadline_utc': '',
+                if (payload['phase_ends_at'] != null)
+                  'deadline_utc': '${payload['phase_ends_at']}',
               });
               onPhaseChange(payload);
             },
@@ -156,10 +157,12 @@ class RealtimeService {
                 'source': 'postgres',
                 if (record['current_round'] is num)
                   'round': (record['current_round'] as num).toInt(),
-                if (record['round_phase'] != null) 'phase': '',
+                if (record['round_phase'] != null)
+                  'phase': '${record['round_phase']}',
                 if (record['state_version'] is num)
                   'state_version': (record['state_version'] as num).toInt(),
-                if (record['phase_ends_at'] != null) 'deadline_utc': '',
+                if (record['phase_ends_at'] != null)
+                  'deadline_utc': '${record['phase_ends_at']}',
               });
               onRoomRowChanged(record);
             }

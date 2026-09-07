@@ -283,8 +283,22 @@ class AudioService {
       }
       return;
     }
-    if (requestId != _bgmRequestId) return;
-    if (bgmKey != null && _pendingBgmKey != bgmKey) return;
+    if (requestId != _bgmRequestId) {
+      GameTraceService.instance.trace('bgm_request_superseded', {
+        'audio_key': bgmKey,
+        'request_id': requestId,
+        'current_request_id': _bgmRequestId,
+      });
+      return;
+    }
+    if (bgmKey != null && _pendingBgmKey != bgmKey) {
+      GameTraceService.instance.trace('bgm_request_superseded', {
+        'audio_key': bgmKey,
+        'request_id': requestId,
+        'desired_bgm': _pendingBgmKey,
+      });
+      return;
+    }
     _pendingBgmKey = null;
 
     if (_currentBgmSource == source && _bgmHandle != null) {
@@ -298,16 +312,18 @@ class AudioService {
     }
 
     final oldHandle = _bgmHandle;
+    final oldKey = _currentBgmKey;
     _bgmHandle = null;
     _currentBgmSource = null;
     _currentBgmKey = null;
     _bgmPausedForLifecycle = false;
     if (oldHandle != null) {
       GameTraceService.instance.trace('bgm_old_handle_fade', {
-        'audio_key': _currentBgmKey,
+        'audio_key': oldKey,
       });
       try {
         SoLoud.instance.fadeVolume(oldHandle, 0.0, fadeDuration);
+        GameTraceService.instance.trace('bgm_stop', {'audio_key': oldKey});
         _scheduleHandleStop(oldHandle, fadeDuration);
       } catch (error) {
         await _safeStop(oldHandle);
@@ -498,6 +514,12 @@ class AudioService {
         generation != _tickingGeneration ||
         source == null ||
         !_engineReady) {
+      if (generation != _tickingGeneration) {
+        GameTraceService.instance.trace('ticking_stale_generation', {
+          'expected_generation': generation,
+          'current_generation': _tickingGeneration,
+        });
+      }
       return;
     }
 
@@ -506,7 +528,15 @@ class AudioService {
       GameTraceService.instance.trace('ticking_existing_handles_cleanup');
       await _safeStop(handle);
     }
-    if (generation != _tickingGeneration || !_isAppActive || _isMuted) return;
+    if (generation != _tickingGeneration || !_isAppActive || _isMuted) {
+      if (generation != _tickingGeneration) {
+        GameTraceService.instance.trace('ticking_stale_generation', {
+          'expected_generation': generation,
+          'current_generation': _tickingGeneration,
+        });
+      }
+      return;
+    }
 
     try {
       final handle = await SoLoud.instance.play(
@@ -678,12 +708,26 @@ class AudioService {
         !_isAppActive ||
         source == null ||
         !_engineReady) {
+      GameTraceService.instance.trace('sfx_skipped', {
+        'audio_key': key,
+        'reason': source == null
+            ? 'source_missing'
+            : (!_engineReady
+                  ? 'engine_not_ready'
+                  : (_isMuted
+                        ? 'muted'
+                        : (!_isAppActive ? 'inactive' : 'disposed'))),
+      });
       return;
     }
 
     final playAt = DateTime.now();
     final previousPlay = _lastSfxPlayedAt[key];
     if (previousPlay != null && playAt.difference(previousPlay) < minInterval) {
+      GameTraceService.instance.trace('sfx_skipped', {
+        'audio_key': key,
+        'reason': 'min_interval',
+      });
       return;
     }
     if (source.handles.length >= maxInstances) {
@@ -699,6 +743,10 @@ class AudioService {
       await SoLoud.instance.play(source, volume: volume);
       GameTraceService.instance.trace('sfx_play', {'audio_key': key});
     } catch (error) {
+      GameTraceService.instance.trace('sfx_play_failed', {
+        'audio_key': key,
+        'error_type': error.runtimeType.toString(),
+      });
       debugPrint('Audio sfx failed for $key: $error');
     }
   }
