@@ -59,6 +59,74 @@ void main() {
     });
   });
 
+  group('classic phase presentation identity', () {
+    test('presents the first phase entry', () {
+      expect(
+        GameSyncPolicy.shouldPresentPhaseEntry(
+          presentedRound: null,
+          presentedPhase: null,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+        ),
+        isTrue,
+      );
+    });
+
+    test('dedupes the same logical phase from another transport', () {
+      expect(
+        GameSyncPolicy.shouldPresentPhaseEntry(
+          presentedRound: 2,
+          presentedPhase: RoundPhase.guessing,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+        ),
+        isFalse,
+      );
+    });
+
+    test('accepts a newer phase and a newer round', () {
+      expect(
+        GameSyncPolicy.shouldPresentPhaseEntry(
+          presentedRound: 2,
+          presentedPhase: RoundPhase.guessing,
+          eventRound: 2,
+          eventPhase: RoundPhase.betting,
+        ),
+        isTrue,
+      );
+      expect(
+        GameSyncPolicy.shouldPresentPhaseEntry(
+          presentedRound: 2,
+          presentedPhase: RoundPhase.revealAnswer,
+          eventRound: 3,
+          eventPhase: RoundPhase.question,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects an older phase or round', () {
+      expect(
+        GameSyncPolicy.shouldPresentPhaseEntry(
+          presentedRound: 2,
+          presentedPhase: RoundPhase.betting,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+        ),
+        isFalse,
+      );
+      expect(
+        GameSyncPolicy.shouldPresentPhaseEntry(
+          presentedRound: 3,
+          presentedPhase: RoundPhase.question,
+          eventRound: 2,
+          eventPhase: RoundPhase.revealAnswer,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('deadline timer', () {
     test('rounds partial seconds up for display', () {
       final now = DateTime.utc(2026, 7, 15, 12);

@@ -3,6 +3,21 @@ import '../../../core/constants/game_constants.dart';
 class GameSyncPolicy {
   const GameSyncPolicy._();
 
+  static bool shouldPresentPhaseEntry({
+    required int? presentedRound,
+    required RoundPhase? presentedPhase,
+    required int eventRound,
+    required RoundPhase eventPhase,
+  }) {
+    if (presentedRound == null || presentedPhase == null) return true;
+    return shouldApplyPhase(
+      currentRound: presentedRound,
+      currentPhase: presentedPhase,
+      eventRound: eventRound,
+      eventPhase: eventPhase,
+    );
+  }
+
   static bool shouldApplyPhase({
     required int currentRound,
     required RoundPhase currentPhase,

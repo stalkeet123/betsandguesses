@@ -88,6 +88,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _isAppInForeground = true;
   bool _isActive = true;
   bool _isDisposed = false;
+  int? _lastPresentedClassicRound;
+  RoundPhase? _lastPresentedClassicPhase;
   late final AudioService _audioService;
   late final RealtimeService _realtimeService;
 
@@ -117,7 +119,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (room == null || room.status != RoomStatus.playing) return;
 
     final phase = room.roundPhase;
-    _syncAudioForPhase(phase);
+    _syncAudioForPhase(
+      phase,
+      source: 'bootstrap_room',
+      round: room.currentRound,
+      stateVersion: room.stateVersion,
+      deadline: room.phaseEndsAt,
+    );
     if (phase == RoundPhase.guessing) {
       _startTimer(GameConstants.guessTimerSeconds, deadline: room.phaseEndsAt);
     } else if (phase == RoundPhase.betting) {
@@ -186,7 +194,52 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
-  void _syncAudioForPhase(RoundPhase phase) {
+  void _syncAudioForPhase(
+    RoundPhase phase, {
+    String source = 'local',
+    int? round,
+    int? stateVersion,
+    DateTime? deadline,
+  }) {
+    final room = ref.read(currentRoomProvider);
+    if (room?.gameMode == GameMode.classic) {
+      final gameState = ref.read(gameStateProvider);
+      final eventRound =
+          round ??
+          (gameState.currentRound > 0
+              ? gameState.currentRound
+              : room?.currentRound ?? 0);
+      final serverNow = ref.read(roomServiceProvider).serverNow;
+      final shouldPresent = GameSyncPolicy.shouldPresentPhaseEntry(
+        presentedRound: _lastPresentedClassicRound,
+        presentedPhase: _lastPresentedClassicPhase,
+        eventRound: eventRound,
+        eventPhase: phase,
+      );
+      GameTraceService.instance.trace(
+        shouldPresent
+            ? 'classic_phase_presentation_applied'
+            : 'classic_phase_presentation_deduped',
+        {
+          'source': source,
+          'round': eventRound,
+          'phase': phase.name,
+          if (stateVersion != null) 'state_version': stateVersion,
+          if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+          'server_now_utc': serverNow.toIso8601String(),
+          if (deadline != null)
+            'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+          if (_lastPresentedClassicRound != null)
+            'presented_round': _lastPresentedClassicRound,
+          if (_lastPresentedClassicPhase != null)
+            'presented_phase': _lastPresentedClassicPhase!.name,
+        },
+      );
+      if (!shouldPresent) return;
+      _lastPresentedClassicRound = eventRound;
+      _lastPresentedClassicPhase = phase;
+    }
+
     final audio = ref.read(audioServiceProvider);
     switch (phase) {
       case RoundPhase.idle:
@@ -394,7 +447,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
               stateVersionOverride: (payload['state_version'] as num?)?.toInt(),
               priorPhase: currentState.phase,
             );
-            _syncAudioForPhase(phase);
+            _syncAudioForPhase(
+              phase,
+              source: 'broadcast_phase_change',
+              round: round,
+              stateVersion: (payload['state_version'] as num?)?.toInt(),
+              deadline: deadline,
+            );
 
             if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
               final questionData = payload['question'] as Map<String, dynamic>?;
@@ -485,7 +544,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ref
                   .read(gameStateProvider.notifier)
                   .revealAnswer(answer: answer, winningGuessId: winningGuessId);
-              _syncAudioForPhase(RoundPhase.revealAnswer);
+              _syncAudioForPhase(
+                RoundPhase.revealAnswer,
+                source: 'broadcast_answer_revealed',
+                round: ref.read(gameStateProvider).currentRound,
+              );
               unawaited(_startRevealSequence(ref.read(gameStateProvider)));
               _scheduleRoundAdvance();
             }
@@ -533,7 +596,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
             _isSubmittingGuess = false;
             _startTimer(GameConstants.guessTimerSeconds, deadline: deadline);
           }
-          _syncAudioForPhase(phase);
+          _syncAudioForPhase(
+            phase,
+            source: 'game_started_broadcast',
+            round: round,
+            stateVersion: (payload['state_version'] as num?)?.toInt(),
+            deadline: deadline,
+          );
         },
         onGameEnded: (_) {
           if (_canUseRef) {
@@ -732,7 +801,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         room,
         priorPhase: gameState.phase,
       );
-      _syncAudioForPhase(room.roundPhase);
+      _syncAudioForPhase(
+        room.roundPhase,
+        source: 'postgres_room_row',
+        round: room.currentRound,
+        stateVersion: room.stateVersion,
+        deadline: room.phaseEndsAt,
+      );
       if (room.roundPhase == RoundPhase.question) {
         _playQuestionRevealForRoundOnce(max(1, room.currentRound));
       }
@@ -1033,7 +1108,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _revealedResultRound = null;
       }
 
-      _syncAudioForPhase(phase);
+      _syncAudioForPhase(
+        phase,
+        source: 'classic_resync_snapshot',
+        round: round,
+        stateVersion: room.stateVersion,
+        deadline: room.phaseEndsAt,
+      );
       if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
         unawaited(_startRevealSequence(ref.read(gameStateProvider)));
         _scheduleRoundAdvance(deadline: room.phaseEndsAt);
