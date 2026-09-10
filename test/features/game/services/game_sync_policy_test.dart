@@ -338,10 +338,7 @@ void main() {
       )!;
       expect(resolved, deadline);
       expect(
-        GameSyncPolicy.remainingSeconds(
-          deadline: resolved,
-          now: receivedAt,
-        ),
+        GameSyncPolicy.remainingSeconds(deadline: resolved, now: receivedAt),
         2,
       );
       expect(
