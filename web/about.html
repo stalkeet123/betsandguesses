@@ -1,114 +1,366 @@
 <!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Bets & Guesses is the party game where everyone guesses, bets on the table, and plays for the win. Host on iPhone or join from the web.">
-    <meta name="theme-color" content="#07180f">
-    <meta property="og:title" content="Bets & Guesses | Guess. Bet. Win.">
-    <meta property="og:description" content="Host on iPhone, join from any browser, and turn every guess into a bet.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://bets-and-guesses.com/about">
-    <meta property="og:image" content="https://bets-and-guesses.com/screenshots/game-guess.webp">
-    <meta name="twitter:card" content="summary_large_image">
-    <link rel="canonical" href="https://bets-and-guesses.com/about">
-    <title>Bets &amp; Guesses | Guess. Bet. Win.</title>
-    <link rel="stylesheet" href="/style.css?v=20260716-2">
-    <link rel="icon" href="/icons/logo.webp" type="image/webp">
-</head>
-<body class="about-page">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A social guessing and betting game for your next game night. Host on iPhone. Friends join in their browser."
+    />
+    <meta name="theme-color" content="#101d18" />
+    <title>Good guesses. Great company. | Bets &amp; Guesses</title>
+    <link rel="icon" href="/icons/logo.webp" type="image/webp" />
+    <link rel="stylesheet" href="/style.css?v=20260910" />
+    <script src="/site.js?v=20260910" defer></script>
+    <link rel="canonical" href="https://bets-and-guesses.com/about" />
+    <meta
+      property="og:title"
+      content="Bets &amp; Guesses | Good guesses. Great company."
+    />
+    <meta
+      property="og:description"
+      content="The party game for good guesses and great company. Host on iPhone. Friends join in a browser."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bets-and-guesses.com/about" />
+    <meta
+      property="og:image"
+      content="https://bets-and-guesses.com/screenshots/game-guess.webp"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body id="top">
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
-        <div class="site-header-inner">
-            <a class="brand" href="/about.html" aria-label="Bets & Guesses home">
-                <img src="/icons/logo.webp" alt="" width="48" height="37">
-                <span>Bets &amp; Guesses</span>
-            </a>
-            <nav class="site-nav" aria-label="Main navigation">
-                <a href="#how-it-works">How it works</a>
-                <a href="/support.html">Support</a>
-                <a class="nav-primary" href="/">Play on Web</a>
-            </nav>
-        </div>
+      <div class="shell header-inner">
+        <a
+          class="wordmark"
+          href="/about.html"
+          aria-label="Bets and Guesses home"
+          >Bets<span class="brand-amp">&amp;</span>Guesses<span
+            class="brand-period"
+            >.</span
+          ></a
+        ><button
+          class="menu-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="site-nav"
+          hidden
+        >
+          <span>Menu</span><span class="menu-lines" aria-hidden="true"></span>
+        </button>
+        <nav class="site-nav" id="site-nav" aria-label="Main navigation">
+          <a href="/about.html#how-to-play">How to play</a
+          ><a href="/support.html">Support</a
+          ><a class="nav-join" href="/"
+            >Join a game
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5 12h14m-6-6 6 6-6 6"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              /></svg
+          ></a>
+        </nav>
+      </div>
     </header>
-
-    <main>
-        <section class="about-hero">
-            <div class="shell about-hero-inner">
-                <img class="about-hero-logo" src="/icons/logo.webp" alt="Bets & Guesses" width="640" height="492">
-                <div class="about-hero-copy">
-                    <p class="eyebrow">The party game for bold guesses</p>
-                    <h1>Bets &amp; Guesses</h1>
-                    <p>Guess the answer. Read the table. Bet your chips. You do not need to know everything, you just need to know who might.</p>
-                    <div class="button-row about-actions">
-                        <a class="button button-primary" href="/">Play on Web</a>
-                        <a class="button button-dark" href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">Download on the App Store</a>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="showcase-band" aria-labelledby="showcase-title">
-            <div class="shell">
-                <div class="section-heading showcase-heading">
-                    <p class="eyebrow">Around one table</p>
-                    <h2 id="showcase-title">A full game night in every round</h2>
-                    <p>One player hosts. Everyone else joins from a phone or browser and plays together in real time.</p>
-                </div>
-                <div class="screenshot-grid">
-                    <figure>
-                        <img src="/screenshots/game-guess.webp" alt="Bets & Guesses betting table during a trivia round" width="460" height="996" loading="lazy">
-                    </figure>
-                    <figure>
-                        <img src="/screenshots/game-bet.webp" alt="Bets & Guesses number entry screen" width="460" height="996" loading="lazy">
-                    </figure>
-                    <figure>
-                        <img src="/screenshots/game-reveal.webp" alt="Bets & Guesses private lobby and browser join screens" width="460" height="996" loading="lazy">
-                    </figure>
-                    <figure>
-                        <img src="/screenshots/game-results.webp" alt="Bets & Guesses final leaderboard" width="460" height="996" loading="lazy">
-                    </figure>
-                </div>
-            </div>
-        </section>
-
-        <section id="how-it-works" class="how-band">
-            <div class="shell">
-                <div class="section-heading compact-heading">
-                    <p class="eyebrow">How it works</p>
-                    <h2>Knowing the answer is only half the game</h2>
-                </div>
-                <ol class="game-flow">
-                    <li><span>01</span><div><h3>Make a guess</h3><p>Everyone submits a number before the table sees the spread.</p></div></li>
-                    <li><span>02</span><div><h3>Place your bets</h3><p>Put your chips on the answers you believe can win the round.</p></div></li>
-                    <li><span>03</span><div><h3>Take the pot</h3><p>The winning slot pays out. Read your friends well and climb the table.</p></div></li>
-                </ol>
-            </div>
-        </section>
-
-        <section class="play-band">
-            <div class="shell play-layout">
-                <div>
-                    <p class="eyebrow">Ready for the table?</p>
-                    <h2>Host on iPhone. Join from any browser.</h2>
-                    <p>No player accounts and no app download required for guests. Share the room code and start playing.</p>
-                </div>
-                <div class="play-actions">
-                    <a class="button button-primary" href="/">Play on Web</a>
-                    <a class="button button-light" href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">Get the iPhone App</a>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <footer class="site-footer">
-        <div class="shell footer-layout">
-            <p>&copy; 2026 Bets &amp; Guesses. All rights reserved.</p>
-            <div class="footer-links">
-                <a href="/support.html">Support</a>
-                <a href="/privacy.html">Privacy Policy</a>
-                <a href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr" target="_blank" rel="noopener noreferrer">App Store</a>
-            </div>
+    <main id="main">
+      <section class="hero shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">
+            <span class="status-dot"></span> YOUR NEXT GAME NIGHT
+          </p>
+          <h1 id="hero-title">Good guesses.<br />Great <em>company.</em></h1>
+          <p class="hero-description">
+            The party game where you don’t need every answer. Just a hunch, a
+            few chips, and friends worth betting on.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button button-lime"
+              href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr"
+              target="_blank"
+              rel="noopener noreferrer"
+              ><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M16.5 2c.2 1.5-.5 3-1.4 4-1 1-2.3 1.6-3.7 1.5-.2-1.4.5-2.9 1.4-3.9C13.8 2.6 15.3 2 16.5 2Zm3.3 16.4c-.6 1.3-.9 1.9-1.7 3-.9 1.1-2.1 2.5-3.6 2.5-1.3 0-1.6-.8-3.3-.8-1.6 0-2 .8-3.3.8-1.4.1-2.5-1.2-3.4-2.3C2 18.4.8 13.9 2.4 11.1c1.1-2 2.9-3.1 4.6-3.1 1.4 0 2.3.8 3.5.8 1.2 0 1.9-.8 3.6-.8 1.4 0 2.9.8 4 2-3.5 1.9-2.9 6.8.5 8.4h1.2Z"
+                  transform="translate(1 -1) scale(.92)"
+                /></svg
+              ><span>Get the iPhone app</span
+              ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M5 12h14m-6-6 6 6-6 6"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                /></svg></a
+            ><a class="text-link" href="/"
+              >Join a game <span aria-hidden="true">↗</span></a
+            >
+          </div>
+          <p class="hero-note">
+            <span class="tiny-check" aria-hidden="true">✓</span> Only the host
+            needs the app. Friends join in a browser.
+          </p>
         </div>
+        <div
+          class="story-art"
+          role="img"
+          aria-label="A playful composition of a cream question card, two friends’ number guesses, and colorful betting chips. An illustration inspired by the game’s colors."
+        >
+          <div class="story-orbit"></div>
+          <div class="story-question">
+            <div class="story-question-label">
+              <i></i><span>✦ &nbsp; QUESTION</span><i></i>
+            </div>
+            <p>How many hours<br />are in a year?</p>
+            <span class="story-question-note"
+              >A little knowledge. A wild guess.</span
+            >
+          </div>
+          <div class="story-guess story-guess-alex">
+            <span class="story-player"><i>A</i> Alex’s guess</span
+            ><strong>8,000</strong><span class="story-unit">hours</span>
+          </div>
+          <div class="story-guess story-guess-sam">
+            <span class="story-player"><i>S</i> Sam’s guess</span
+            ><strong>9,000</strong><span class="story-unit">hours</span>
+          </div>
+          <div class="story-chips" aria-hidden="true">
+            <span class="game-chip chip-burgundy"><span>50</span></span
+            ><span class="game-chip chip-purple"><span>100</span></span>
+          </div>
+          <div class="story-reveal">
+            <span>THE REVEAL</span><strong>8,760 <small>hours</small></strong
+            ><i aria-hidden="true">↗</i>
+          </div>
+          <span class="story-spark" aria-hidden="true">✦</span>
+        </div>
+      </section>
+      <div class="promise-strip">
+        <div class="shell promise-inner">
+          <p>Less scrolling.<br /><strong>More “one more round.”</strong></p>
+          <span>Guess a number</span
+          ><span class="strip-star" aria-hidden="true">✳</span
+          ><span>Back a hunch</span
+          ><span class="strip-star" aria-hidden="true">✳</span
+          ><span>Make a night of it</span>
+        </div>
+      </div>
+      <section
+        class="how-section light-section"
+        id="how-to-play"
+        aria-labelledby="how-title"
+      >
+        <div class="shell">
+          <div class="section-intro">
+            <p class="eyebrow">A GOOD NIGHT. THREE SIMPLE STEPS.</p>
+            <div class="section-intro-row">
+              <h2 id="how-title">
+                Knowing everything<br />is <em>overrated.</em>
+              </h2>
+              <p>
+                Somebody will be wildly wrong.<br />Somebody will get lucky.<br />That’s
+                where the fun starts.
+              </p>
+            </div>
+          </div>
+          <ol class="steps">
+            <li>
+              <div class="step-heading">
+                <span class="step-number">01</span>
+                <div class="step-symbol guess-symbol" aria-hidden="true">?</div>
+              </div>
+              <h3>Take a guess.</h3>
+              <p>
+                A question appears. Everyone puts down a number. A little
+                knowledge helps. A wild guess works, too.
+              </p>
+            </li>
+            <li>
+              <div class="step-heading">
+                <span class="step-number">02</span>
+                <div class="step-symbol bet-symbol" aria-hidden="true">
+                  <span class="game-chip chip-burgundy"><span>50</span></span>
+                </div>
+              </div>
+              <h3>Back a hunch.</h3>
+              <p>
+                Guesses hit the table. Put your chips where you think the real
+                answer lands. Trust yourself. Or trust a friend.
+              </p>
+            </li>
+            <li>
+              <div class="step-heading">
+                <span class="step-number">03</span>
+                <div class="step-symbol win-symbol" aria-hidden="true">↗</div>
+              </div>
+              <h3>Enjoy the reveal.</h3>
+              <p>
+                The answer is in. Winning bets pay out, the leaderboard shifts,
+                and suddenly everyone wants another round.
+              </p>
+            </li>
+          </ol>
+          <div class="how-footnote">
+            <span class="asterisk" aria-hidden="true">✳</span>
+            <p>You don’t need the right answer to make the right bet.</p>
+            <a href="/"
+              >Find your table
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M5 12h14m-6-6 6 6-6 6"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                /></svg
+            ></a>
+          </div>
+        </div>
+      </section>
+      <section class="together-section shell" aria-labelledby="together-title">
+        <div
+          class="join-illustration"
+          role="img"
+          aria-label="A sample room invitation with code PLAY and three friends ready to join from a browser."
+        >
+          <div class="join-grid"></div>
+          <div class="lobby-window">
+            <div class="window-bar">
+              <div class="window-dots"><i></i><i></i><i></i></div>
+              <span>Your next game night</span
+              ><span aria-hidden="true">↗</span>
+            </div>
+            <div class="lobby-body">
+              <span class="lobby-kicker">YOU’RE INVITED</span>
+              <p>Same room.<br />Different hunches.</p>
+              <div class="room-code" aria-hidden="true">
+                <span>P</span><span>L</span><span>A</span><span>Y</span>
+              </div>
+              <span class="sample-label">EXAMPLE ROOM CODE</span>
+              <div class="lobby-people">
+                <span class="person person-one">A</span
+                ><span class="person person-two">J</span
+                ><span class="person person-three">S</span
+                ><span class="people-label">The gang’s all here.</span>
+              </div>
+            </div>
+          </div>
+          <div class="browser-ticket">
+            <span class="browser-globe" aria-hidden="true">◎</span>
+            <div>
+              <strong>Just open your browser.</strong
+              ><span>No download for guests.</span>
+            </div>
+            <span aria-hidden="true">↗</span>
+          </div>
+          <span class="join-spark" aria-hidden="true">✳</span>
+        </div>
+        <div class="together-copy">
+          <p class="eyebrow">
+            <span class="status-dot"></span> LESS SETUP. MORE PLAY.
+          </p>
+          <h2 id="together-title">
+            One download.<br /><em>Everyone’s in.</em>
+          </h2>
+          <p>
+            Bring the people. We’ll bring the game. One person hosts on iPhone.
+            Everyone else scans the QR code or enters the room code in their
+            browser.
+          </p>
+          <ul class="simple-list">
+            <li>
+              <span aria-hidden="true">✓</span> No player accounts to create
+            </li>
+            <li>
+              <span aria-hidden="true">✓</span> No app install for your friends
+            </li>
+            <li>
+              <span aria-hidden="true">✓</span> Everyone plays on their own
+              phone
+            </li>
+          </ul>
+          <a
+            class="text-link"
+            href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Be the friend with a plan
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5 12h14m-6-6 6 6-6 6"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              /></svg
+          ></a>
+        </div>
+      </section>
+      <section class="night-section" aria-labelledby="night-title">
+        <div class="shell night-inner">
+          <div class="night-orbit" aria-hidden="true"></div>
+          <p class="eyebrow">THE GROUP CHAT FINALLY HAS A PLAN</p>
+          <h2 id="night-title">Make it<br />a <em>game night.</em></h2>
+          <p>Good friends. Questionable guesses.<br />One more round.</p>
+          <div class="night-actions">
+            <a
+              class="button button-ink"
+              href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr"
+              target="_blank"
+              rel="noopener noreferrer"
+              ><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M16.5 2c.2 1.5-.5 3-1.4 4-1 1-2.3 1.6-3.7 1.5-.2-1.4.5-2.9 1.4-3.9C13.8 2.6 15.3 2 16.5 2Zm3.3 16.4c-.6 1.3-.9 1.9-1.7 3-.9 1.1-2.1 2.5-3.6 2.5-1.3 0-1.6-.8-3.3-.8-1.6 0-2 .8-3.3.8-1.4.1-2.5-1.2-3.4-2.3C2 18.4.8 13.9 2.4 11.1c1.1-2 2.9-3.1 4.6-3.1 1.4 0 2.3.8 3.5.8 1.2 0 1.9-.8 3.6-.8 1.4 0 2.9.8 4 2-3.5 1.9-2.9 6.8.5 8.4h1.2Z"
+                  transform="translate(1 -1) scale(.92)"
+                /></svg
+              ><span>Get Bets &amp; Guesses</span
+              ><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M5 12h14m-6-6 6 6-6 6"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                /></svg></a
+            ><a class="night-join" href="/">Got a room code? Join here ↗</a>
+          </div>
+          <span class="night-star" aria-hidden="true">✳</span>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="shell">
+        <div class="footer-top">
+          <a class="wordmark" href="/about.html"
+            >Bets<span class="brand-amp">&amp;</span>Guesses<span
+              class="brand-period"
+              >.</span
+            ></a
+          >
+          <p>A little knowledge.<br />A lot of good company.</p>
+          <div class="footer-nav">
+            <a href="/about.html">The game</a><a href="/support.html">Support</a
+            ><a href="/privacy.html">Privacy policy</a
+            ><a
+              href="https://apps.apple.com/tr/app/bets-guesses-party-game/id6759844771?l=tr"
+              target="_blank"
+              rel="noopener noreferrer"
+              >App Store ↗</a
+            >
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span>© 2026 Bets &amp; Guesses</span
+          ><span>Made for nights together.</span
+          ><a href="#top">Back to top ↑</a>
+        </div>
+      </div>
     </footer>
-</body>
+  </body>
 </html>
