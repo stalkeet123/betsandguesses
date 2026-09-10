@@ -1940,3 +1940,8 @@ summary {
     font-size: 19px;
   }
 }
+
+/* Keep the longer hiccup question within the original two-line card. */
+.story-question.story-question-hiccup p {
+  font-size: 7cqw;
+}
