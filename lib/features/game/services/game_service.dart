@@ -105,6 +105,7 @@ class GameService {
       'submit_guess_v2',
       params: {'p_room_id': roomId, 'p_value': value},
     );
+    if (response == null) throw const GuessingWindowClosedException();
     return Guess.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
@@ -369,6 +370,12 @@ class GameService {
   }
 
   // ── Used Questions ──
+}
+
+/// A late guess is a normal client/server timer race. The RPC returns null
+/// after the authoritative guessing window has closed.
+class GuessingWindowClosedException implements Exception {
+  const GuessingWindowClosedException();
 }
 
 /// A late write is a normal client/server timer race, not a malformed bet.

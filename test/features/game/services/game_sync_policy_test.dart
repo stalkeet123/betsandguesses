@@ -59,6 +59,111 @@ void main() {
     });
   });
 
+  group('classic authoritative snapshot freshness', () {
+    test('rejects question after guessing in the same round', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.question,
+        ),
+        isFalse,
+      );
+    });
+
+    test('rejects guessing after betting in the same round', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 2,
+          currentPhase: RoundPhase.betting,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.guessing,
+        ),
+        isFalse,
+      );
+    });
+
+    test('accepts a newer same-phase reconciliation', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          currentStateVersion: 15,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.guessing,
+          incomingStateVersion: 16,
+        ),
+        isTrue,
+      );
+    });
+
+    test('accepts question when it belongs to a newer round', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 1,
+          currentPhase: RoundPhase.revealAnswer,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.question,
+        ),
+        isTrue,
+      );
+    });
+
+    test('accepts guessing after question in the same round', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 2,
+          currentPhase: RoundPhase.question,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.guessing,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects a resync that completes after local phase advancement', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          currentStateVersion: 15,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.question,
+          incomingStateVersion: 20,
+        ),
+        isFalse,
+      );
+    });
+
+    test('rejects an older same-phase state version', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          currentStateVersion: 16,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.guessing,
+          incomingStateVersion: 15,
+        ),
+        isFalse,
+      );
+    });
+
+    test('accepts same-phase reconciliation without version metadata', () {
+      expect(
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          currentStateVersion: 16,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.guessing,
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('classic phase presentation identity', () {
     test('presents the first phase entry', () {
       expect(

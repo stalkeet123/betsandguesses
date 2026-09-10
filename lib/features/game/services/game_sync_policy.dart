@@ -31,6 +31,30 @@ class GameSyncPolicy {
     return eventPhase.index > currentPhase.index;
   }
 
+  static bool shouldApplyClassicSnapshot({
+    required int currentRound,
+    required RoundPhase currentPhase,
+    int? currentStateVersion,
+    required int incomingRound,
+    required RoundPhase incomingPhase,
+    int? incomingStateVersion,
+  }) {
+    if (incomingRound < currentRound) return false;
+    if (incomingRound > currentRound) return true;
+
+    if (incomingPhase.index < currentPhase.index) return false;
+    if (incomingPhase.index > currentPhase.index) return true;
+
+    // Same-phase snapshots are useful reconciliations for data and deadline
+    // corrections. A known older state version is the only stale tie-breaker.
+    if (currentStateVersion != null &&
+        incomingStateVersion != null &&
+        incomingStateVersion < currentStateVersion) {
+      return false;
+    }
+    return true;
+  }
+
   static ClassicTimerReconciliation classicTimerReconciliation({
     required int? activeRound,
     required RoundPhase? activePhase,

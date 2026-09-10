@@ -33,7 +33,9 @@ class AudioService {
   Future<void>? _tickingStartFuture;
   int _tickingGeneration = 0;
 
-  final Set<Timer> _fadeStopTimers = {};
+  final Map<SoundHandle, String?> _ownedBgmHandles = {};
+  final Map<SoundHandle, Timer> _bgmStopTimers = {};
+  final Set<SoundHandle> _bgmStopsInFlight = {};
   Future<void>? _initFuture;
   final Map<String, Future<AudioSource?>> _sourceLoadFutures = {};
   String? _pendingBgmKey;
@@ -253,6 +255,7 @@ class AudioService {
     if (bgmKey != null) {
       _desiredBgmKey = bgmKey;
       if (_currentBgmKey == bgmKey && _bgmHandle != null) {
+        _registerBgmHandle(_bgmHandle!, bgmKey);
         _pendingBgmKey = null;
         GameTraceService.instance.trace('bgm_request_deduped', {
           'audio_key': bgmKey,
@@ -306,6 +309,7 @@ class AudioService {
     _pendingBgmKey = null;
 
     if (_currentBgmSource == source && _bgmHandle != null) {
+      _registerBgmHandle(_bgmHandle!, bgmKey);
       _currentBgmKey = bgmKey;
       try {
         SoLoud.instance.fadeVolume(_bgmHandle!, volume, fadeDuration);
@@ -322,28 +326,31 @@ class AudioService {
     _currentBgmKey = null;
     _bgmPausedForLifecycle = false;
     if (oldHandle != null) {
+      _registerBgmHandle(oldHandle, oldKey);
       GameTraceService.instance.trace('bgm_old_handle_fade', {
         'audio_key': oldKey,
       });
       try {
         SoLoud.instance.fadeVolume(oldHandle, 0.0, fadeDuration);
         GameTraceService.instance.trace('bgm_stop', {'audio_key': oldKey});
-        _scheduleHandleStop(oldHandle, fadeDuration);
+        _scheduleBgmHandleStop(oldHandle, fadeDuration);
       } catch (error) {
-        await _safeStop(oldHandle);
+        await _stopOwnedBgmHandle(oldHandle, reason: 'fade_failed');
       }
     }
 
+    SoundHandle? newHandle;
     try {
       GameTraceService.instance.trace('bgm_play_begin', {
         'audio_key': bgmKey,
         'request_id': requestId,
       });
-      final newHandle = await SoLoud.instance.play(
+      newHandle = await SoLoud.instance.play(
         source,
         volume: 0.0,
         looping: true,
       );
+      _registerBgmHandle(newHandle, bgmKey);
       if (_disposed ||
           _isMuted ||
           !_isAppActive ||
@@ -356,7 +363,10 @@ class AudioService {
             'after_play': true,
           });
         }
-        await _safeStop(newHandle);
+        await _stopOwnedBgmHandle(
+          newHandle,
+          reason: 'request_superseded_after_play',
+        );
         return;
       }
       _bgmHandle = newHandle;
@@ -370,6 +380,10 @@ class AudioService {
         'request_id': requestId,
       });
     } catch (error) {
+      final failedHandle = newHandle;
+      if (failedHandle != null) {
+        await _stopOwnedBgmHandle(failedHandle, reason: 'play_setup_failed');
+      }
       GameTraceService.instance.trace('bgm_play_failed', {
         'audio_key': bgmKey,
         'request_id': requestId,
@@ -415,12 +429,7 @@ class AudioService {
 
     final currentHandle = _bgmHandle;
     final currentKey = _currentBgmKey;
-    final handles = <SoundHandle>{
-      if (currentHandle != null) currentHandle,
-      ...?_backgroundSource?.handles,
-      ...?_elevatorSource?.handles,
-      ...?_questionSuspenseSource?.handles,
-    };
+    final handles = _ownedBgmHandles.keys.toList(growable: false);
     if (handles.isNotEmpty) {
       GameTraceService.instance.trace('bgm_stop', {
         'audio_key': currentKey,
@@ -433,33 +442,126 @@ class AudioService {
     _currentBgmSource = null;
     _currentBgmKey = null;
     _bgmPausedForLifecycle = false;
-    if (!_engineReady) return;
+    if (!_engineReady) {
+      for (final timer in _bgmStopTimers.values) {
+        timer.cancel();
+      }
+      _bgmStopTimers.clear();
+      _bgmStopsInFlight.clear();
+      _ownedBgmHandles.clear();
+      return;
+    }
 
     for (final handle in handles) {
       if (!immediate && handle == currentHandle) {
         try {
           const fadeDuration = Duration(milliseconds: 250);
           SoLoud.instance.fadeVolume(handle, 0.0, fadeDuration);
-          _scheduleHandleStop(handle, fadeDuration);
+          _scheduleBgmHandleStop(handle, fadeDuration);
         } catch (error) {
-          await _safeStop(handle);
+          await _stopOwnedBgmHandle(handle, reason: 'stop_fade_failed');
         }
       } else {
-        await _safeStop(handle);
+        await _stopOwnedBgmHandle(
+          handle,
+          reason: immediate ? 'immediate_stop' : 'retiring_stop',
+        );
       }
     }
   }
 
-  void _scheduleHandleStop(
+  void _registerBgmHandle(SoundHandle handle, String? audioKey) {
+    if (_ownedBgmHandles.containsKey(handle)) return;
+    _ownedBgmHandles[handle] = audioKey;
+    GameTraceService.instance.trace('bgm_handle_registered', {
+      'audio_key': audioKey,
+      'handle': '$handle',
+      'owned_handle_count': _ownedBgmHandles.length,
+    });
+  }
+
+  void _scheduleBgmHandleStop(
     SoundHandle handle, [
     Duration delay = const Duration(milliseconds: 250),
   ]) {
+    final audioKey = _ownedBgmHandles[handle];
+    if (!_ownedBgmHandles.containsKey(handle)) {
+      GameTraceService.instance.trace('bgm_stop_deduped', {
+        'audio_key': audioKey,
+        'handle': '$handle',
+        'reason': 'not_owned',
+      });
+      return;
+    }
+    if (_bgmStopTimers.containsKey(handle) ||
+        _bgmStopsInFlight.contains(handle)) {
+      GameTraceService.instance.trace('bgm_stop_deduped', {
+        'audio_key': audioKey,
+        'handle': '$handle',
+        'reason': _bgmStopTimers.containsKey(handle)
+            ? 'already_scheduled'
+            : 'already_in_flight',
+      });
+      return;
+    }
+    GameTraceService.instance.trace('bgm_handle_retiring', {
+      'audio_key': audioKey,
+      'handle': '$handle',
+      'delay_ms': delay.inMilliseconds,
+    });
     late final Timer timer;
     timer = Timer(delay, () {
-      _fadeStopTimers.remove(timer);
-      unawaited(_safeStop(handle));
+      if (_bgmStopTimers[handle] != timer) return;
+      _bgmStopTimers.remove(handle);
+      unawaited(
+        _stopOwnedBgmHandle(handle, reason: 'retirement_timer_complete'),
+      );
     });
-    _fadeStopTimers.add(timer);
+    _bgmStopTimers[handle] = timer;
+  }
+
+  Future<void> _stopOwnedBgmHandle(
+    SoundHandle handle, {
+    required String reason,
+  }) async {
+    final scheduledTimer = _bgmStopTimers.remove(handle);
+    scheduledTimer?.cancel();
+    final audioKey = _ownedBgmHandles[handle];
+    if (!_ownedBgmHandles.containsKey(handle)) {
+      GameTraceService.instance.trace('bgm_stop_deduped', {
+        'audio_key': audioKey,
+        'handle': '$handle',
+        'reason': 'not_owned',
+      });
+      return;
+    }
+    if (!_bgmStopsInFlight.add(handle)) {
+      GameTraceService.instance.trace('bgm_stop_deduped', {
+        'audio_key': audioKey,
+        'handle': '$handle',
+        'reason': 'already_in_flight',
+      });
+      return;
+    }
+
+    try {
+      await _safeStop(handle);
+    } finally {
+      _bgmStopsInFlight.remove(handle);
+      _ownedBgmHandles.remove(handle);
+      if (_bgmHandle == handle) {
+        _bgmHandle = null;
+        _currentBgmSource = null;
+        _currentBgmKey = null;
+        _bgmPausedForLifecycle = false;
+      }
+      GameTraceService.instance.trace('bgm_handle_stopped', {
+        'audio_key': audioKey,
+        'handle': '$handle',
+        'reason': reason,
+        'owned_handle_count': _ownedBgmHandles.length,
+      });
+    }
   }
 
   Future<void> _safeStop(SoundHandle handle) async {
@@ -702,7 +804,7 @@ class AudioService {
           _currentBgmSource = null;
           _currentBgmKey = null;
           _bgmPausedForLifecycle = false;
-          await _safeStop(handle);
+          await _stopOwnedBgmHandle(handle, reason: 'lifecycle_pause_failed');
         }
       }
       await _stopTicking(preserveDesired: true);
@@ -721,7 +823,10 @@ class AudioService {
         _currentBgmSource = null;
         _currentBgmKey = null;
         _bgmPausedForLifecycle = false;
-        await _safeStop(pausedHandle);
+        await _stopOwnedBgmHandle(
+          pausedHandle,
+          reason: 'lifecycle_resume_failed',
+        );
       }
     }
     if (!_isMuted && (_currentBgmKey != _desiredBgmKey || _bgmHandle == null)) {
@@ -952,10 +1057,10 @@ class AudioService {
     _disposed = true;
     _bgmRequestId++;
     _tickingGeneration++;
-    for (final timer in _fadeStopTimers) {
+    for (final timer in _bgmStopTimers.values) {
       timer.cancel();
     }
-    _fadeStopTimers.clear();
+    _bgmStopTimers.clear();
     unawaited(_disposeAudio());
   }
 
