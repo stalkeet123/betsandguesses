@@ -27,6 +27,15 @@ class ClassicSnapshot {
     required this.serverNow,
   });
 
+  ClassicSnapshot withServerNow(DateTime value) => ClassicSnapshot(
+    room: room,
+    players: players,
+    guesses: guesses,
+    bets: bets,
+    question: question,
+    serverNow: value,
+  );
+
   factory ClassicSnapshot.fromResponse(Object? response) {
     Map<String, dynamic> object(Object? value, String field) {
       if (value is! Map) throw StateError('Invalid Classic snapshot: $field');

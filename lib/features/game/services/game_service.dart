@@ -19,14 +19,27 @@ class GameService {
   DateTime? _snapshotRpcUnavailableUntil;
 
   Future<ClassicSnapshot> getClassicSnapshot(String roomId) async {
+    final requestStartedAt = DateTime.now().toUtc();
     final response = await _readClassicSnapshot(
       roomId,
     ).timeout(const Duration(seconds: 10));
+    final responseReceivedAt = DateTime.now().toUtc();
     final snapshot = ClassicSnapshot.fromResponse(response);
     if (snapshot.room.id != roomId) {
       throw StateError('Classic snapshot belongs to another room');
     }
-    return snapshot;
+    final serverNow = snapshot.serverNow;
+    if (serverNow == null) return snapshot;
+
+    // get_classic_snapshot_v1 timestamps the snapshot at the database. Move
+    // that timestamp to the estimated response midpoint before RoomService
+    // compares it with local receive time. Using the raw timestamp as "now"
+    // made a slower web client's phase clock lag by almost its full RPC time.
+    final halfRoundTripMicros =
+        responseReceivedAt.difference(requestStartedAt).inMicroseconds ~/ 2;
+    return snapshot.withServerNow(
+      serverNow.add(Duration(microseconds: halfRoundTripMicros)),
+    );
   }
 
   Future<Object?> _readClassicSnapshot(String roomId) async {

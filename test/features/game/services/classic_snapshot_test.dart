@@ -33,6 +33,15 @@ void main() {
     expect(snapshot.question!.answer, isNull);
     expect(snapshot.serverNow, DateTime.utc(2026, 9, 10, 0, 0, 2));
   });
+  test('clock correction preserves snapshot identity and data', () {
+    final snapshot = ClassicSnapshot.fromResponse(payload());
+    final corrected = snapshot.withServerNow(
+      DateTime.utc(2026, 9, 10, 0, 0, 2, 125),
+    );
+    expect(corrected.serverNow, DateTime.utc(2026, 9, 10, 0, 0, 2, 125));
+    expect(identical(corrected.room, snapshot.room), isTrue);
+    expect(identical(corrected.question, snapshot.question), isTrue);
+  });
   test('transition without a selected question is valid', () {
     final data = payload();
     (data['room'] as Map)['current_question_id'] = null;
