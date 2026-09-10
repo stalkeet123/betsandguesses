@@ -140,6 +140,55 @@ void main() {
     expect(requests, hasLength(1));
   });
 
+  test('next-round RPC carries the prepared question in one request', () async {
+    respond = (_) => {
+      'room': {...room(), 'current_question_id': 'question-a'},
+      'question': {'id': 'question-a', 'text_tr': 'Prepared question'},
+    };
+    final prepared = await GameService(client).prepareNextClassicRound(
+      roomId: 'room-a',
+      roundNumber: 1,
+      transitionSeconds: 1,
+    );
+    expect(prepared!.room.currentRound, 2);
+    expect(prepared.question.id, prepared.room.currentQuestionId);
+    expect(prepared.question.answer, isNull);
+    expect(requests.map((u) => u.path), [
+      '/rest/v1/rpc/prepare_next_classic_round_v1',
+    ]);
+  });
+
+  test('lost preparation claim returns null without another picker call', () async {
+    final prepared = await GameService(client).prepareNextClassicRound(
+      roomId: 'room-a',
+      roundNumber: 1,
+      transitionSeconds: 1,
+    );
+    expect(prepared, isNull);
+    expect(requests, hasLength(1));
+  });
+
+  test('preparation rejects a mismatched round or question identity', () async {
+    for (final overrides in [
+      {'current_round': 4, 'current_question_id': 'question-a'},
+      {'current_question_id': 'question-b'},
+      {'round_phase': 'guessing', 'current_question_id': 'question-a'},
+    ]) {
+      respond = (_) => {
+        'room': {...room(), ...overrides},
+        'question': {'id': 'question-a', 'text_tr': 'Prepared question'},
+      };
+      await expectLater(
+        GameService(client).prepareNextClassicRound(
+          roomId: 'room-a',
+          roundNumber: 1,
+          transitionSeconds: 1,
+        ),
+        throwsStateError,
+      );
+    }
+  });
+
   test('clock cold sampling is shared, cached, and can be refreshed', () async {
     respond = (_) async {
       await Future<void>.delayed(const Duration(milliseconds: 2));

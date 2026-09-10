@@ -31,6 +31,7 @@ import '../../../features/party/widgets/party_single_scene_layer.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../models/game_state.dart';
+import '../widgets/classic_question_stage.dart';
 import '../widgets/poker_chip.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
@@ -67,6 +68,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _questionStartTimer;
   int? _scheduledQuestionStartRound;
   DateTime? _scheduledQuestionStartDeadline;
+  int? _startingClassicRound;
   final List<Timer> _revealEffectTimers = [];
   final ValueNotifier<int?> _scanSlotIndexNotifier = ValueNotifier(null);
   bool _showWinnerBadge = false;
@@ -524,14 +526,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
             final isNewRound = round > currentState.currentRound;
             final isPhaseEntry = phaseAction == ClassicPhaseEventAction.advance;
-            final waitForQuestion = GameSyncPolicy.shouldWaitForClassicQuestion(
-              currentRound: currentState.currentRound,
-              currentPhase: currentState.phase,
-              hasCurrentQuestion: currentState.currentQuestion != null,
-              incomingRound: round,
-              incomingPhase: phase,
-              incomingHasQuestion: questionData != null,
-            );
             final deadline =
                 _deadlineFromPayload(payload) ??
                 (currentRoom.currentRound == round &&
@@ -541,16 +535,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
             _recordClassicBroadcastRoom(payload, round, phase, deadline);
             _queueClassicResync();
             final gameNotifier = ref.read(gameStateProvider.notifier);
-
-            if (waitForQuestion) {
-              GameTraceService.instance.trace('classic_question_data_wait', {
-                'source': 'broadcast_phase_change',
-                'round': round,
-                'phase': phase.name,
-                'reason': 'guessing_without_question_payload',
-              });
-              return;
-            }
 
             if (isNewRound) {
               gameNotifier.beginAuthoritativeRound(round, phase);
@@ -1076,29 +1060,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ref.read(currentRoomProvider.notifier).set(room);
       final gameState = ref.read(gameStateProvider);
       final newRound = room.currentRound > gameState.currentRound;
-      final waitForQuestion = GameSyncPolicy.shouldWaitForClassicQuestion(
-        currentRound: gameState.currentRound,
-        currentPhase: gameState.phase,
-        hasCurrentQuestion: gameState.currentQuestion != null,
-        incomingRound: room.currentRound,
-        incomingPhase: room.roundPhase,
-        incomingHasQuestion: false,
-      );
       _cancelQuestionStartTimerForNewerPhase(
         source: 'postgres_room_row',
         round: room.currentRound,
         phase: room.roundPhase,
       );
-      if (waitForQuestion) {
-        GameTraceService.instance.trace('classic_question_data_wait', {
-          'source': 'postgres_room_row',
-          'round': room.currentRound,
-          'phase': room.roundPhase.name,
-          'reason': 'room_row_precedes_question_snapshot',
-        });
-        _queueClassicResync();
-        return;
-      }
       if (newRound) {
         ref
             .read(gameStateProvider.notifier)
@@ -1353,29 +1319,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
 
       final previousState = ref.read(gameStateProvider);
-      if (GameSyncPolicy.shouldWaitForClassicQuestion(
-        currentRound: previousState.currentRound,
-        currentPhase: previousState.phase,
-        hasCurrentQuestion: previousState.currentQuestion != null,
-        incomingRound: round,
-        incomingPhase: phase,
-        incomingHasQuestion: question != null,
-      )) {
-        ref.read(currentRoomProvider.notifier).set(room);
-        _cancelQuestionStartTimerForNewerPhase(
-          source: 'classic_resync_snapshot',
-          round: round,
-          phase: phase,
-        );
-        GameTraceService.instance.trace('classic_question_data_wait', {
-          'source': 'classic_resync_snapshot',
-          'round': round,
-          'phase': phase.name,
-          'reason': 'authoritative_snapshot_has_no_question',
-        });
-        _queueClassicResync();
-        return;
-      }
       if (GameSyncPolicy.shouldDeferBetSnapshot(
         snapshotRound: round,
         snapshotPhase: phase,
@@ -2235,6 +2178,30 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _startRound(int round) async {
+    if (!_canUseRef || _startingClassicRound == round) return;
+    _startingClassicRound = round;
+    try {
+      await _claimPreparedRound(round);
+    } catch (error, stackTrace) {
+      debugPrint('Classic round start failed: $error\n$stackTrace');
+      if (_canUseRef) _queueClassicResync();
+    } finally {
+      if (_startingClassicRound == round) {
+        _startingClassicRound = null;
+        if (_canUseRef) {
+          final room = ref.read(currentRoomProvider);
+          if (room?.currentRound == round &&
+              room?.roundPhase == RoundPhase.question) {
+            // A slightly early claim can lose to the server deadline. Resync
+            // after releasing the guard so it can schedule the retry.
+            _queueClassicResync();
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _claimPreparedRound(int round) async {
     if (!_canUseRef) return;
     GameTraceService.instance.trace('classic_start_round_begin', {
       'round': round,
@@ -2980,19 +2947,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
       context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
     } else {
       final nextRound = gameState.currentRound + 1;
-      final claimedRoom = await roomService.claimPhaseTransition(
-        roomId: room.id,
-        round: gameState.currentRound,
-        expectedPhase: RoundPhase.revealAnswer.name,
-        nextPhase: RoundPhase.question.name,
-        nextRound: nextRound,
-        durationSeconds: GameConstants.roundTransitionSeconds,
-      );
+      final preparedRound = await ref
+          .read(gameServiceProvider)
+          .prepareNextClassicRound(
+            roomId: room.id,
+            roundNumber: gameState.currentRound,
+            transitionSeconds: GameConstants.roundTransitionSeconds,
+          );
       if (!_canUseRef) return;
-      if (claimedRoom == null) {
+      if (preparedRound == null) {
         await _resyncFromServer();
         return;
       }
+      final claimedRoom = preparedRound.room;
       if (!_shouldAcceptClassicAuthority(
         source: 'host_local_claim',
         rejectionEvent: 'classic_snapshot_rejected_stale',
@@ -3004,9 +2971,23 @@ class _GameScreenState extends ConsumerState<GameScreen>
         return;
       }
       ref.read(currentRoomProvider.notifier).set(claimedRoom);
-      ref
-          .read(gameStateProvider.notifier)
-          .beginAuthoritativeRound(nextRound, RoundPhase.question);
+      final notifier = ref.read(gameStateProvider.notifier);
+      if (ref.read(gameStateProvider).currentRound < nextRound) {
+        notifier.beginAuthoritativeRound(nextRound, RoundPhase.question);
+      }
+      notifier.setQuestion(preparedRound.question);
+      unawaited(
+        realtimeService.broadcast(widget.roomCode, 'phase_change', {
+          'phase': RoundPhase.question.name,
+          'round': nextRound,
+          'state_version': claimedRoom.stateVersion,
+          'question': preparedRound.question.toJson(),
+          'phase_started_at': claimedRoom.phaseStartedAt?.toIso8601String(),
+          'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
+        }).catchError((Object error, StackTrace stackTrace) {
+          debugPrint('Prepared-round broadcast failed: $error\n$stackTrace');
+        }),
+      );
       _traceAppliedRoomPhase(
         'host_local_claim',
         claimedRoom,
@@ -3030,13 +3011,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   void _scheduleQuestionStart(Room room, {bool primary = false}) {
     if (room.roundPhase != RoundPhase.question) return;
-    if (!ref.read(isHostProvider)) {
-      GameTraceService.instance.trace('classic_question_start_skipped', {
-        'round': room.currentRound,
-        'reason': 'not_host',
-      });
-      return;
-    }
+    if (_startingClassicRound == room.currentRound) return;
     if (_scheduledQuestionStartRound == room.currentRound &&
         _scheduledQuestionStartDeadline == room.phaseEndsAt &&
         (_questionStartTimer?.isActive ?? false)) {
@@ -3053,7 +3028,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       room.phaseEndsAt,
       const Duration(seconds: GameConstants.roundTransitionSeconds),
     );
-    final failoverGrace = primary
+    final failoverGrace = primary || ref.read(isHostProvider)
         ? Duration.zero
         : const Duration(milliseconds: 250);
     GameTraceService.instance.trace('classic_question_start_scheduled', {
@@ -4621,8 +4596,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
               ),
             ),
-            if (gameState.phase == RoundPhase.question)
-              Positioned.fill(child: _buildRoundTransitionOverlay(gameState)),
           ],
         ),
       ),
@@ -4632,7 +4605,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildRoundTransitionOverlay(GameState gameState) {
     final content = IgnorePointer(
       child: ColoredBox(
-        color: AppColors.feltDark.withValues(alpha: 0.97),
+        color: AppColors.feltDark,
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -8351,13 +8324,27 @@ class _GameScreenState extends ConsumerState<GameScreen>
         (phase == RoundPhase.idle ||
             phase == RoundPhase.question ||
             phase == RoundPhase.guessing)) {
+      // Capture the state outside AnimatedSwitcher. An outgoing scene must not
+      // subscribe to the next round and start that round's transition again.
+      final gameState = ref.watch(gameStateProvider);
+      final room = ref.watch(currentRoomProvider);
       return _buildPhaseSurfaceTransition(
         surfaceKey: 'guessing-surface',
-        child: Consumer(
-          builder: (context, ref, _) {
-            final gameState = ref.watch(gameStateProvider);
-            return _buildGuessingScreen(gameState);
-          },
+        child: ClassicQuestionStage(
+          gameState: gameState,
+          expectedQuestionId: room?.currentRound == gameState.currentRound
+              ? room?.currentQuestionId
+              : null,
+          transitionBuilder: (context) => PopScope(
+            canPop: false,
+            child: Scaffold(
+              backgroundColor: AppColors.feltDark,
+              body: SizedBox.expand(
+                child: _buildRoundTransitionOverlay(gameState),
+              ),
+            ),
+          ),
+          questionBuilder: (context, state) => _buildGuessingScreen(state),
         ),
       );
     }

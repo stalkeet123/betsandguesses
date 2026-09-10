@@ -50,33 +50,6 @@ class GameSyncPolicy {
       eventPhase: eventPhase,
     );
   }
-
-  /// A room-row update can announce guessing before its question-bearing
-  /// broadcast or authoritative snapshot reaches this client. Keep the
-  /// transition surface in place instead of briefly presenting an empty
-  /// guessing screen and then presenting the same round again.
-  static bool shouldWaitForClassicQuestion({
-    required int currentRound,
-    required RoundPhase currentPhase,
-    required bool hasCurrentQuestion,
-    required int incomingRound,
-    required RoundPhase incomingPhase,
-    required bool incomingHasQuestion,
-  }) {
-    final hasQuestionForIncomingRound =
-        currentRound == incomingRound && hasCurrentQuestion;
-    if (incomingPhase != RoundPhase.guessing ||
-        incomingHasQuestion ||
-        hasQuestionForIncomingRound ||
-        incomingRound < currentRound) {
-      return false;
-    }
-
-    return incomingRound > currentRound ||
-        currentPhase == RoundPhase.question ||
-        currentPhase == RoundPhase.guessing;
-  }
-
   static bool shouldApplyPhase({
     required int currentRound,
     required RoundPhase currentPhase,

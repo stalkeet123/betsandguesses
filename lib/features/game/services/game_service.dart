@@ -162,6 +162,32 @@ class GameService {
     }
   }
 
+  Future<SecureRoundQuestion?> prepareNextClassicRound({
+    required String roomId,
+    required int roundNumber,
+    required int transitionSeconds,
+  }) async {
+    final response = await _client.rpc(
+      'prepare_next_classic_round_v1',
+      params: {
+        'p_room_id': roomId,
+        'p_round_number': roundNumber,
+        'p_transition_seconds': transitionSeconds,
+      },
+    );
+    if (response == null) return null;
+    final prepared = SecureRoundQuestion.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    if (prepared.room.id != roomId ||
+        prepared.room.currentRound != roundNumber + 1 ||
+        prepared.room.roundPhase != RoundPhase.question ||
+        prepared.room.currentQuestionId != prepared.question.id) {
+      throw StateError('Invalid prepared Classic round');
+    }
+    return prepared;
+  }
+
   Future<SecureRoundQuestion?> claimNextQuestion({
     required String roomId,
     required int roundNumber,
