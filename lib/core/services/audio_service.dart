@@ -11,6 +11,7 @@ class AudioService {
   final SharedPreferences _prefs;
   bool _isMuted = false;
   bool _isTickingPlaying = false;
+  bool _tickingDesired = false;
 
   AudioSource? _backgroundSource;
   AudioSource? _elevatorSource;
@@ -222,7 +223,10 @@ class AudioService {
     _webUserGestureReceived = true;
     await _ensureInitialized();
     await _applyVolumes();
-    if (!_isMuted && _isAppActive) await _resumeDesiredBgm();
+    if (!_isMuted && _isAppActive) {
+      await _resumeDesiredBgm();
+      await _resumeDesiredTicking();
+    }
     GameTraceService.instance.trace('audio_web_unlock_success');
   }
 
@@ -467,18 +471,45 @@ class AudioService {
     }
   }
 
-  /// Prepare only the assets needed at the first question transition.
+  /// Prepares gameplay audio in bounded stages while the lobby is visible.
   Future<void> prepareGameAudio() async {
+    final prepareWatch = Stopwatch()..start();
+    GameTraceService.instance.trace('audio_prepare_game_begin');
     await _ensureInitialized();
-    await Future.wait(<Future<AudioSource?>>[
+    await _prepareGameAudioStage('game_start', <Future<AudioSource?>>[
       _loadQuestionSuspenseSource(),
       _loadQuestionRevealSource(),
       _loadChipSelectSource(),
       _loadChipDropSource(),
-      if (kIsWeb) _loadResultRevealSource(),
-      if (kIsWeb) _loadChipLossSource(),
-      if (kIsWeb) _loadPayoutWinSource(),
     ]);
+    await _prepareGameAudioStage('countdown_reveal', <Future<AudioSource?>>[
+      _loadTickingClockSource(),
+      _loadTimeUpSource(),
+      _loadResultRevealSource(),
+      _loadPayoutWinSource(),
+      _loadChipLossSource(),
+    ]);
+    await _prepareGameAudioStage('background_finish', <Future<AudioSource?>>[
+      _loadBackgroundSource(),
+      _loadElevatorSource(),
+      _loadEpicFanfareSource(),
+    ]);
+    GameTraceService.instance.trace('audio_prepare_game_end', {
+      'duration_ms': prepareWatch.elapsedMilliseconds,
+    });
+  }
+
+  Future<void> _prepareGameAudioStage(
+    String stage,
+    List<Future<AudioSource?>> loads,
+  ) async {
+    final stageWatch = Stopwatch()..start();
+    await Future.wait(loads);
+    GameTraceService.instance.trace('audio_prepare_game_stage', {
+      'stage': stage,
+      'asset_count': loads.length,
+      'duration_ms': stageWatch.elapsedMilliseconds,
+    });
   }
 
   /// Preloads the Party Poll reveal cues without changing Classic playback.
@@ -492,17 +523,26 @@ class AudioService {
   }
 
   Future<void> startTicking() {
+    _tickingDesired = true;
     GameTraceService.instance.trace('ticking_request', {
       'handle_count': _tickingClockSource?.handles.length ?? 0,
     });
-    if (_isMuted || !_isAppActive || _isTickingPlaying || _disposed) {
+    if (_isMuted ||
+        !_isAppActive ||
+        _isTickingPlaying ||
+        _disposed ||
+        (kIsWeb && !_webUserGestureReceived)) {
       GameTraceService.instance.trace('sfx_skipped', {
         'audio_key': 'clock/ticking',
         'reason': _isMuted
             ? 'muted'
             : (!_isAppActive
                   ? 'inactive'
-                  : (_disposed ? 'disposed' : 'existing_handle')),
+                  : (_disposed
+                        ? 'disposed'
+                        : (kIsWeb && !_webUserGestureReceived
+                              ? 'web_not_unlocked'
+                              : 'existing_handle'))),
       });
       return Future<void>.value();
     }
@@ -527,6 +567,7 @@ class AudioService {
     final source = await _loadTickingClockSource();
     if (_isMuted ||
         !_isAppActive ||
+        (kIsWeb && !_webUserGestureReceived) ||
         _disposed ||
         generation != _tickingGeneration ||
         source == null ||
@@ -545,7 +586,10 @@ class AudioService {
       GameTraceService.instance.trace('ticking_existing_handles_cleanup');
       await _safeStop(handle);
     }
-    if (generation != _tickingGeneration || !_isAppActive || _isMuted) {
+    if (generation != _tickingGeneration ||
+        !_isAppActive ||
+        _isMuted ||
+        (kIsWeb && !_webUserGestureReceived)) {
       if (generation != _tickingGeneration) {
         GameTraceService.instance.trace('ticking_stale_generation', {
           'expected_generation': generation,
@@ -564,6 +608,7 @@ class AudioService {
       if (_disposed ||
           _isMuted ||
           !_isAppActive ||
+          (kIsWeb && !_webUserGestureReceived) ||
           generation != _tickingGeneration) {
         await _safeStop(handle);
         return;
@@ -579,9 +624,14 @@ class AudioService {
     }
   }
 
-  Future<void> stopTicking() async {
+  Future<void> stopTicking() => _stopTicking(preserveDesired: false);
+
+  Future<void> _stopTicking({required bool preserveDesired}) async {
+    if (!preserveDesired) _tickingDesired = false;
     GameTraceService.instance.trace('ticking_stop', {
       'handle_count': _tickingClockSource?.handles.length ?? 0,
+      'preserve_desired': preserveDesired,
+      'desired': _tickingDesired,
     });
     _tickingGeneration++;
     _tickingStartFuture = null;
@@ -596,6 +646,16 @@ class AudioService {
     for (final handle in handles) {
       await _safeStop(handle);
     }
+  }
+
+  Future<void> _resumeDesiredTicking() async {
+    if (!_tickingDesired ||
+        _isMuted ||
+        !_isAppActive ||
+        (kIsWeb && !_webUserGestureReceived)) {
+      return;
+    }
+    await startTicking();
   }
 
   Future<void> stopAllLoops() async {
@@ -615,10 +675,11 @@ class AudioService {
 
     if (_isMuted) {
       await _stopBackgroundMusic(preserveDesired: true, immediate: true);
-      await stopTicking();
+      await _stopTicking(preserveDesired: true);
       await stopTransientEffects();
     } else if (_isAppActive) {
       await _resumeDesiredBgm();
+      await _resumeDesiredTicking();
     }
   }
 
@@ -644,7 +705,7 @@ class AudioService {
           await _safeStop(handle);
         }
       }
-      await stopTicking();
+      await _stopTicking(preserveDesired: true);
       await stopTransientEffects();
       await _applyVolumes();
       return;
@@ -665,6 +726,9 @@ class AudioService {
     }
     if (!_isMuted && (_currentBgmKey != _desiredBgmKey || _bgmHandle == null)) {
       await _resumeDesiredBgm();
+    }
+    if (!_isMuted) {
+      await _resumeDesiredTicking();
     }
   }
 
