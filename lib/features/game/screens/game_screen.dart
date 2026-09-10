@@ -8047,6 +8047,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
               : null,
           retainedQuestion: _retainedClassicQuestion,
           onQuestionPresented: _retainClassicQuestionPresentation,
+          questionRevealAt: room?.currentRound == gameState.currentRound
+              ? room?.phaseEndsAt
+              : null,
+          serverNow: () => ref.read(roomServiceProvider).serverNow,
           transitionBuilder: (context) => PopScope(
             canPop: false,
             child: Scaffold(

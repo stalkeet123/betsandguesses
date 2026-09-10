@@ -29,6 +29,8 @@ Widget surface(
   ValueChanged<GameState>? onQuestionPresented,
   VoidCallback? onTransitionMounted,
   VoidCallback? onQuestionTap,
+  DateTime? questionRevealAt,
+  DateTime Function()? serverNow,
   bool board = false,
   Key? stageKey,
 }) => MaterialApp(
@@ -44,6 +46,8 @@ Widget surface(
               expectedQuestionId: expectedId,
               retainedQuestion: retainedQuestion,
               onQuestionPresented: onQuestionPresented,
+              questionRevealAt: questionRevealAt,
+              serverNow: serverNow,
               transitionBuilder: (_) => _TransitionProbe(
                 round: incoming.currentRound,
                 onMounted: onTransitionMounted,
@@ -108,6 +112,40 @@ void main() {
     );
     expect(find.text('Question A'), findsOneWidget);
     expect(find.text('ROUND 2'), findsNothing);
+  });
+
+  testWidgets('preloaded question becomes visible at the server deadline', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 9, 10, 12);
+    GameState? retained;
+    await tester.pumpWidget(
+      surface(
+        state(question: questionA),
+        questionRevealAt: now.add(const Duration(seconds: 1)),
+        serverNow: () => now,
+        onQuestionPresented: (value) => retained = value,
+      ),
+    );
+    expect(find.text('ROUND 2'), findsOneWidget);
+    expect(find.text('Question A'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 999));
+    expect(find.text('ROUND 2'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('Question A'), findsOneWidget);
+    expect(find.text('ROUND 2'), findsNothing);
+    expect(retained, isNull);
+
+    await tester.pumpWidget(
+      surface(
+        state(phase: RoundPhase.guessing, question: questionA),
+        questionRevealAt: now.add(const Duration(seconds: 1)),
+        serverNow: () => now,
+        onQuestionPresented: (value) => retained = value,
+      ),
+    );
+    expect(retained?.phase, RoundPhase.guessing);
   });
 
   testWidgets('idle and missed transition never build an empty question', (

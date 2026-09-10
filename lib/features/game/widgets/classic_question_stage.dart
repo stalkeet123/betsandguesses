@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import '../../../core/constants/game_constants.dart';
@@ -14,6 +16,8 @@ class ClassicQuestionStage extends StatefulWidget {
   /// the same round play its transition a second time.
   final GameState? retainedQuestion;
   final ValueChanged<GameState>? onQuestionPresented;
+  final DateTime? questionRevealAt;
+  final DateTime Function()? serverNow;
   final WidgetBuilder transitionBuilder;
   final Widget Function(BuildContext, GameState) questionBuilder;
 
@@ -23,6 +27,8 @@ class ClassicQuestionStage extends StatefulWidget {
     required this.expectedQuestionId,
     this.retainedQuestion,
     this.onQuestionPresented,
+    this.questionRevealAt,
+    this.serverNow,
     required this.transitionBuilder,
     required this.questionBuilder,
   });
@@ -33,6 +39,9 @@ class ClassicQuestionStage extends StatefulWidget {
 
 class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
   GameState? _presentedQuestion;
+  Timer? _questionRevealTimer;
+  String? _scheduledQuestionIdentity;
+  DateTime? _scheduledQuestionRevealAt;
 
   @override
   void initState() {
@@ -44,6 +53,12 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
   void didUpdateWidget(covariant ClassicQuestionStage oldWidget) {
     super.didUpdateWidget(oldWidget);
     _reconcilePresentation();
+  }
+
+  @override
+  void dispose() {
+    _questionRevealTimer?.cancel();
+    super.dispose();
   }
 
   bool _matchesExpectedQuestion(GameState value, GameState incoming) {
@@ -61,6 +76,7 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
         (previous.roomId != incoming.roomId ||
             previous.currentRound != incoming.currentRound)) {
       _presentedQuestion = null;
+      _cancelScheduledReveal();
     }
 
     final retained = widget.retainedQuestion;
@@ -72,7 +88,9 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
 
     if (incoming.phase == RoundPhase.guessing &&
         _matchesExpectedQuestion(incoming, incoming)) {
+      _cancelScheduledReveal();
       final isNewPresentation =
+          _presentedQuestion?.phase != RoundPhase.guessing ||
           _presentedQuestion?.roomId != incoming.roomId ||
           _presentedQuestion?.currentRound != incoming.currentRound ||
           _presentedQuestion?.currentQuestion?.id !=
@@ -87,7 +105,55 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
           widget.onQuestionPresented?.call(incoming);
         });
       }
+      return;
     }
+
+    if (incoming.phase == RoundPhase.question &&
+        _matchesExpectedQuestion(incoming, incoming)) {
+      // Once this round is visible, a late question-phase reconciliation must
+      // not downgrade the retained authoritative guessing presentation.
+      if (_presentedQuestion != null) return;
+      final revealAt = widget.questionRevealAt;
+      final now = widget.serverNow?.call();
+      if (revealAt == null || now == null) return;
+      final delay = revealAt.difference(now);
+      if (delay <= Duration.zero) {
+        _presentedQuestion = incoming;
+        _cancelScheduledReveal();
+        return;
+      }
+
+      final identity =
+          '${incoming.roomId}:${incoming.currentRound}:'
+          '${incoming.currentQuestion!.id}';
+      if (_scheduledQuestionIdentity == identity &&
+          _scheduledQuestionRevealAt == revealAt &&
+          (_questionRevealTimer?.isActive ?? false)) {
+        return;
+      }
+      _questionRevealTimer?.cancel();
+      _scheduledQuestionIdentity = identity;
+      _scheduledQuestionRevealAt = revealAt;
+      _questionRevealTimer = Timer(delay, () {
+        _questionRevealTimer = null;
+        _scheduledQuestionIdentity = null;
+        _scheduledQuestionRevealAt = null;
+        if (!mounted) return;
+        final latest = widget.gameState;
+        if ((latest.phase == RoundPhase.question ||
+                latest.phase == RoundPhase.guessing) &&
+            _matchesExpectedQuestion(latest, latest)) {
+          setState(() => _presentedQuestion = latest);
+        }
+      });
+    }
+  }
+
+  void _cancelScheduledReveal() {
+    _questionRevealTimer?.cancel();
+    _questionRevealTimer = null;
+    _scheduledQuestionIdentity = null;
+    _scheduledQuestionRevealAt = null;
   }
 
   @override
