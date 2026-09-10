@@ -13,12 +13,18 @@ class ClassicSnapshot {
   final List<Bet> bets;
   final Question? question;
 
+  /// The database timestamp produced by the same MVCC read as this state.
+  /// It lets a cold client render immediately without first blocking on a
+  /// separate clock RPC.
+  final DateTime? serverNow;
+
   const ClassicSnapshot({
     required this.room,
     required this.players,
     required this.guesses,
     required this.bets,
     required this.question,
+    required this.serverNow,
   });
 
   factory ClassicSnapshot.fromResponse(Object? response) {
@@ -37,6 +43,13 @@ class ClassicSnapshot {
     }
 
     final data = object(response, 'response');
+    final rawServerNow = data['server_now'];
+    final serverNow = rawServerNow == null
+        ? null
+        : DateTime.tryParse(rawServerNow as String)?.toUtc();
+    if (rawServerNow != null && serverNow == null) {
+      throw StateError('Invalid Classic snapshot: server_now');
+    }
     final room = Room.fromJson(object(data['room'], 'room'));
     final question = data['question'] == null
         ? null
@@ -61,6 +74,7 @@ class ClassicSnapshot {
       guesses: guesses,
       bets: bets,
       question: question,
+      serverNow: serverNow,
     );
   }
 }

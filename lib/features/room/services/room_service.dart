@@ -30,6 +30,18 @@ class RoomService {
 
   DateTime get serverNow => DateTime.now().toUtc().add(_serverClockOffset);
 
+  /// Prime the clock from the timestamp embedded in an authoritative game
+  /// snapshot. A background NTP-style sample can refine this later, but never
+  /// delay the first question behind three cold clock requests.
+  void observeServerClock(DateTime value) {
+    final observedAt = DateTime.now().toUtc();
+    _serverClockOffset = value.toUtc().difference(observedAt);
+    _lastServerClockSyncAt = observedAt;
+    GameTraceService.instance.trace('server_clock_snapshot_observed', {
+      'computed_offset_ms': _serverClockOffset.inMilliseconds,
+    });
+  }
+
   Future<DateTime> synchronizeServerClock({bool force = false}) {
     final running = _clockSyncInFlight;
     if (running != null) return running;

@@ -16,6 +16,7 @@ Map<String, dynamic> payload() => {
     'phase_started_at': '2026-09-10T00:00:01Z',
     'phase_ends_at': '2026-09-10T00:00:21Z',
   },
+  'server_now': '2026-09-10T00:00:02Z',
   'question': {'id': 'q2', 'text_tr': 'How many?', 'answer': null},
   'players': <dynamic>[],
   'guesses': <dynamic>[],
@@ -30,6 +31,7 @@ void main() {
     expect(snapshot.room.phaseEndsAt, DateTime.utc(2026, 9, 10, 0, 0, 21));
     expect(snapshot.question!.id, 'q2');
     expect(snapshot.question!.answer, isNull);
+    expect(snapshot.serverNow, DateTime.utc(2026, 9, 10, 0, 0, 2));
   });
   test('transition without a selected question is valid', () {
     final data = payload();
@@ -78,5 +80,9 @@ void main() {
   }
   test('null RPC response gives an explicit contract error', () {
     expect(() => ClassicSnapshot.fromResponse(null), throwsStateError);
+  });
+  test('malformed server time gives an explicit contract error', () {
+    final data = payload()..['server_now'] = 'not-a-timestamp';
+    expect(() => ClassicSnapshot.fromResponse(data), throwsStateError);
   });
 }

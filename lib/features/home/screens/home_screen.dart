@@ -539,6 +539,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .set(room.copyWith(hostId: player.id));
 
       if (mounted) {
+        // On web this is often the very first user gesture. Claim the Lobby
+        // scene before routing so an in-flight Home BGM request is superseded
+        // instead of briefly starting and being cut off after navigation.
+        ref.read(audioServiceProvider).startLobbyMusic();
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
     } on FreeHostLimitReachedException {
@@ -616,6 +620,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.read(currentRoomProvider.notifier).set(room);
 
       if (mounted) {
+        // See the create path above: the destination owns its BGM before the
+        // route changes, avoiding a web unlock/Home/Lobby request race.
+        ref.read(audioServiceProvider).startLobbyMusic();
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
     } catch (e) {

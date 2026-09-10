@@ -25,8 +25,12 @@ GameState state({
 Widget surface(
   GameState incoming, {
   String? expectedId = 'question-a',
+  GameState? retainedQuestion,
+  ValueChanged<GameState>? onQuestionPresented,
   VoidCallback? onTransitionMounted,
+  VoidCallback? onQuestionTap,
   bool board = false,
+  Key? stageKey,
 }) => MaterialApp(
   home: AnimatedSwitcher(
     duration: const Duration(milliseconds: 430),
@@ -35,17 +39,24 @@ Widget surface(
         : KeyedSubtree(
             key: const ValueKey('guessing-surface'),
             child: ClassicQuestionStage(
+              key: stageKey,
               gameState: incoming,
               expectedQuestionId: expectedId,
+              retainedQuestion: retainedQuestion,
+              onQuestionPresented: onQuestionPresented,
               transitionBuilder: (_) => _TransitionProbe(
                 round: incoming.currentRound,
                 onMounted: onTransitionMounted,
               ),
               questionBuilder: (_, presented) {
                 // The gameplay builder must never receive an empty question.
-                return Text(
-                  '${presented.currentQuestion!.textTr}'
-                  '${presented.hasSubmittedGuess ? ' SUBMITTED' : ''}',
+                return GestureDetector(
+                  key: const ValueKey('question-action'),
+                  onTap: onQuestionTap,
+                  child: Text(
+                    '${presented.currentQuestion!.textTr}'
+                    '${presented.hasSubmittedGuess ? ' SUBMITTED' : ''}',
+                  ),
                 );
               },
             ),
@@ -163,6 +174,60 @@ void main() {
       ),
     );
     expect(find.text('Question A SUBMITTED'), findsOneWidget);
+  });
+
+  testWidgets('same-round snapshot reconciliation keeps question input live', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      surface(
+        state(phase: RoundPhase.guessing, question: questionA),
+        onQuestionTap: () => taps++,
+      ),
+    );
+    await tester.pumpWidget(
+      surface(
+        state(phase: RoundPhase.guessing, question: questionA, submitted: true),
+        onQuestionTap: () => taps++,
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('question-action')));
+
+    expect(taps, 1);
+    expect(find.text('Question A SUBMITTED'), findsOneWidget);
+  });
+
+  testWidgets('a recreated stage keeps an already opened round visible', (
+    tester,
+  ) async {
+    var mounts = 0;
+    GameState? retained;
+    void mounted() => mounts++;
+    await tester.pumpWidget(surface(state(), onTransitionMounted: mounted));
+    await tester.pumpWidget(
+      surface(
+        state(phase: RoundPhase.guessing, question: questionA),
+        onTransitionMounted: mounted,
+        onQuestionPresented: (value) => retained = value,
+      ),
+    );
+    expect(retained, isNotNull);
+    expect(find.text('Question A'), findsOneWidget);
+
+    await tester.pumpWidget(
+      surface(
+        state(),
+        retainedQuestion: retained,
+        onTransitionMounted: mounted,
+        stageKey: const ValueKey('recreated-stage'),
+      ),
+    );
+
+    expect(find.text('Question A'), findsOneWidget);
+    expect(find.text('ROUND 2'), findsNothing);
+    expect(mounts, 1);
   });
 
   testWidgets('unknown expected identity cannot admit a cached question', (

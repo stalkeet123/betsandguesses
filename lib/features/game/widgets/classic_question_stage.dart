@@ -8,6 +8,12 @@ import '../models/game_state.dart';
 class ClassicQuestionStage extends StatefulWidget {
   final GameState gameState;
   final String? expectedQuestionId;
+
+  /// A previously opened authoritative question for this exact round. The
+  /// parent owns this cache so a temporary route/subtree rebuild cannot make
+  /// the same round play its transition a second time.
+  final GameState? retainedQuestion;
+  final ValueChanged<GameState>? onQuestionPresented;
   final WidgetBuilder transitionBuilder;
   final Widget Function(BuildContext, GameState) questionBuilder;
 
@@ -15,6 +21,8 @@ class ClassicQuestionStage extends StatefulWidget {
     super.key,
     required this.gameState,
     required this.expectedQuestionId,
+    this.retainedQuestion,
+    this.onQuestionPresented,
     required this.transitionBuilder,
     required this.questionBuilder,
   });
@@ -26,6 +34,14 @@ class ClassicQuestionStage extends StatefulWidget {
 class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
   GameState? _presentedQuestion;
 
+  bool _matchesExpectedQuestion(GameState value, GameState incoming) {
+    final question = value.currentQuestion;
+    return value.roomId == incoming.roomId &&
+        value.currentRound == incoming.currentRound &&
+        question != null &&
+        question.id == widget.expectedQuestionId;
+  }
+
   @override
   Widget build(BuildContext context) {
     final incoming = widget.gameState;
@@ -36,11 +52,17 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
       _presentedQuestion = null;
     }
 
-    final question = incoming.currentQuestion;
+    final retained = widget.retainedQuestion;
+    if (_presentedQuestion == null &&
+        retained != null &&
+        _matchesExpectedQuestion(retained, incoming)) {
+      _presentedQuestion = retained;
+    }
+
     if (incoming.phase == RoundPhase.guessing &&
-        question != null &&
-        question.id == widget.expectedQuestionId) {
+        _matchesExpectedQuestion(incoming, incoming)) {
       _presentedQuestion = incoming;
+      widget.onQuestionPresented?.call(incoming);
     }
 
     final presented = _presentedQuestion;
@@ -54,10 +76,8 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
     }
 
     // Once opened, same-round reconciliation cannot replay the transition.
-    // Freeze interaction if the current authority no longer has matching data.
-    return IgnorePointer(
-      ignoring: !identical(presented, incoming),
-      child: widget.questionBuilder(context, presented),
-    );
+    // A snapshot produces a new GameState object even when it represents the
+    // same authoritative question, so object identity must never gate input.
+    return widget.questionBuilder(context, presented);
   }
 }
