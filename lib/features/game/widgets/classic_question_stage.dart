@@ -80,7 +80,8 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
       _presentedQuestion = incoming;
       if (isNewPresentation && widget.onQuestionPresented != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_matchesExpectedQuestion(incoming, widget.gameState)) {
+          if (!mounted ||
+              !_matchesExpectedQuestion(incoming, widget.gameState)) {
             return;
           }
           widget.onQuestionPresented?.call(incoming);
