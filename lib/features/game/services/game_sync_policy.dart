@@ -1,5 +1,7 @@
 import '../../../core/constants/game_constants.dart';
 
+enum ClassicTimerReconciliation { startNewLifecycle, updateDeadline, keepAlive }
+
 class GameSyncPolicy {
   const GameSyncPolicy._();
 
@@ -27,6 +29,36 @@ class GameSyncPolicy {
     if (eventRound < currentRound) return false;
     if (eventRound > currentRound) return true;
     return eventPhase.index > currentPhase.index;
+  }
+
+  static ClassicTimerReconciliation classicTimerReconciliation({
+    required int? activeRound,
+    required RoundPhase? activePhase,
+    required DateTime? activeDeadline,
+    required int eventRound,
+    required RoundPhase eventPhase,
+    required DateTime? eventDeadline,
+  }) {
+    if (activeRound != eventRound || activePhase != eventPhase) {
+      return ClassicTimerReconciliation.startNewLifecycle;
+    }
+    if (activeDeadline != eventDeadline) {
+      return ClassicTimerReconciliation.updateDeadline;
+    }
+    return ClassicTimerReconciliation.keepAlive;
+  }
+
+  static bool shouldTick({required int remainingSeconds}) {
+    return remainingSeconds > 0 && remainingSeconds <= 10;
+  }
+
+  static bool shouldHandleTimerExpiration({
+    required int? expiredRound,
+    required RoundPhase? expiredPhase,
+    required int eventRound,
+    required RoundPhase eventPhase,
+  }) {
+    return expiredRound != eventRound || expiredPhase != eventPhase;
   }
 
   static bool isCurrentRound({

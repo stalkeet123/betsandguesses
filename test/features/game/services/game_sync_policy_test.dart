@@ -127,6 +127,103 @@ void main() {
     });
   });
 
+  group('classic timer reconciliation', () {
+    final deadline = DateTime.utc(2026, 9, 10, 12, 0, 20);
+
+    test('same logical timer and deadline keeps the lifecycle alive', () {
+      expect(
+        GameSyncPolicy.classicTimerReconciliation(
+          activeRound: 3,
+          activePhase: RoundPhase.betting,
+          activeDeadline: deadline,
+          eventRound: 3,
+          eventPhase: RoundPhase.betting,
+          eventDeadline: deadline,
+        ),
+        ClassicTimerReconciliation.keepAlive,
+      );
+    });
+
+    test('same logical timer accepts a deadline correction', () {
+      expect(
+        GameSyncPolicy.classicTimerReconciliation(
+          activeRound: 3,
+          activePhase: RoundPhase.betting,
+          activeDeadline: deadline,
+          eventRound: 3,
+          eventPhase: RoundPhase.betting,
+          eventDeadline: deadline.add(const Duration(seconds: 2)),
+        ),
+        ClassicTimerReconciliation.updateDeadline,
+      );
+    });
+
+    test('new phase starts a new timer lifecycle', () {
+      expect(
+        GameSyncPolicy.classicTimerReconciliation(
+          activeRound: 3,
+          activePhase: RoundPhase.guessing,
+          activeDeadline: deadline,
+          eventRound: 3,
+          eventPhase: RoundPhase.betting,
+          eventDeadline: deadline,
+        ),
+        ClassicTimerReconciliation.startNewLifecycle,
+      );
+    });
+
+    test('new round starts a new timer lifecycle', () {
+      expect(
+        GameSyncPolicy.classicTimerReconciliation(
+          activeRound: 3,
+          activePhase: RoundPhase.betting,
+          activeDeadline: deadline,
+          eventRound: 4,
+          eventPhase: RoundPhase.guessing,
+          eventDeadline: deadline,
+        ),
+        ClassicTimerReconciliation.startNewLifecycle,
+      );
+    });
+
+    test('ticking follows the entire final ten-second window', () {
+      expect(GameSyncPolicy.shouldTick(remainingSeconds: 11), isFalse);
+      expect(GameSyncPolicy.shouldTick(remainingSeconds: 10), isTrue);
+      expect(GameSyncPolicy.shouldTick(remainingSeconds: 8), isTrue);
+      expect(GameSyncPolicy.shouldTick(remainingSeconds: 0), isFalse);
+    });
+
+    test('handles expiration once for the same logical phase', () {
+      expect(
+        GameSyncPolicy.shouldHandleTimerExpiration(
+          expiredRound: null,
+          expiredPhase: null,
+          eventRound: 3,
+          eventPhase: RoundPhase.betting,
+        ),
+        isTrue,
+      );
+      expect(
+        GameSyncPolicy.shouldHandleTimerExpiration(
+          expiredRound: 3,
+          expiredPhase: RoundPhase.betting,
+          eventRound: 3,
+          eventPhase: RoundPhase.betting,
+        ),
+        isFalse,
+      );
+      expect(
+        GameSyncPolicy.shouldHandleTimerExpiration(
+          expiredRound: 3,
+          expiredPhase: RoundPhase.betting,
+          eventRound: 4,
+          eventPhase: RoundPhase.guessing,
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('deadline timer', () {
     test('rounds partial seconds up for display', () {
       final now = DateTime.utc(2026, 7, 15, 12);

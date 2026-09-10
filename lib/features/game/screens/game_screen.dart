@@ -72,6 +72,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _isResyncing = false;
   bool _resyncRequested = false;
   DateTime? _phaseDeadline;
+  int? _activeClassicTimerRound;
+  RoundPhase? _activeClassicTimerPhase;
+  DateTime? _activeClassicTimerDeadline;
+  int? _expiredClassicTimerRound;
+  RoundPhase? _expiredClassicTimerPhase;
+  bool _tickingRequested = false;
   final List<_PendingBetEvent> _pendingBetEvents = [];
   final Map<int, List<Bet>> _partyOwnBetsByRound = {};
   PartySnapshot? _partySnapshot;
@@ -127,14 +133,35 @@ class _GameScreenState extends ConsumerState<GameScreen>
       deadline: room.phaseEndsAt,
     );
     if (phase == RoundPhase.guessing) {
-      _startTimer(GameConstants.guessTimerSeconds, deadline: room.phaseEndsAt);
+      if (room.gameMode == GameMode.classic) {
+        _reconcileClassicTimer(
+          source: 'bootstrap_room',
+          round: room.currentRound,
+          phase: phase,
+          fallbackSeconds: GameConstants.guessTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      } else {
+        _startTimer(
+          GameConstants.guessTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      }
     } else if (phase == RoundPhase.betting) {
-      _startTimer(
-        room.gameMode == GameMode.party
-            ? GameConstants.partyBetTimerSeconds
-            : GameConstants.betTimerSeconds,
-        deadline: room.phaseEndsAt,
-      );
+      if (room.gameMode == GameMode.classic) {
+        _reconcileClassicTimer(
+          source: 'bootstrap_room',
+          round: room.currentRound,
+          phase: phase,
+          fallbackSeconds: GameConstants.betTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      } else {
+        _startTimer(
+          GameConstants.partyBetTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      }
     }
     if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
       _playQuestionRevealForRoundOnce(max(1, room.currentRound));
@@ -476,15 +503,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
               if (phase == RoundPhase.guessing) {
                 _guessInput = '';
                 _isSubmittingGuess = false;
-                _startTimer(
-                  GameConstants.guessTimerSeconds,
+                _reconcileClassicTimer(
+                  source: 'broadcast_phase_change',
+                  round: round,
+                  phase: phase,
+                  fallbackSeconds: GameConstants.guessTimerSeconds,
                   deadline: deadline,
                 );
               }
             }
 
             if (phase == RoundPhase.betting) {
-              _startTimer(GameConstants.betTimerSeconds, deadline: deadline);
+              _reconcileClassicTimer(
+                source: 'broadcast_phase_change',
+                round: round,
+                phase: phase,
+                fallbackSeconds: GameConstants.betTimerSeconds,
+                deadline: deadline,
+              );
             }
 
             if (phase == RoundPhase.revealAnswer ||
@@ -594,7 +630,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
           if (phase == RoundPhase.guessing) {
             _guessInput = '';
             _isSubmittingGuess = false;
-            _startTimer(GameConstants.guessTimerSeconds, deadline: deadline);
+            _reconcileClassicTimer(
+              source: 'game_started_broadcast',
+              round: round,
+              phase: phase,
+              fallbackSeconds: GameConstants.guessTimerSeconds,
+              deadline: deadline,
+            );
           }
           _syncAudioForPhase(
             phase,
@@ -813,13 +855,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
       if (room.roundPhase == RoundPhase.guessing) {
         _questionStartTimer?.cancel();
-        _startTimer(
-          GameConstants.guessTimerSeconds,
+        _reconcileClassicTimer(
+          source: 'postgres_room_row',
+          round: room.currentRound,
+          phase: room.roundPhase,
+          fallbackSeconds: GameConstants.guessTimerSeconds,
           deadline: room.phaseEndsAt,
         );
       } else if (room.roundPhase == RoundPhase.betting) {
         _questionStartTimer?.cancel();
-        _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
+        _reconcileClassicTimer(
+          source: 'postgres_room_row',
+          round: room.currentRound,
+          phase: room.roundPhase,
+          fallbackSeconds: GameConstants.betTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
       } else {
         _stopTimer();
       }
@@ -1131,12 +1182,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
         _stopTimer();
       } else if (phase == RoundPhase.guessing) {
-        _startTimer(
-          GameConstants.guessTimerSeconds,
+        _reconcileClassicTimer(
+          source: 'classic_resync_snapshot',
+          round: round,
+          phase: phase,
+          fallbackSeconds: GameConstants.guessTimerSeconds,
           deadline: room.phaseEndsAt,
         );
       } else if (phase == RoundPhase.betting) {
-        _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
+        _reconcileClassicTimer(
+          source: 'classic_resync_snapshot',
+          round: round,
+          phase: phase,
+          fallbackSeconds: GameConstants.betTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
       } else if (phase == RoundPhase.question && round > 0) {
         _stopTimer();
       }
@@ -1513,8 +1573,29 @@ class _GameScreenState extends ConsumerState<GameScreen>
     context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
   }
 
+  void _publishTimerSeconds() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_canUseRef) {
+        ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
+      }
+    });
+  }
+
+  void _setTickingRequested(bool shouldBeActive) {
+    if (_tickingRequested == shouldBeActive) return;
+    _tickingRequested = shouldBeActive;
+    if (shouldBeActive) {
+      _audioService.startTicking();
+    } else {
+      unawaited(_audioService.stopTicking());
+    }
+  }
+
   void _startTimer(int fallbackSeconds, {DateTime? deadline}) {
     _stopTimer();
+    _activeClassicTimerRound = null;
+    _activeClassicTimerPhase = null;
+    _activeClassicTimerDeadline = null;
     _phaseDeadline = deadline;
     _timerSeconds = deadline == null
         ? fallbackSeconds
@@ -1522,13 +1603,101 @@ class _GameScreenState extends ConsumerState<GameScreen>
             deadline: deadline,
             now: ref.read(roomServiceProvider).serverNow,
           );
+    _publishTimerSeconds();
+    _startPeriodicTimer(isClassic: false);
+  }
 
-    // Defer the provider update until after the build cycle
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_canUseRef) {
-        ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
+  void _reconcileClassicTimer({
+    required String source,
+    required int round,
+    required RoundPhase phase,
+    required int fallbackSeconds,
+    required DateTime? deadline,
+  }) {
+    final now = ref.read(roomServiceProvider).serverNow;
+    final timerAlreadyExisted = _timer != null;
+    final reconciliation = GameSyncPolicy.classicTimerReconciliation(
+      activeRound: _activeClassicTimerRound,
+      activePhase: _activeClassicTimerPhase,
+      activeDeadline: _activeClassicTimerDeadline,
+      eventRound: round,
+      eventPhase: phase,
+      eventDeadline: deadline,
+    );
+
+    if (reconciliation == ClassicTimerReconciliation.startNewLifecycle) {
+      _timer?.cancel();
+      _timer = null;
+      _setTickingRequested(false);
+      _activeClassicTimerRound = round;
+      _activeClassicTimerPhase = phase;
+      _activeClassicTimerDeadline = deadline;
+      _phaseDeadline = deadline;
+    } else if (reconciliation == ClassicTimerReconciliation.updateDeadline) {
+      _activeClassicTimerDeadline = deadline;
+      _phaseDeadline = deadline;
+    }
+
+    _phaseDeadline = deadline;
+    final remainingSeconds = deadline == null
+        ? (reconciliation == ClassicTimerReconciliation.startNewLifecycle
+              ? fallbackSeconds
+              : _timerSeconds)
+        : GameSyncPolicy.remainingSeconds(deadline: deadline, now: now);
+    final tickingShouldBeActive = GameSyncPolicy.shouldTick(
+      remainingSeconds: remainingSeconds,
+    );
+    _timerSeconds = remainingSeconds;
+    _publishTimerSeconds();
+
+    final traceFields = <String, Object?>{
+      'source': source,
+      'round': round,
+      'phase': phase.name,
+      if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+      'server_now_utc': now.toIso8601String(),
+      if (deadline != null)
+        'remaining_ms': deadline.difference(now).inMilliseconds,
+      'remaining_seconds': remainingSeconds,
+      'timer_already_existed': timerAlreadyExisted,
+      'ticking_should_be_active': tickingShouldBeActive,
+    };
+    switch (reconciliation) {
+      case ClassicTimerReconciliation.startNewLifecycle:
+        GameTraceService.instance.trace('classic_timer_started', traceFields);
+        break;
+      case ClassicTimerReconciliation.updateDeadline:
+        GameTraceService.instance.trace(
+          'classic_timer_deadline_updated',
+          traceFields,
+        );
+        break;
+      case ClassicTimerReconciliation.keepAlive:
+        GameTraceService.instance.trace('classic_timer_deduped', traceFields);
+        break;
+    }
+    GameTraceService.instance.trace('classic_timer_reconciled', traceFields);
+
+    _setTickingRequested(tickingShouldBeActive);
+    if (remainingSeconds <= 0) {
+      _timer?.cancel();
+      _timer = null;
+      _expireClassicTimer(source: source, now: now);
+      return;
+    }
+    if (_timer == null) {
+      _startPeriodicTimer(isClassic: true);
+      if (reconciliation != ClassicTimerReconciliation.startNewLifecycle) {
+        GameTraceService.instance.trace('classic_timer_started', {
+          ...traceFields,
+          'restored_missing_periodic_timer': true,
+        });
       }
-    });
+    }
+  }
+
+  void _startPeriodicTimer({required bool isClassic}) {
+    if (_timer != null) return;
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!_canUseRef) {
@@ -1546,26 +1715,77 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (remaining > 0) {
         _timerSeconds = remaining;
         ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
-        if (_timerSeconds == 10) {
-          _audioService.startTicking();
+        if (isClassic) {
+          _setTickingRequested(
+            GameSyncPolicy.shouldTick(remainingSeconds: remaining),
+          );
+        } else if (_timerSeconds == 10) {
+          _setTickingRequested(true);
         }
       } else {
         timer.cancel();
-        _timer = null;
+        if (identical(_timer, timer)) _timer = null;
         _timerSeconds = 0;
         ref.read(gameTimerProvider.notifier).setTimer(0);
-        _audioService.stopTicking();
-        _audioService.playTimeUp();
-        _handleTimerFinished();
+        _setTickingRequested(false);
+        if (isClassic) {
+          _expireClassicTimer(
+            source: 'periodic_deadline',
+            now: ref.read(roomServiceProvider).serverNow,
+          );
+        } else {
+          _audioService.playTimeUp();
+          _handleTimerFinished();
+        }
       }
     });
+  }
+
+  void _expireClassicTimer({required String source, required DateTime now}) {
+    final round = _activeClassicTimerRound;
+    final phase = _activeClassicTimerPhase;
+    if (round == null || phase == null) return;
+    final shouldHandle = GameSyncPolicy.shouldHandleTimerExpiration(
+      expiredRound: _expiredClassicTimerRound,
+      expiredPhase: _expiredClassicTimerPhase,
+      eventRound: round,
+      eventPhase: phase,
+    );
+    if (!shouldHandle) {
+      GameTraceService.instance.trace('classic_timer_deduped', {
+        'source': source,
+        'round': round,
+        'phase': phase.name,
+        'reason': 'expiration_already_handled',
+      });
+      return;
+    }
+    _expiredClassicTimerRound = round;
+    _expiredClassicTimerPhase = phase;
+    GameTraceService.instance.trace('classic_timer_expired', {
+      'source': source,
+      'round': round,
+      'phase': phase.name,
+      if (_activeClassicTimerDeadline != null)
+        'deadline_utc': _activeClassicTimerDeadline!.toIso8601String(),
+      'server_now_utc': now.toIso8601String(),
+      if (_activeClassicTimerDeadline != null)
+        'remaining_ms': _activeClassicTimerDeadline!
+            .difference(now)
+            .inMilliseconds,
+      'remaining_seconds': 0,
+      'timer_already_existed': false,
+      'ticking_should_be_active': false,
+    });
+    _audioService.playTimeUp();
+    _handleTimerFinished();
   }
 
   void _stopTimer({bool clearDeadline = true}) {
     _timer?.cancel();
     _timer = null;
     if (clearDeadline) _phaseDeadline = null;
-    unawaited(_audioService.stopTicking());
+    _setTickingRequested(false);
   }
 
   void _schedulePartyTransitionFallback({
@@ -1707,8 +1927,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
     });
 
-    _startTimer(
-      GameConstants.guessTimerSeconds,
+    _reconcileClassicTimer(
+      source: 'host_local_claim',
+      round: round,
+      phase: RoundPhase.guessing,
+      fallbackSeconds: GameConstants.guessTimerSeconds,
       deadline: claimedRoom.phaseEndsAt,
     );
     if (mounted) setState(() {});
@@ -1795,8 +2018,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
         'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
       });
 
-      _startTimer(
-        GameConstants.betTimerSeconds,
+      _reconcileClassicTimer(
+        source: 'host_local_claim',
+        round: gameState.currentRound,
+        phase: RoundPhase.betting,
+        fallbackSeconds: GameConstants.betTimerSeconds,
         deadline: claimedRoom.phaseEndsAt,
       );
     } finally {
