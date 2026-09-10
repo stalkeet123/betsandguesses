@@ -419,6 +419,70 @@ void main() {
     });
   });
 
+  group('classic question data gate', () {
+    test('holds guessing until its question arrives after the transition', () {
+      expect(
+        GameSyncPolicy.shouldWaitForClassicQuestion(
+          currentRound: 2,
+          currentPhase: RoundPhase.question,
+          hasCurrentQuestion: false,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.guessing,
+          incomingHasQuestion: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'accepts guessing atomically when the broadcast contains a question',
+      () {
+        expect(
+          GameSyncPolicy.shouldWaitForClassicQuestion(
+            currentRound: 2,
+            currentPhase: RoundPhase.question,
+            hasCurrentQuestion: false,
+            incomingRound: 2,
+            incomingPhase: RoundPhase.guessing,
+            incomingHasQuestion: true,
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'holds a new round even if the previous round still has a question',
+      () {
+        expect(
+          GameSyncPolicy.shouldWaitForClassicQuestion(
+            currentRound: 2,
+            currentPhase: RoundPhase.revealAnswer,
+            hasCurrentQuestion: true,
+            incomingRound: 3,
+            incomingPhase: RoundPhase.guessing,
+            incomingHasQuestion: false,
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test('does not hold a later phase after the question is already known', () {
+      expect(
+        GameSyncPolicy.shouldWaitForClassicQuestion(
+          currentRound: 2,
+          currentPhase: RoundPhase.question,
+          hasCurrentQuestion: true,
+          incomingRound: 2,
+          incomingPhase: RoundPhase.guessing,
+          incomingHasQuestion: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('classic timer reconciliation', () {
     final deadline = DateTime.utc(2026, 9, 10, 12, 0, 20);
 

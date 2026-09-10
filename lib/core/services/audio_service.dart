@@ -860,6 +860,8 @@ class AudioService {
     double volume = 0.48,
     Duration minInterval = const Duration(milliseconds: 45),
     int maxInstances = 3,
+    Duration Function()? position,
+    bool Function()? isCurrent,
   }) async {
     GameTraceService.instance.trace('sfx_request', {'audio_key': key});
     if (_isMuted ||
@@ -889,6 +891,7 @@ class AudioService {
     }
 
     final source = await loadSource();
+    if (isCurrent != null && !isCurrent()) return;
     if (_isMuted ||
         _disposed ||
         !_isAppActive ||
@@ -925,10 +928,36 @@ class AudioService {
     }
 
     _lastSfxPlayedAt[key] = playAt;
+    SoundHandle? newHandle;
     try {
-      await SoLoud.instance.play(source, volume: volume);
+      final offset = position?.call();
+      if (offset != null && offset >= SoLoud.instance.getLength(source)) return;
+      newHandle = await SoLoud.instance.play(
+        source,
+        volume: volume,
+        paused: position != null,
+      );
+      if ((isCurrent != null && !isCurrent()) ||
+          _isMuted ||
+          !_isAppActive ||
+          _disposed) {
+        await _safeStop(newHandle);
+        return;
+      }
+      if (position != null) {
+        final currentOffset = position();
+        if (currentOffset >= SoLoud.instance.getLength(source)) {
+          await _safeStop(newHandle);
+          return;
+        }
+        if (currentOffset > Duration.zero) {
+          SoLoud.instance.seek(newHandle, currentOffset);
+        }
+        SoLoud.instance.setPause(newHandle, false);
+      }
       GameTraceService.instance.trace('sfx_play', {'audio_key': key});
     } catch (error) {
+      if (newHandle != null) await _safeStop(newHandle);
       GameTraceService.instance.trace('sfx_play_failed', {
         'audio_key': key,
         'error_type': error.runtimeType.toString(),
@@ -988,9 +1017,14 @@ class AudioService {
     maxInstances: 1,
   );
 
-  Future<void> playResultReveal() => _playSfx(
+  Future<void> playResultReveal({
+    Duration Function()? position,
+    bool Function()? isCurrent,
+  }) => _playSfx(
     _loadResultRevealSource,
     key: 'result-reveal',
+    position: position,
+    isCurrent: isCurrent,
     volume: 0.72,
     minInterval: const Duration(seconds: 2),
     maxInstances: 1,

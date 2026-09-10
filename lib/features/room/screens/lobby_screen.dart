@@ -73,6 +73,16 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     super.initState();
     _loadPlayers();
     _setupRealtimeListener();
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.classic) {
+      unawaited(
+        ref.read(roomServiceProvider).synchronizeServerClock().catchError((
+          Object error,
+        ) {
+          debugPrint('Lobby clock warmup failed: $error');
+          return DateTime.now().toUtc();
+        }),
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final audio = ref.read(audioServiceProvider);
       audio.startLobbyMusic();
@@ -244,6 +254,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       return;
     }
 
+    // The host already has a start RPC in flight with question and score data.
+    if (_isStarting && startedRoom.gameMode == GameMode.classic) return;
     ref.read(currentRoomProvider.notifier).set(startedRoom);
     _isNavigatingToGame = true;
     context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
@@ -401,20 +413,26 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         return;
       }
 
+      final roomService = ref.read(roomServiceProvider);
+      try {
+        await roomService.synchronizeServerClock();
+      } catch (_) {
+        // Startup recovery retries clock synchronization.
+      }
+      if (!mounted) return;
       final gameService = ref.read(gameServiceProvider);
       final secureStart = await gameService.startGameSecure(
         roomId: room.id,
         durationSeconds: GameConstants.guessTimerSeconds,
       );
+      if (!mounted || _isNavigatingToGame) return;
       final question = secureStart.question;
       final legacyStartingScores = secureStart.scores;
       final startedRoom = secureStart.room;
       final deadline = startedRoom.phaseEndsAt;
-      final playerService = ref.read(playerServiceProvider);
-      final lobbyPlayers = playerService.collapseDuplicateConnectedPlayers(
-        await playerService.getPlayers(room.id),
-      );
-      _players = lobbyPlayers
+      // The start response already contains authoritative scores. Do not spend
+      // the one-second transition waiting for another player request.
+      _players = _players
           .map(
             (player) => player.copyWith(
               score: legacyStartingScores[player.id] ?? player.score,
@@ -439,6 +457,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               'room_id': room.id,
               'round': 1,
               'phase': startedRoom.roundPhase.name,
+              'state_version': startedRoom.stateVersion,
+              'phase_started_at': startedRoom.phaseStartedAt?.toIso8601String(),
               'question': question.toJson(),
               'scores': legacyStartingScores,
               'bank_scores': startingScores,

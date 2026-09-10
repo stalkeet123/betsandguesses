@@ -493,7 +493,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    ref.read(audioServiceProvider).startMainBgm();
     setState(() => _isLoading = true);
     ref.read(playerNameProvider.notifier).setName(name);
 
@@ -590,7 +589,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    ref.read(audioServiceProvider).startMainBgm();
     setState(() => _isLoading = true);
     try {
       final roomService = ref.read(roomServiceProvider);

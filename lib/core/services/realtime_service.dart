@@ -35,6 +35,7 @@ class RealtimeService {
     void Function(Set<String> deviceIds)? onPresenceChanged,
     BetRowChangeCallback? onBetRowChanged,
     RoomRowChangeCallback? onRoomRowChanged,
+    void Function(RealtimeSubscribeStatus)? onConnectionChanged,
   }) {
     final channelName = 'room:$roomCode';
     GameTraceService.instance.trace('realtime_join_requested', {
@@ -172,6 +173,11 @@ class RealtimeService {
 
       final subscriptionReady = Completer<void>();
       channel.subscribe((status, error) async {
+        if (subscriptionReady.isCompleted &&
+            !identical(_channels[channelName], channel)) {
+          return;
+        }
+        onConnectionChanged?.call(status);
         if (status == RealtimeSubscribeStatus.subscribed) {
           GameTraceService.instance.trace('realtime_subscribed', {
             'source': 'broadcast',
@@ -232,7 +238,19 @@ class RealtimeService {
     final channel = _channels[channelName];
     if (channel != null) {
       final mutablePayload = Map<String, dynamic>.of(payload);
-      await channel.sendBroadcastMessage(event: event, payload: mutablePayload);
+      try {
+        await channel.sendBroadcastMessage(
+          event: event,
+          payload: mutablePayload,
+        );
+      } catch (error) {
+        // Broadcast is a hint. A committed database mutation remains successful
+        // and subscribers recover from the server snapshot after reconnect.
+        GameTraceService.instance.trace('broadcast_send_failed', {
+          'event_name': event,
+          'error_type': error.runtimeType.toString(),
+        });
+      }
     }
   }
 

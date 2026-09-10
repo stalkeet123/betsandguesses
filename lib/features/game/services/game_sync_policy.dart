@@ -7,6 +7,35 @@ enum ClassicPhaseEventAction { reject, reconcile, advance }
 class GameSyncPolicy {
   const GameSyncPolicy._();
 
+  static const classicScanInterval = Duration(milliseconds: 240);
+
+  static bool shouldDeferBetSnapshot({
+    required int snapshotRound,
+    required RoundPhase snapshotPhase,
+    required int currentRound,
+    required RoundPhase currentPhase,
+    required bool commandWasInFlight,
+    required bool commandIsInFlight,
+    required int revisionAtRead,
+    required int currentRevision,
+  }) =>
+      snapshotRound == currentRound &&
+      snapshotPhase == RoundPhase.betting &&
+      currentPhase == RoundPhase.betting &&
+      (commandWasInFlight ||
+          commandIsInFlight ||
+          revisionAtRead != currentRevision);
+
+  static Duration elapsedSince(DateTime startedAt, DateTime now) =>
+      now.isBefore(startedAt) ? Duration.zero : now.difference(startedAt);
+
+  /// Late receivers catch up on the same reveal, rather than replaying it.
+  static int classicRevealStep(Duration elapsed, int slotCount) =>
+      (elapsed.inMicroseconds ~/ classicScanInterval.inMicroseconds).clamp(
+        0,
+        slotCount,
+      );
+
   static bool shouldPresentPhaseEntry({
     required int? presentedRound,
     required RoundPhase? presentedPhase,
@@ -20,6 +49,32 @@ class GameSyncPolicy {
       eventRound: eventRound,
       eventPhase: eventPhase,
     );
+  }
+
+  /// A room-row update can announce guessing before its question-bearing
+  /// broadcast or authoritative snapshot reaches this client. Keep the
+  /// transition surface in place instead of briefly presenting an empty
+  /// guessing screen and then presenting the same round again.
+  static bool shouldWaitForClassicQuestion({
+    required int currentRound,
+    required RoundPhase currentPhase,
+    required bool hasCurrentQuestion,
+    required int incomingRound,
+    required RoundPhase incomingPhase,
+    required bool incomingHasQuestion,
+  }) {
+    final hasQuestionForIncomingRound =
+        currentRound == incomingRound && hasCurrentQuestion;
+    if (incomingPhase != RoundPhase.guessing ||
+        incomingHasQuestion ||
+        hasQuestionForIncomingRound ||
+        incomingRound < currentRound) {
+      return false;
+    }
+
+    return incomingRound > currentRound ||
+        currentPhase == RoundPhase.question ||
+        currentPhase == RoundPhase.guessing;
   }
 
   static bool shouldApplyPhase({

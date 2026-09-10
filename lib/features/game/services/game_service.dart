@@ -6,6 +6,7 @@ import '../../../core/errors/monetization_exceptions.dart';
 import '../models/question_model.dart';
 import '../models/guess_model.dart';
 import '../models/bet_model.dart';
+import '../models/classic_snapshot.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../room/models/room_model.dart';
 
@@ -14,6 +15,95 @@ class GameService {
   final SupabaseClient _client;
 
   GameService(this._client);
+
+  DateTime? _snapshotRpcUnavailableUntil;
+
+  Future<ClassicSnapshot> getClassicSnapshot(String roomId) async {
+    final response = await _readClassicSnapshot(
+      roomId,
+    ).timeout(const Duration(seconds: 10));
+    final snapshot = ClassicSnapshot.fromResponse(response);
+    if (snapshot.room.id != roomId) {
+      throw StateError('Classic snapshot belongs to another room');
+    }
+    return snapshot;
+  }
+
+  Future<Object?> _readClassicSnapshot(String roomId) async {
+    final retryAt = _snapshotRpcUnavailableUntil;
+    if (retryAt == null || !DateTime.now().isBefore(retryAt)) {
+      try {
+        final response = await _client.rpc(
+          'get_classic_snapshot_v1',
+          params: {'p_room_id': roomId},
+        );
+        _snapshotRpcUnavailableUntil = null;
+        return response;
+      } on PostgrestException catch (error) {
+        // Additive rollout only: auth/network/SQL errors must NOT fall back.
+        if (error.code != 'PGRST202') rethrow;
+        _snapshotRpcUnavailableUntil = DateTime.now().add(
+          const Duration(minutes: 1),
+        );
+      }
+    }
+    // Older servers: parallel data reads bracketed by authoritative room reads.
+    // A transition invalidates the whole read; never combine two phases/rounds.
+    // This preserves rollout compatibility, not the new RPC's MVCC guarantee.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final before = await _client
+          .from('rooms')
+          .select()
+          .eq('id', roomId)
+          .single();
+      final room = Room.fromJson(before);
+      final data = await Future.wait<Object?>([
+        _client
+            .from('players')
+            .select(
+              'id, room_id, device_id, name, avatar_color, score, bank_score, '
+              'is_host, is_ready, is_connected, last_seen, joined_at',
+            )
+            .eq('room_id', roomId)
+            .order('joined_at'),
+        _client
+            .from('guesses')
+            .select(_guessSelectColumns)
+            .eq('room_id', roomId)
+            .eq('round_number', room.currentRound),
+        _client
+            .from('bets')
+            .select('$_betSelectColumns, won')
+            .eq('room_id', roomId)
+            .eq('round_number', room.currentRound),
+        _client.rpc('get_current_question_v2', params: {'p_room_id': roomId}),
+      ]);
+      final after = await _client
+          .from('rooms')
+          .select()
+          .eq('id', roomId)
+          .single();
+      final latest = Room.fromJson(after);
+      if (room.stateVersion != latest.stateVersion ||
+          room.currentRound != latest.currentRound ||
+          room.roundPhase != latest.roundPhase ||
+          room.status != latest.status ||
+          room.currentQuestionId != latest.currentQuestionId ||
+          room.phaseEndsAt != latest.phaseEndsAt) {
+        continue;
+      }
+      return {
+        'room': after,
+        'players': data[0],
+        'guesses': data[1],
+        'bets': data[2],
+        'question': data[3],
+      };
+    }
+    throw StateError(
+      'Classic room changed during snapshot read; retry required',
+    );
+  }
 
   // ── Questions ──
 

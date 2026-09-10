@@ -22,6 +22,7 @@ class RoomService {
   final SupabaseClient _client;
   Duration _serverClockOffset = Duration.zero;
   DateTime? _lastServerClockSyncAt;
+  Future<DateTime>? _clockSyncInFlight;
 
   static const _serverClockCacheDuration = Duration(minutes: 1);
 
@@ -29,39 +30,53 @@ class RoomService {
 
   DateTime get serverNow => DateTime.now().toUtc().add(_serverClockOffset);
 
-  Future<DateTime> synchronizeServerClock({bool force = false}) async {
+  Future<DateTime> synchronizeServerClock({bool force = false}) {
+    final running = _clockSyncInFlight;
+    if (running != null) return running;
     final lastSync = _lastServerClockSyncAt;
     if (!force &&
         lastSync != null &&
         DateTime.now().toUtc().difference(lastSync) <
             _serverClockCacheDuration) {
-      GameTraceService.instance.trace('server_clock_sync_cache_hit');
-      return serverNow;
+      return Future.value(serverNow);
     }
+    final future = _sampleServerClock();
+    _clockSyncInFlight = future;
+    return future.whenComplete(() => _clockSyncInFlight = null);
+  }
 
-    GameTraceService.instance.trace('server_clock_sync_begin', {
-      'force': force,
-    });
-    final requestStartedAt = DateTime.now().toUtc();
-    dynamic response;
-    try {
-      response = await _client.rpc('game_server_time');
-    } catch (error) {
-      GameTraceService.instance.trace('server_clock_sync_failed', {
-        'error_type': error.runtimeType.toString(),
-      });
-      rethrow;
+  Future<DateTime> _sampleServerClock() async {
+    // Cold HTTP/TLS startup is asymmetric. Use the lowest RTT of three
+    // initial samples instead of keeping a slow cold sample for the first minute.
+    final samples = _lastServerClockSyncAt == null ? 3 : 1;
+    Duration? bestRtt;
+    for (var sample = 0; sample < samples; sample++) {
+      final startedAt = DateTime.now().toUtc();
+      final watch = Stopwatch()..start();
+      try {
+        final response = await _client
+            .rpc('game_server_time')
+            .timeout(const Duration(seconds: 5));
+        final rtt = watch.elapsed;
+        if (bestRtt == null || rtt < bestRtt) {
+          bestRtt = rtt;
+          _serverClockOffset = _parseServerTime(
+            response,
+          ).difference(startedAt.add(rtt ~/ 2));
+        }
+      } catch (error) {
+        GameTraceService.instance.trace('server_clock_sync_failed', {
+          'error_type': error.runtimeType.toString(),
+        });
+        if (bestRtt == null) rethrow;
+        break;
+      }
     }
-    final requestFinishedAt = DateTime.now().toUtc();
-    final serverTime = _parseServerTime(response);
-    final midpoint = requestStartedAt.add(
-      requestFinishedAt.difference(requestStartedAt) ~/ 2,
-    );
-    _serverClockOffset = serverTime.difference(midpoint);
-    _lastServerClockSyncAt = requestFinishedAt;
+    _lastServerClockSyncAt = DateTime.now().toUtc();
     GameTraceService.instance.trace('server_clock_sync_end', {
-      'rtt_ms': requestFinishedAt.difference(requestStartedAt).inMilliseconds,
+      'rtt_ms': bestRtt?.inMilliseconds,
       'computed_offset_ms': _serverClockOffset.inMilliseconds,
+      'samples': samples,
     });
     return serverNow;
   }
