@@ -164,6 +164,196 @@ void main() {
     });
   });
 
+  group('classic broadcast data reconciliation', () {
+    test('question-bearing broadcast after a room row reconciles data', () {
+      expect(
+        GameSyncPolicy.classicPhaseEventAction(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+        ),
+        ClassicPhaseEventAction.reconcile,
+      );
+      expect(
+        GameSyncPolicy.shouldPresentPhaseEntry(
+          presentedRound: 2,
+          presentedPhase: RoundPhase.guessing,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+        ),
+        isFalse,
+      );
+    });
+
+    test('newer same-phase version reconciles without phase entry', () {
+      expect(
+        GameSyncPolicy.classicPhaseEventAction(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          currentStateVersion: 15,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+          eventStateVersion: 16,
+        ),
+        ClassicPhaseEventAction.reconcile,
+      );
+    });
+
+    test('older same-phase version is rejected', () {
+      expect(
+        GameSyncPolicy.classicPhaseEventAction(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          currentStateVersion: 16,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+          eventStateVersion: 15,
+        ),
+        ClassicPhaseEventAction.reject,
+      );
+    });
+
+    test('higher version cannot replay an earlier transition', () {
+      expect(
+        GameSyncPolicy.classicPhaseEventAction(
+          currentRound: 2,
+          currentPhase: RoundPhase.guessing,
+          currentStateVersion: 15,
+          eventRound: 2,
+          eventPhase: RoundPhase.question,
+          eventStateVersion: 20,
+        ),
+        ClassicPhaseEventAction.reject,
+      );
+    });
+
+    test('older round is rejected even with a later phase', () {
+      expect(
+        GameSyncPolicy.classicPhaseEventAction(
+          currentRound: 3,
+          currentPhase: RoundPhase.question,
+          eventRound: 2,
+          eventPhase: RoundPhase.revealAnswer,
+        ),
+        ClassicPhaseEventAction.reject,
+      );
+    });
+
+    test('new round advances from reveal into transition', () {
+      expect(
+        GameSyncPolicy.classicPhaseEventAction(
+          currentRound: 2,
+          currentPhase: RoundPhase.revealAnswer,
+          eventRound: 3,
+          eventPhase: RoundPhase.question,
+        ),
+        ClassicPhaseEventAction.advance,
+      );
+    });
+
+    test('question advances to guessing when broadcast arrives first', () {
+      expect(
+        GameSyncPolicy.classicPhaseEventAction(
+          currentRound: 2,
+          currentPhase: RoundPhase.question,
+          eventRound: 2,
+          eventPhase: RoundPhase.guessing,
+        ),
+        ClassicPhaseEventAction.advance,
+      );
+    });
+  });
+
+  group('classic reveal authoritative deadline', () {
+    final deadline = DateTime.utc(2026, 9, 10, 12, 0, 7);
+
+    test('broadcast deadline wins over an older local betting row', () {
+      expect(
+        GameSyncPolicy.classicRevealDeadline(
+          eventRound: 2,
+          eventDeadline: deadline,
+          roomRound: 2,
+          roomPhase: RoundPhase.betting,
+          roomDeadline: deadline.subtract(const Duration(seconds: 7)),
+        ),
+        deadline,
+      );
+    });
+
+    test('legacy broadcast reuses a matching reveal room deadline', () {
+      expect(
+        GameSyncPolicy.classicRevealDeadline(
+          eventRound: 2,
+          roomRound: 2,
+          roomPhase: RoundPhase.revealAnswer,
+          roomDeadline: deadline,
+        ),
+        deadline,
+      );
+    });
+
+    test('legacy broadcast cannot reuse the betting deadline', () {
+      expect(
+        GameSyncPolicy.classicRevealDeadline(
+          eventRound: 2,
+          roomRound: 2,
+          roomPhase: RoundPhase.betting,
+          roomDeadline: deadline,
+        ),
+        isNull,
+      );
+    });
+
+    test('legacy broadcast cannot borrow another round deadline', () {
+      expect(
+        GameSyncPolicy.classicRevealDeadline(
+          eventRound: 2,
+          roomRound: 1,
+          roomPhase: RoundPhase.revealAnswer,
+          roomDeadline: deadline,
+        ),
+        isNull,
+      );
+    });
+
+    test('missing deadline requests recovery instead of a local window', () {
+      expect(
+        GameSyncPolicy.classicRevealDeadline(
+          eventRound: 2,
+          roomRound: 2,
+          roomPhase: RoundPhase.revealAnswer,
+        ),
+        isNull,
+      );
+    });
+
+    test('delayed delivery does not restart the seven-second window', () {
+      final receivedAt = deadline.subtract(const Duration(seconds: 2));
+      final resolved = GameSyncPolicy.classicRevealDeadline(
+        eventRound: 2,
+        eventDeadline: deadline,
+        roomRound: 2,
+        roomPhase: RoundPhase.revealAnswer,
+      )!;
+      expect(resolved, deadline);
+      expect(
+        GameSyncPolicy.remainingSeconds(
+          deadline: resolved,
+          now: receivedAt,
+        ),
+        2,
+      );
+      expect(
+        GameSyncPolicy.remainingSeconds(
+          deadline: resolved,
+          now: deadline.add(const Duration(seconds: 1)),
+        ),
+        0,
+      );
+    });
+  });
+
   group('classic phase presentation identity', () {
     test('presents the first phase entry', () {
       expect(

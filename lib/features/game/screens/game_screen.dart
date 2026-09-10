@@ -535,12 +535,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
             final round = (payload['round'] as num?)?.toInt();
             if (round == null) return;
             final currentState = ref.read(gameStateProvider);
-            if (!GameSyncPolicy.shouldApplyPhase(
+            final phaseAction = GameSyncPolicy.classicPhaseEventAction(
               currentRound: currentState.currentRound,
               currentPhase: currentState.phase,
               eventRound: round,
               eventPhase: phase,
-            )) {
+            );
+            if (phaseAction == ClassicPhaseEventAction.reject) {
               return;
             }
             final currentRoom = ref.read(currentRoomProvider);
@@ -564,11 +565,34 @@ class _GameScreenState extends ConsumerState<GameScreen>
             );
 
             final isNewRound = round > currentState.currentRound;
-            final deadline = _deadlineFromPayload(payload);
+            final isPhaseEntry = phaseAction == ClassicPhaseEventAction.advance;
+            final deadline =
+                _deadlineFromPayload(payload) ??
+                (currentRoom.currentRound == round &&
+                        currentRoom.roundPhase == phase
+                    ? currentRoom.phaseEndsAt
+                    : null);
             final gameNotifier = ref.read(gameStateProvider.notifier);
 
-            gameNotifier.setRound(round);
-            gameNotifier.updatePhase(phase);
+            if (isNewRound) {
+              gameNotifier.beginAuthoritativeRound(round, phase);
+              _roundWinners.clear();
+              _roundPayouts.clear();
+              _revealedResultRound = null;
+              _incomingOtherBetIds.clear();
+              _playedOtherBetEntryIds.clear();
+              _selectedBetId = null;
+            } else if (isPhaseEntry) {
+              gameNotifier.updatePhase(phase);
+            }
+            if (!isPhaseEntry) {
+              GameTraceService.instance.trace('classic_phase_data_reconciled', {
+                'source': 'broadcast_phase_change',
+                'round': round,
+                'phase': phase.name,
+                'has_question': payload['question'] != null,
+              });
+            }
             _traceAppliedRoomPhase(
               'broadcast_phase_change',
               ref.read(currentRoomProvider),
@@ -596,17 +620,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 }
                 _playQuestionRevealOnce(question);
               }
-              if (isNewRound) {
-                _roundWinners.clear();
-                _incomingOtherBetIds.clear();
-                _playedOtherBetEntryIds.clear();
-                _selectedBetId = null;
-                gameNotifier.resetForNewRound();
-              }
-
               if (phase == RoundPhase.guessing) {
-                _guessInput = '';
-                _isSubmittingGuess = false;
+                if (isPhaseEntry) {
+                  _guessInput = '';
+                  _isSubmittingGuess = false;
+                }
                 _reconcileClassicTimer(
                   source: 'broadcast_phase_change',
                   round: round,
@@ -630,6 +648,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
             if (phase == RoundPhase.revealAnswer ||
                 phase == RoundPhase.scoring) {
               _stopTimer();
+              if (phase == RoundPhase.revealAnswer && deadline != null) {
+                _scheduleRoundAdvance(deadline: deadline);
+              }
             }
           } catch (e, st) {
             debugPrint('Error in onPhaseChange: $e\n$st');
@@ -711,7 +732,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 round: ref.read(gameStateProvider).currentRound,
               );
               unawaited(_startRevealSequence(ref.read(gameStateProvider)));
-              _scheduleRoundAdvance();
+              final deadline = GameSyncPolicy.classicRevealDeadline(
+                eventRound: round,
+                eventDeadline: _deadlineFromPayload(payload),
+                roomRound: currentRoom.currentRound,
+                roomPhase: currentRoom.roundPhase,
+                roomDeadline: currentRoom.phaseEndsAt,
+              );
+              if (deadline != null) {
+                _scheduleRoundAdvance(deadline: deadline);
+              } else {
+                // An old sender did not include server time. Fetch it instead
+                // of starting a new seven-second window at message arrival.
+                unawaited(_resyncFromServer(synchronizeClock: false));
+              }
             }
           } catch (e, st) {
             debugPrint('Error in onAnswerRevealed: $e\n$st');
@@ -2133,6 +2167,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     await realtimeService.broadcast(widget.roomCode, 'phase_change', {
       'phase': RoundPhase.guessing.name,
       'round': round,
+      'state_version': claimedRoom.stateVersion,
       'question': question.toJson(),
       'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
     });
@@ -2245,6 +2280,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       await realtimeService.broadcast(widget.roomCode, 'phase_change', {
         'phase': RoundPhase.betting.name,
         'round': gameState.currentRound,
+        'state_version': claimedRoom.stateVersion,
         'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
       });
       if (!_canUseRef) return;
@@ -2330,9 +2366,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     unawaited(
       _startRevealSequence(ref.read(gameStateProvider), payouts: payouts),
     );
+    _scheduleRoundAdvance(deadline: settlement.phaseEndsAt);
 
     await realtimeService.broadcast(widget.roomCode, 'answer_revealed', {
       'round': gameState.currentRound,
+      'state_version': settlement.stateVersion,
+      'phase_ends_at': settlement.phaseEndsAt?.toIso8601String(),
       'answer': correctAnswer,
       'winning_guess_id': winningGuessId,
     });
@@ -2345,10 +2384,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     await realtimeService.broadcast(widget.roomCode, 'phase_change', {
       'phase': RoundPhase.revealAnswer.name,
       'round': gameState.currentRound,
+      'state_version': settlement.stateVersion,
+      'phase_ends_at': settlement.phaseEndsAt?.toIso8601String(),
     });
     if (!_canUseRef) return;
-
-    _scheduleRoundAdvance(deadline: settlement.phaseEndsAt);
   }
 
   void _playRevealAudioForCurrentPlayer(GameState gameState) {

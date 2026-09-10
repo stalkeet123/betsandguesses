@@ -2,6 +2,8 @@ import '../../../core/constants/game_constants.dart';
 
 enum ClassicTimerReconciliation { startNewLifecycle, updateDeadline, keepAlive }
 
+enum ClassicPhaseEventAction { reject, reconcile, advance }
+
 class GameSyncPolicy {
   const GameSyncPolicy._();
 
@@ -53,6 +55,52 @@ class GameSyncPolicy {
       return false;
     }
     return true;
+  }
+
+  /// A duplicate phase may still carry missing question data or a deadline.
+  /// Data reconciliation must not be confused with replaying phase entry.
+  static ClassicPhaseEventAction classicPhaseEventAction({
+    required int currentRound,
+    required RoundPhase currentPhase,
+    int? currentStateVersion,
+    required int eventRound,
+    required RoundPhase eventPhase,
+    int? eventStateVersion,
+  }) {
+    if (!shouldApplyClassicSnapshot(
+      currentRound: currentRound,
+      currentPhase: currentPhase,
+      currentStateVersion: currentStateVersion,
+      incomingRound: eventRound,
+      incomingPhase: eventPhase,
+      incomingStateVersion: eventStateVersion,
+    )) {
+      return ClassicPhaseEventAction.reject;
+    }
+    return shouldApplyPhase(
+          currentRound: currentRound,
+          currentPhase: currentPhase,
+          eventRound: eventRound,
+          eventPhase: eventPhase,
+        )
+        ? ClassicPhaseEventAction.advance
+        : ClassicPhaseEventAction.reconcile;
+  }
+
+  /// Legacy broadcasts may omit the deadline. Only reuse a room deadline
+  /// belonging to this round's reveal; never borrow the betting deadline.
+  static DateTime? classicRevealDeadline({
+    required int eventRound,
+    DateTime? eventDeadline,
+    required int roomRound,
+    required RoundPhase roomPhase,
+    DateTime? roomDeadline,
+  }) {
+    if (eventDeadline != null) return eventDeadline;
+    if (roomRound != eventRound || roomPhase != RoundPhase.revealAnswer) {
+      return null;
+    }
+    return roomDeadline;
   }
 
   static ClassicTimerReconciliation classicTimerReconciliation({
