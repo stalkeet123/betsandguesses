@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/core/services/game_trace_service.dart';
 
@@ -5,6 +7,31 @@ void main() {
   final trace = GameTraceService.instance;
 
   tearDown(() => trace.resetForTest());
+
+  test('session IDs use a compact timestamp and random structure', () {
+    final timestamp = DateTime.utc(2026, 9, 10, 12, 34, 56);
+    final random = Random(7);
+
+    final first = GameTraceService.createSessionId(
+      timestamp: timestamp,
+      random: random,
+    );
+    final second = GameTraceService.createSessionId(
+      timestamp: timestamp,
+      random: random,
+    );
+    final expectedTimestamp = timestamp.microsecondsSinceEpoch.toRadixString(
+      36,
+    );
+
+    for (final id in <String>[first, second]) {
+      final parts = id.split('-');
+      expect(parts, hasLength(2));
+      expect(parts.first, expectedTimestamp);
+      expect(parts.last, matches(RegExp(r'^[0-9a-z]+$')));
+      expect(parts.last, isNotEmpty);
+    }
+  });
 
   test('disabled tracing does not retain records', () {
     trace.resetForTest(enabled: false);

@@ -12,15 +12,27 @@ class GameTraceService {
 
   static final instance = GameTraceService._();
   static const _maxRecords = 2000;
+  static const _sessionRandomBound = 1 << 30;
   static const _enabledByDefine = bool.fromEnvironment('BG_TRACE');
 
   final Stopwatch _stopwatch = Stopwatch()..start();
   final Queue<String> _records = Queue<String>();
   final ValueNotifier<int> recordCount = ValueNotifier<int>(0);
-  final String _sessionId =
-      '${DateTime.now().toUtc().microsecondsSinceEpoch.toRadixString(36)}-${Random().nextInt(1 << 32).toRadixString(36)}';
+  final String _sessionId = createSessionId();
   int _sequence = 0;
   bool? _enabled;
+
+  @visibleForTesting
+  static String createSessionId({DateTime? timestamp, Random? random}) {
+    final timestampPart = (timestamp ?? DateTime.now())
+        .toUtc()
+        .microsecondsSinceEpoch
+        .toRadixString(36);
+    final randomPart = (random ?? Random())
+        .nextInt(_sessionRandomBound)
+        .toRadixString(36);
+    return '$timestampPart-$randomPart';
+  }
 
   bool get enabled => _enabled ??= _resolveEnabled();
 
