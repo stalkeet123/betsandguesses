@@ -158,15 +158,18 @@ void main() {
     ]);
   });
 
-  test('lost preparation claim returns null without another picker call', () async {
-    final prepared = await GameService(client).prepareNextClassicRound(
-      roomId: 'room-a',
-      roundNumber: 1,
-      transitionSeconds: 1,
-    );
-    expect(prepared, isNull);
-    expect(requests, hasLength(1));
-  });
+  test(
+    'lost preparation claim returns null without another picker call',
+    () async {
+      final prepared = await GameService(client).prepareNextClassicRound(
+        roomId: 'room-a',
+        roundNumber: 1,
+        transitionSeconds: 1,
+      );
+      expect(prepared, isNull);
+      expect(requests, hasLength(1));
+    },
+  );
 
   test('preparation rejects a mismatched round or question identity', () async {
     for (final overrides in [

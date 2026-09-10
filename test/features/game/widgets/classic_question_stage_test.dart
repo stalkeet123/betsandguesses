@@ -61,10 +61,7 @@ void main() {
     void mounted() => mounts++;
     await tester.pumpWidget(surface(state(), onTransitionMounted: mounted));
     await tester.pumpWidget(
-      surface(
-        state(phase: RoundPhase.guessing),
-        onTransitionMounted: mounted,
-      ),
+      surface(state(phase: RoundPhase.guessing), onTransitionMounted: mounted),
     );
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('ROUND 2'), findsOneWidget);
@@ -155,20 +152,14 @@ void main() {
       state(phase: RoundPhase.guessing),
       state(phase: RoundPhase.guessing, question: questionA),
     ]) {
-      await tester.pumpWidget(
-        surface(incoming, onTransitionMounted: mounted),
-      );
+      await tester.pumpWidget(surface(incoming, onTransitionMounted: mounted));
       expect(find.text('Question A'), findsOneWidget);
       expect(find.text('ROUND 2'), findsNothing);
     }
     expect(mounts, 1);
     await tester.pumpWidget(
       surface(
-        state(
-          phase: RoundPhase.guessing,
-          question: questionA,
-          submitted: true,
-        ),
+        state(phase: RoundPhase.guessing, question: questionA, submitted: true),
       ),
     );
     expect(find.text('Question A SUBMITTED'), findsOneWidget);

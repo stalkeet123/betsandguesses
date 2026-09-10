@@ -15,6 +15,7 @@ declare
   v_payload jsonb;
   v_snapshot jsonb;
   v_count integer;
+  v_before_start timestamptz;
   v_admin text := current_user;
 begin
   insert into auth.users(id) values (v_host), (v_guest), (v_outsider);
@@ -120,6 +121,35 @@ begin
   if v_count <> 3 then raise exception 'Unexpected question serve count'; end if;
   if (select free_host_games_used from public.monetization_profiles where user_id = v_host) <> 0 then
     raise exception 'Round preparation consumed a host game credit';
+  end if;
+  -- Initial game start also prepares before starting the one-second clock.
+  v_room := gen_random_uuid();
+  insert into public.rooms(id, code, host_id, created_by, max_rounds)
+    values (v_room, upper(left(replace(gen_random_uuid()::text, '-', ''), 6)),
+            v_host::text, v_host, 6);
+  insert into public.players(room_id, name, device_id, auth_user_id, is_host, is_ready)
+    values (v_room, 'contract host', v_host::text, v_host, true, true),
+           (v_room, 'contract guest', v_guest::text, v_guest, false, true);
+  perform set_config('request.jwt.claim.sub', v_host::text, true);
+  perform set_config('role', 'authenticated', true);
+  v_before_start := clock_timestamp();
+  v_payload := public.start_game_v4(v_room, 20);
+  if v_payload->'question'->>'id' is null
+     or v_payload->'question'->>'id' is distinct from v_payload->'room'->>'current_question_id'
+     or v_payload->'room'->>'round_phase' <> 'question'
+     or (v_payload->'room'->>'phase_started_at')::timestamptz < v_before_start
+     or (v_payload->'room'->>'phase_ends_at')::timestamptz -
+        (v_payload->'room'->>'phase_started_at')::timestamptz <> interval '1 second'
+     or (v_payload->'question') ? 'answer' then
+    raise exception 'Initial round did not prepare before starting its clock';
+  end if;
+  v_snapshot := public.start_game_v4(v_room, 20);
+  if v_snapshot->'question'->>'id' is distinct from v_payload->'question'->>'id' then
+    raise exception 'Duplicate game start selected another question';
+  end if;
+  perform set_config('role', v_admin, true);
+  if (select free_host_games_used from public.monetization_profiles where user_id = v_host) <> 1 then
+    raise exception 'Duplicate game start consumed another credit';
   end if;
 end;
 $check$;

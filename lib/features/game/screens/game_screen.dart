@@ -2977,16 +2977,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
       notifier.setQuestion(preparedRound.question);
       unawaited(
-        realtimeService.broadcast(widget.roomCode, 'phase_change', {
-          'phase': RoundPhase.question.name,
-          'round': nextRound,
-          'state_version': claimedRoom.stateVersion,
-          'question': preparedRound.question.toJson(),
-          'phase_started_at': claimedRoom.phaseStartedAt?.toIso8601String(),
-          'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
-        }).catchError((Object error, StackTrace stackTrace) {
-          debugPrint('Prepared-round broadcast failed: $error\n$stackTrace');
-        }),
+        realtimeService
+            .broadcast(widget.roomCode, 'phase_change', {
+              'phase': RoundPhase.question.name,
+              'round': nextRound,
+              'state_version': claimedRoom.stateVersion,
+              'question': preparedRound.question.toJson(),
+              'phase_started_at': claimedRoom.phaseStartedAt?.toIso8601String(),
+              'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
+            })
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint(
+                'Prepared-round broadcast failed: $error\n$stackTrace',
+              );
+            }),
       );
       _traceAppliedRoomPhase(
         'host_local_claim',

@@ -50,6 +50,7 @@ class GameSyncPolicy {
       eventPhase: eventPhase,
     );
   }
+
   static bool shouldApplyPhase({
     required int currentRound,
     required RoundPhase currentPhase,
