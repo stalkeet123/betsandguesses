@@ -34,6 +34,18 @@ class ClassicQuestionStage extends StatefulWidget {
 class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
   GameState? _presentedQuestion;
 
+  @override
+  void initState() {
+    super.initState();
+    _reconcilePresentation();
+  }
+
+  @override
+  void didUpdateWidget(covariant ClassicQuestionStage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _reconcilePresentation();
+  }
+
   bool _matchesExpectedQuestion(GameState value, GameState incoming) {
     final question = value.currentQuestion;
     return value.roomId == incoming.roomId &&
@@ -42,8 +54,7 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
         question.id == widget.expectedQuestionId;
   }
 
-  @override
-  Widget build(BuildContext context) {
+  void _reconcilePresentation() {
     final incoming = widget.gameState;
     final previous = _presentedQuestion;
     if (previous != null &&
@@ -61,17 +72,39 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
 
     if (incoming.phase == RoundPhase.guessing &&
         _matchesExpectedQuestion(incoming, incoming)) {
+      final isNewPresentation =
+          _presentedQuestion?.roomId != incoming.roomId ||
+          _presentedQuestion?.currentRound != incoming.currentRound ||
+          _presentedQuestion?.currentQuestion?.id !=
+              incoming.currentQuestion?.id;
       _presentedQuestion = incoming;
-      widget.onQuestionPresented?.call(incoming);
+      if (isNewPresentation && widget.onQuestionPresented != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_matchesExpectedQuestion(incoming, widget.gameState)) {
+            return;
+          }
+          widget.onQuestionPresented?.call(incoming);
+        });
+      }
     }
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final incoming = widget.gameState;
     final presented = _presentedQuestion;
     if (presented == null) {
       // Keep this subtree mounted when metadata arrives before the payload.
       // Never build an empty question page underneath the transition.
       return KeyedSubtree(
         key: ValueKey('classic-preparing-${incoming.currentRound}'),
-        child: widget.transitionBuilder(context),
+        child: MediaQuery(
+          // A Realtime/snapshot arrival must not restart a local entrance
+          // animation. The authoritative deadline still decides when the
+          // preparation surface is replaced by the question.
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: Builder(builder: widget.transitionBuilder),
+        ),
       );
     }
 
