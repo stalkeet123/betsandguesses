@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Play Bets & Guesses with friends: numeric trivia betting in Classic Mode and social Party Poll rounds. Host on iPhone and join from a browser.">
+  <meta name="theme-color" content="#0F0805">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://bets-and-guesses.com/">
+
+  <meta property="og:title" content="Bets & Guesses | Play with friends">
+  <meta property="og:description" content="Guess, bet, reveal. Play Classic trivia or Party Poll together in one room.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://bets-and-guesses.com/">
+  <meta property="og:image" content="https://bets-and-guesses.com/screenshots/game-bet.webp">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Bets & Guesses">
+  <link rel="apple-touch-icon" href="icons/logo.webp">
+  <link rel="icon" type="image/webp" href="favicon.webp">
+  <link rel="manifest" href="manifest.json">
+  <title>Bets & Guesses | Party Game</title>
+
+  <style id="splash-screen-style">
+    html {
+      height: 100%;
+      overscroll-behavior: none;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100%;
+      background-color: #0F0805;
+      background-size: 100% 100%;
+      overscroll-behavior: none;
+      touch-action: none;
+      outline: none;
+    }
+
+    flt-glass-pane,
+    canvas {
+      outline: none !important;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .center {
+      margin: 0;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .contain {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .stretch {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .cover {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .bottom {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translate(-50%, 0);
+    }
+
+    .bottomLeft {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+    }
+
+    .bottomRight {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body { background-color: #0F0805; }
+    }
+  </style>
+
+  <script id="splash-screen-script">
+    function removeSplashFromWeb() {
+      document.getElementById("splash")?.remove();
+      document.getElementById("splash-branding")?.remove();
+      document.body.style.background = "#0F0805";
+    }
+
+    let wakeLockSentinel = null;
+
+    async function acquireWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+          });
+        }
+      } catch (err) {
+        // WakeLock may be unavailable or blocked by the browser.
+      }
+    }
+
+    const unlockWakeLock = () => acquireWakeLock();
+    window.addEventListener('touchstart', unlockWakeLock, { passive: true });
+    window.addEventListener('click', unlockWakeLock, { passive: true });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') acquireWakeLock();
+    });
+  </script>
+</head>
+<body>
+  <script src="assets/packages/flutter_soloud/web/libflutter_soloud_plugin.js" defer></script>
+  <script src="assets/packages/flutter_soloud/web/init_module.dart.js" defer></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
