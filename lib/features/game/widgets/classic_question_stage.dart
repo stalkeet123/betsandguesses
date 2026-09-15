@@ -1,21 +1,26 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 
 import '../../../core/constants/game_constants.dart';
 import '../models/game_state.dart';
+import '../models/question_model.dart';
 
-/// Presentation only: transport state and server deadlines continue advancing
-/// while this stage waits for the question belonging to the accepted round.
+typedef ClassicQuestionPresented =
+    void Function(Question question, String source);
+
+/// Presentation only. The durable question/transition authority belongs to
+/// [classicPresentationProvider]; local state is only a one-frame bridge from
+/// the first visible question frame to that durable write.
 class ClassicQuestionStage extends StatefulWidget {
   final GameState gameState;
   final String? expectedQuestionId;
-
-  /// A previously opened authoritative question for this exact round. The
-  /// parent owns this cache so a temporary route/subtree rebuild cannot make
-  /// the same round play its transition a second time.
-  final GameState? retainedQuestion;
-  final ValueChanged<GameState>? onQuestionPresented;
+  final String? classicMatchId;
+  final int? stateVersion;
+  final bool questionAlreadyPresented;
+  final Question? retainedPresentedQuestion;
+  final ClassicQuestionPresented? onQuestionPresented;
   final DateTime? questionRevealAt;
   final DateTime Function()? serverNow;
   final WidgetBuilder transitionBuilder;
@@ -25,7 +30,10 @@ class ClassicQuestionStage extends StatefulWidget {
     super.key,
     required this.gameState,
     required this.expectedQuestionId,
-    this.retainedQuestion,
+    this.classicMatchId,
+    this.stateVersion,
+    required this.questionAlreadyPresented,
+    this.retainedPresentedQuestion,
     this.onQuestionPresented,
     this.questionRevealAt,
     this.serverNow,
@@ -38,10 +46,37 @@ class ClassicQuestionStage extends StatefulWidget {
 }
 
 class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
-  GameState? _presentedQuestion;
   Timer? _questionRevealTimer;
   String? _scheduledQuestionIdentity;
   DateTime? _scheduledQuestionRevealAt;
+  String? _visibleBridgeIdentity;
+  Question? _visibleBridgeQuestion;
+  String? _visibleBridgeSource;
+  String? _loggedTransitionIdentity;
+  String? _loggedReplayBlockerIdentity;
+
+  String _identity(GameState state, String? questionId) =>
+      '${state.roomId}:${widget.classicMatchId ?? 'none'}:'
+      '${state.currentRound}:${questionId ?? 'none'}';
+
+  String _short(String? value) => value == null
+      ? 'none'
+      : value.length <= 8
+      ? value
+      : value.substring(0, 8);
+
+  void _log(String event, GameState state, {String? retainedQuestionId}) {
+    if (!kDebugMode) return;
+    debugPrint(
+      'CLASSIC_SYNC $event '
+      'room=${state.roomId} match=${_short(widget.classicMatchId)} '
+      'round=${state.currentRound} phase=${state.phase.name} '
+      'state_version=${widget.stateVersion ?? 'none'} '
+      'expectedQuestionId=${_short(widget.expectedQuestionId)} '
+      'actualQuestionId=${_short(state.currentQuestion?.id)} '
+      'retainedQuestionId=${_short(retainedQuestionId)}',
+    );
+  }
 
   @override
   void initState() {
@@ -61,92 +96,84 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
     super.dispose();
   }
 
-  bool _matchesExpectedQuestion(GameState value, GameState incoming) {
-    final question = value.currentQuestion;
-    return value.roomId == incoming.roomId &&
-        value.currentRound == incoming.currentRound &&
-        question != null &&
-        question.id == widget.expectedQuestionId;
+  bool _matchesExpectedQuestion(GameState state) {
+    final question = state.currentQuestion;
+    return question != null && question.id == widget.expectedQuestionId;
+  }
+
+  void _showQuestionAndPersist(Question question, String source) {
+    final incoming = widget.gameState;
+    final identity = _identity(incoming, question.id);
+    if (_visibleBridgeIdentity == identity) return;
+    _visibleBridgeIdentity = identity;
+    _visibleBridgeQuestion = question;
+    _visibleBridgeSource = source;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.questionAlreadyPresented) return;
+      final bridgeQuestion = _visibleBridgeQuestion;
+      final bridgeSource = _visibleBridgeSource;
+      if (bridgeQuestion == null || bridgeSource == null) return;
+      widget.onQuestionPresented?.call(bridgeQuestion, bridgeSource);
+    });
   }
 
   void _reconcilePresentation() {
     final incoming = widget.gameState;
-    final previous = _presentedQuestion;
-    if (previous != null &&
-        (previous.roomId != incoming.roomId ||
-            previous.currentRound != incoming.currentRound)) {
-      _presentedQuestion = null;
+    if (widget.questionAlreadyPresented) {
       _cancelScheduledReveal();
-    }
-
-    final retained = widget.retainedQuestion;
-    if (_presentedQuestion == null &&
-        retained != null &&
-        _matchesExpectedQuestion(retained, incoming)) {
-      _presentedQuestion = retained;
-    }
-
-    if (incoming.phase == RoundPhase.guessing &&
-        _matchesExpectedQuestion(incoming, incoming)) {
-      _cancelScheduledReveal();
-      final isNewPresentation =
-          _presentedQuestion?.phase != RoundPhase.guessing ||
-          _presentedQuestion?.roomId != incoming.roomId ||
-          _presentedQuestion?.currentRound != incoming.currentRound ||
-          _presentedQuestion?.currentQuestion?.id !=
-              incoming.currentQuestion?.id;
-      _presentedQuestion = incoming;
-      if (isNewPresentation && widget.onQuestionPresented != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted ||
-              !_matchesExpectedQuestion(incoming, widget.gameState)) {
-            return;
-          }
-          widget.onQuestionPresented?.call(incoming);
-        });
-      }
       return;
     }
 
-    if (incoming.phase == RoundPhase.question &&
-        _matchesExpectedQuestion(incoming, incoming)) {
-      // Once this round is visible, a late question-phase reconciliation must
-      // not downgrade the retained authoritative guessing presentation.
-      if (_presentedQuestion != null) return;
-      final revealAt = widget.questionRevealAt;
-      final now = widget.serverNow?.call();
-      if (revealAt == null || now == null) return;
-      final delay = revealAt.difference(now);
-      if (delay <= Duration.zero) {
-        _presentedQuestion = incoming;
-        _cancelScheduledReveal();
-        return;
-      }
-
-      final identity =
-          '${incoming.roomId}:${incoming.currentRound}:'
-          '${incoming.currentQuestion!.id}';
-      if (_scheduledQuestionIdentity == identity &&
-          _scheduledQuestionRevealAt == revealAt &&
-          (_questionRevealTimer?.isActive ?? false)) {
-        return;
-      }
-      _questionRevealTimer?.cancel();
-      _scheduledQuestionIdentity = identity;
-      _scheduledQuestionRevealAt = revealAt;
-      _questionRevealTimer = Timer(delay, () {
-        _questionRevealTimer = null;
-        _scheduledQuestionIdentity = null;
-        _scheduledQuestionRevealAt = null;
-        if (!mounted) return;
-        final latest = widget.gameState;
-        if ((latest.phase == RoundPhase.question ||
-                latest.phase == RoundPhase.guessing) &&
-            _matchesExpectedQuestion(latest, latest)) {
-          setState(() => _presentedQuestion = latest);
-        }
-      });
+    final question = incoming.currentQuestion;
+    if (incoming.phase == RoundPhase.guessing &&
+        question != null &&
+        _matchesExpectedQuestion(incoming)) {
+      _cancelScheduledReveal();
+      _showQuestionAndPersist(question, 'guessing_snapshot');
+      return;
     }
+
+    if (incoming.phase != RoundPhase.question ||
+        question == null ||
+        !_matchesExpectedQuestion(incoming)) {
+      return;
+    }
+
+    final revealAt = widget.questionRevealAt;
+    final now = widget.serverNow?.call();
+    if (revealAt == null || now == null) return;
+    final delay = revealAt.difference(now);
+    if (delay <= Duration.zero) {
+      _cancelScheduledReveal();
+      _showQuestionAndPersist(question, 'question_deadline_immediate');
+      return;
+    }
+
+    final identity = _identity(incoming, question.id);
+    if (_scheduledQuestionIdentity == identity &&
+        _scheduledQuestionRevealAt == revealAt &&
+        (_questionRevealTimer?.isActive ?? false)) {
+      return;
+    }
+    _questionRevealTimer?.cancel();
+    _scheduledQuestionIdentity = identity;
+    _scheduledQuestionRevealAt = revealAt;
+    _questionRevealTimer = Timer(delay, () {
+      _questionRevealTimer = null;
+      _scheduledQuestionIdentity = null;
+      _scheduledQuestionRevealAt = null;
+      if (!mounted || widget.questionAlreadyPresented) return;
+      final latest = widget.gameState;
+      if ((latest.phase == RoundPhase.question ||
+              latest.phase == RoundPhase.guessing) &&
+          _matchesExpectedQuestion(latest)) {
+        _showQuestionAndPersist(
+          latest.currentQuestion!,
+          'question_deadline_timer',
+        );
+        setState(() {});
+      }
+    });
   }
 
   void _cancelScheduledReveal() {
@@ -156,28 +183,65 @@ class _ClassicQuestionStageState extends State<ClassicQuestionStage> {
     _scheduledQuestionRevealAt = null;
   }
 
+  GameState _latestStateWith(Question question) =>
+      widget.gameState.copyWith(currentQuestion: question);
+
   @override
   Widget build(BuildContext context) {
     final incoming = widget.gameState;
-    final presented = _presentedQuestion;
-    if (presented == null) {
-      // Keep this subtree mounted when metadata arrives before the payload.
-      // Never build an empty question page underneath the transition.
-      return KeyedSubtree(
-        key: ValueKey('classic-preparing-${incoming.currentRound}'),
-        child: MediaQuery(
-          // A Realtime/snapshot arrival must not restart a local entrance
-          // animation. The authoritative deadline still decides when the
-          // preparation surface is replaced by the question.
-          data: MediaQuery.of(context).copyWith(disableAnimations: true),
-          child: Builder(builder: widget.transitionBuilder),
-        ),
+    final retained = widget.retainedPresentedQuestion;
+    final incomingMatches = _matchesExpectedQuestion(incoming);
+    final bridgeQuestion = _visibleBridgeQuestion;
+    final canShowImmediately =
+        incomingMatches &&
+        ((incoming.phase == RoundPhase.guessing) ||
+            (incoming.phase == RoundPhase.question &&
+                bridgeQuestion?.id == incoming.currentQuestion?.id));
+
+    if (widget.questionAlreadyPresented) {
+      // This branch is intentionally before every transition decision. A
+      // same-round snapshot may omit question metadata, but it cannot replay
+      // the transition after the durable latch is set.
+      final question = incomingMatches ? incoming.currentQuestion : retained;
+      if (question != null) {
+        final wouldTransition =
+            !incomingMatches ||
+            incoming.phase == RoundPhase.idle ||
+            incoming.phase == RoundPhase.question;
+        final identity = _identity(incoming, question.id);
+        if (wouldTransition && _loggedReplayBlockerIdentity != identity) {
+          _loggedReplayBlockerIdentity = identity;
+          _log(
+            'transition_replay_blocked',
+            incoming,
+            retainedQuestionId: retained?.id,
+          );
+        }
+        return widget.questionBuilder(context, _latestStateWith(question));
+      }
+      // A provider latch is only set with a Question. Keep this non-transition
+      // fallback defensive in case a malformed caller violates that contract.
+      return const SizedBox.expand();
+    }
+
+    if (canShowImmediately && incoming.currentQuestion != null) {
+      return widget.questionBuilder(
+        context,
+        _latestStateWith(incoming.currentQuestion!),
       );
     }
 
-    // Once opened, same-round reconciliation cannot replay the transition.
-    // A snapshot produces a new GameState object even when it represents the
-    // same authoritative question, so object identity must never gate input.
-    return widget.questionBuilder(context, presented);
+    final identity = _identity(incoming, widget.expectedQuestionId);
+    if (_loggedTransitionIdentity != identity) {
+      _loggedTransitionIdentity = identity;
+      _log('transition_shown', incoming);
+    }
+    return KeyedSubtree(
+      key: ValueKey('classic-preparing-${incoming.currentRound}'),
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(disableAnimations: true),
+        child: Builder(builder: widget.transitionBuilder),
+      ),
+    );
   }
 }

@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/core/constants/game_constants.dart';
 import 'package:witsgame/features/game/models/game_state.dart';
 import 'package:witsgame/features/game/models/question_model.dart';
+import 'package:witsgame/features/game/providers/game_providers.dart';
 import 'package:witsgame/features/game/widgets/classic_question_stage.dart';
 
 const questionA = Question(id: 'question-a', textTr: 'Question A');
-const questionB = Question(id: 'question-b', textTr: 'Question B');
 
 GameState state({
   int round = 2,
@@ -24,306 +25,145 @@ GameState state({
 
 Widget surface(
   GameState incoming, {
-  String? expectedId = 'question-a',
-  GameState? retainedQuestion,
-  ValueChanged<GameState>? onQuestionPresented,
-  VoidCallback? onTransitionMounted,
-  VoidCallback? onQuestionTap,
+  required bool alreadyPresented,
+  Question? retainedQuestion,
+  ClassicQuestionPresented? onQuestionPresented,
   DateTime? questionRevealAt,
   DateTime Function()? serverNow,
-  bool board = false,
   Key? stageKey,
 }) => MaterialApp(
-  home: AnimatedSwitcher(
-    duration: const Duration(milliseconds: 430),
-    child: board
-        ? const SizedBox(key: ValueKey('board'), child: Text('BOARD'))
-        : KeyedSubtree(
-            key: const ValueKey('guessing-surface'),
-            child: ClassicQuestionStage(
-              key: stageKey,
-              gameState: incoming,
-              expectedQuestionId: expectedId,
-              retainedQuestion: retainedQuestion,
-              onQuestionPresented: onQuestionPresented,
-              questionRevealAt: questionRevealAt,
-              serverNow: serverNow,
-              transitionBuilder: (_) => _TransitionProbe(
-                round: incoming.currentRound,
-                onMounted: onTransitionMounted,
-              ),
-              questionBuilder: (_, presented) {
-                // The gameplay builder must never receive an empty question.
-                return GestureDetector(
-                  key: const ValueKey('question-action'),
-                  onTap: onQuestionTap,
-                  child: Text(
-                    '${presented.currentQuestion!.textTr}'
-                    '${presented.hasSubmittedGuess ? ' SUBMITTED' : ''}',
-                  ),
-                );
-              },
-            ),
-          ),
+  home: ClassicQuestionStage(
+    key: stageKey,
+    gameState: incoming,
+    expectedQuestionId: questionA.id,
+    classicMatchId: 'match-a',
+    stateVersion: 12,
+    questionAlreadyPresented: alreadyPresented,
+    retainedPresentedQuestion: retainedQuestion,
+    onQuestionPresented: onQuestionPresented,
+    questionRevealAt: questionRevealAt,
+    serverNow: serverNow,
+    transitionBuilder: (_) => const Text('TRANSITION'),
+    questionBuilder: (_, presented) => Text(
+      '${presented.currentQuestion!.textTr}'
+      '${presented.hasSubmittedGuess ? ' SUBMITTED' : ''}',
+    ),
   ),
 );
 
 void main() {
-  testWidgets('metadata before payload keeps one mounted transition', (
+  testWidgets('expired question deadline persists at first visible question', (
     tester,
   ) async {
-    var mounts = 0;
-    void mounted() => mounts++;
-    await tester.pumpWidget(surface(state(), onTransitionMounted: mounted));
-    await tester.pumpWidget(
-      surface(state(phase: RoundPhase.guessing), onTransitionMounted: mounted),
-    );
-    await tester.pump(const Duration(seconds: 2));
-    expect(find.text('ROUND 2'), findsOneWidget);
-    expect(find.text('Question A'), findsNothing);
-    expect(mounts, 1);
-
-    await tester.pumpWidget(
-      surface(
-        state(phase: RoundPhase.guessing, question: questionA),
-        onTransitionMounted: mounted,
-      ),
-    );
-    expect(find.text('Question A'), findsOneWidget);
-    expect(find.text('ROUND 2'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('preloaded question waits for guessing authority', (
-    tester,
-  ) async {
-    var mounts = 0;
-    void mounted() => mounts++;
-    await tester.pumpWidget(
-      surface(state(question: questionA), onTransitionMounted: mounted),
-    );
-    expect(find.text('Question A'), findsNothing);
-    await tester.pumpWidget(
-      surface(state(question: questionA), onTransitionMounted: mounted),
-    );
-    expect(mounts, 1);
-    await tester.pumpWidget(
-      surface(state(phase: RoundPhase.guessing, question: questionA)),
-    );
-    expect(find.text('Question A'), findsOneWidget);
-    expect(find.text('ROUND 2'), findsNothing);
-  });
-
-  testWidgets('preloaded question becomes visible at the server deadline', (
-    tester,
-  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container
+        .read(classicPresentationProvider.notifier)
+        .reconcileSession(
+          roomId: 'room-a',
+          classicMatchId: 'match-a',
+          round: 2,
+          questionId: questionA.id,
+          status: RoomStatus.playing,
+        );
     final now = DateTime.utc(2026, 9, 10, 12);
-    GameState? retained;
+
     await tester.pumpWidget(
       surface(
         state(question: questionA),
-        questionRevealAt: now.add(const Duration(seconds: 1)),
+        alreadyPresented: false,
+        questionRevealAt: now.subtract(const Duration(milliseconds: 1)),
         serverNow: () => now,
-        onQuestionPresented: (value) => retained = value,
+        onQuestionPresented: (question, _) {
+          container
+              .read(classicPresentationProvider.notifier)
+              .markQuestionPresented(
+                roomId: 'room-a',
+                classicMatchId: 'match-a',
+                round: 2,
+                question: question,
+              );
+        },
       ),
     );
-    expect(find.text('ROUND 2'), findsOneWidget);
-    expect(find.text('Question A'), findsNothing);
+    await tester.pump();
 
-    await tester.pump(const Duration(milliseconds: 999));
-    expect(find.text('ROUND 2'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 1));
     expect(find.text('Question A'), findsOneWidget);
-    expect(find.text('ROUND 2'), findsNothing);
-    expect(retained, isNull);
+    expect(
+      container.read(classicPresentationProvider).questionPresented,
+      isTrue,
+    );
+    expect(find.text('TRANSITION'), findsNothing);
+  });
 
+  testWidgets('recreated Stage cannot replay a presented round transition', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       surface(
         state(phase: RoundPhase.guessing, question: questionA),
-        questionRevealAt: now.add(const Duration(seconds: 1)),
-        serverNow: () => now,
-        onQuestionPresented: (value) => retained = value,
+        alreadyPresented: true,
+        retainedQuestion: questionA,
       ),
     );
-    expect(retained?.phase, RoundPhase.guessing);
-  });
-
-  testWidgets('idle and missed transition never build an empty question', (
-    tester,
-  ) async {
-    await tester.pumpWidget(surface(state(round: 0, phase: RoundPhase.idle)));
-    await tester.pumpWidget(surface(state(phase: RoundPhase.guessing)));
-    expect(find.text('ROUND 2'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(
-      surface(state(phase: RoundPhase.guessing, question: questionA)),
-    );
-    expect(find.text('Question A'), findsOneWidget);
-  });
-
-  testWidgets('cached prior question does not open the next round', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      surface(state(phase: RoundPhase.guessing, question: questionA)),
-    );
-    await tester.pumpWidget(
-      surface(
-        state(round: 3, phase: RoundPhase.guessing, question: questionA),
-        expectedId: questionB.id,
-      ),
-    );
-    expect(find.text('ROUND 3'), findsOneWidget);
-    expect(find.text('Question A'), findsNothing);
-    await tester.pumpWidget(
-      surface(
-        state(round: 3, phase: RoundPhase.guessing, question: questionB),
-        expectedId: questionB.id,
-      ),
-    );
-    expect(find.text('Question B'), findsOneWidget);
-  });
-
-  testWidgets('same-round reconciliation cannot replay an opened transition', (
-    tester,
-  ) async {
-    var mounts = 0;
-    void mounted() => mounts++;
-    await tester.pumpWidget(surface(state(), onTransitionMounted: mounted));
-    await tester.pumpWidget(
-      surface(
-        state(phase: RoundPhase.guessing, question: questionA),
-        onTransitionMounted: mounted,
-      ),
-    );
-    for (final incoming in [
-      state(question: questionA),
-      state(phase: RoundPhase.guessing),
-      state(phase: RoundPhase.guessing, question: questionA),
-    ]) {
-      await tester.pumpWidget(surface(incoming, onTransitionMounted: mounted));
-      expect(find.text('Question A'), findsOneWidget);
-      expect(find.text('ROUND 2'), findsNothing);
-    }
-    expect(mounts, 1);
-    await tester.pumpWidget(
-      surface(
-        state(phase: RoundPhase.guessing, question: questionA, submitted: true),
-      ),
-    );
-    expect(find.text('Question A SUBMITTED'), findsOneWidget);
-  });
-
-  testWidgets('same-round snapshot reconciliation keeps question input live', (
-    tester,
-  ) async {
-    var taps = 0;
-    await tester.pumpWidget(
-      surface(
-        state(phase: RoundPhase.guessing, question: questionA),
-        onQuestionTap: () => taps++,
-      ),
-    );
-    await tester.pumpWidget(
-      surface(
-        state(phase: RoundPhase.guessing, question: questionA, submitted: true),
-        onQuestionTap: () => taps++,
-      ),
-    );
-
-    await tester.tap(find.byKey(const ValueKey('question-action')));
-
-    expect(taps, 1);
-    expect(find.text('Question A SUBMITTED'), findsOneWidget);
-  });
-
-  testWidgets('a recreated stage keeps an already opened round visible', (
-    tester,
-  ) async {
-    var mounts = 0;
-    GameState? retained;
-    void mounted() => mounts++;
-    await tester.pumpWidget(surface(state(), onTransitionMounted: mounted));
-    await tester.pumpWidget(
-      surface(
-        state(phase: RoundPhase.guessing, question: questionA),
-        onTransitionMounted: mounted,
-        onQuestionPresented: (value) => retained = value,
-      ),
-    );
-    expect(retained, isNotNull);
     expect(find.text('Question A'), findsOneWidget);
 
     await tester.pumpWidget(
       surface(
         state(),
-        retainedQuestion: retained,
-        onTransitionMounted: mounted,
+        alreadyPresented: true,
+        retainedQuestion: questionA,
         stageKey: const ValueKey('recreated-stage'),
       ),
     );
 
     expect(find.text('Question A'), findsOneWidget);
-    expect(find.text('ROUND 2'), findsNothing);
-    expect(mounts, 1);
+    expect(find.text('TRANSITION'), findsNothing);
   });
 
-  testWidgets('unknown expected identity cannot admit a cached question', (
+  testWidgets('deadline timer persists when it makes the question visible', (
     tester,
   ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container
+        .read(classicPresentationProvider.notifier)
+        .reconcileSession(
+          roomId: 'room-a',
+          classicMatchId: 'match-a',
+          round: 2,
+          questionId: questionA.id,
+          status: RoomStatus.playing,
+        );
+    final now = DateTime.utc(2026, 9, 10, 12);
+
     await tester.pumpWidget(
       surface(
-        state(phase: RoundPhase.guessing, question: questionA),
-        expectedId: null,
+        state(question: questionA),
+        alreadyPresented: false,
+        questionRevealAt: now.add(const Duration(seconds: 1)),
+        serverNow: () => now,
+        onQuestionPresented: (question, _) {
+          container
+              .read(classicPresentationProvider.notifier)
+              .markQuestionPresented(
+                roomId: 'room-a',
+                classicMatchId: 'match-a',
+                round: 2,
+                question: question,
+              );
+        },
       ),
     );
-    expect(find.text('ROUND 2'), findsOneWidget);
-    expect(find.text('Question A'), findsNothing);
-  });
+    expect(find.text('TRANSITION'), findsOneWidget);
 
-  testWidgets('outgoing surface keeps its captured round during a switch', (
-    tester,
-  ) async {
-    var mounts = 0;
-    void mounted() => mounts++;
-    final ready = state(phase: RoundPhase.guessing, question: questionA);
-    await tester.pumpWidget(surface(ready, onTransitionMounted: mounted));
-    await tester.pumpAndSettle();
-    await tester.pumpWidget(
-      surface(state(phase: RoundPhase.betting), board: true),
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(find.text('Question A'), findsOneWidget);
+    expect(
+      container.read(classicPresentationProvider).questionPresented,
+      isTrue,
     );
-    await tester.pump(const Duration(milliseconds: 20));
-    await tester.pumpWidget(
-      surface(
-        state(round: 3, question: questionB),
-        expectedId: questionB.id,
-        onTransitionMounted: mounted,
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('ROUND 3'), findsOneWidget);
-    expect(find.text('ROUND 2'), findsNothing);
-    expect(mounts, 1);
   });
-}
-
-class _TransitionProbe extends StatefulWidget {
-  final int round;
-  final VoidCallback? onMounted;
-
-  const _TransitionProbe({required this.round, this.onMounted});
-
-  @override
-  State<_TransitionProbe> createState() => _TransitionProbeState();
-}
-
-class _TransitionProbeState extends State<_TransitionProbe> {
-  @override
-  void initState() {
-    super.initState();
-    widget.onMounted?.call();
-  }
-
-  @override
-  Widget build(BuildContext context) => Text('ROUND ${widget.round}');
 }

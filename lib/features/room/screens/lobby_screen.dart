@@ -6,7 +6,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, visibleForTesting;
 import '../../../core/constants/game_constants.dart';
 import '../../../core/errors/monetization_exceptions.dart';
 import '../../../core/providers/core_providers.dart';
@@ -15,11 +16,27 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
 import '../../../features/game/models/question_model.dart';
+import '../../../features/game/models/classic_snapshot.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/party/providers/party_poll_session_provider.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
+
+@visibleForTesting
+bool isValidClassicLobbyEntrySnapshot({
+  required Room startedRoom,
+  required ClassicSnapshot snapshot,
+}) {
+  final room = snapshot.room;
+  final question = snapshot.question;
+  return room.id == startedRoom.id &&
+      room.status == RoomStatus.playing &&
+      room.gameMode == GameMode.classic &&
+      room.currentRound >= 1 &&
+      question != null &&
+      room.currentQuestionId == question.id;
+}
 
 class LobbyScreen extends ConsumerStatefulWidget {
   final String roomCode;
@@ -38,6 +55,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   bool _isStarting = false;
   bool _isReadyLoading = false;
   bool _isNavigatingToGame = false;
+  bool _isLoadingClassicEntrySnapshot = false;
 
   List<Player> get _activePlayers =>
       _players.where((player) => player.isConnected).toList(growable: false);
@@ -256,8 +274,102 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
     // The host already has a start RPC in flight with question and score data.
     if (_isStarting && startedRoom.gameMode == GameMode.classic) return;
+
+    final currentPlayer = ref.read(currentPlayerProvider);
+    final isClassicNonHost =
+        startedRoom.gameMode == GameMode.classic &&
+        currentPlayer?.id != startedRoom.hostId;
+    if (isClassicNonHost) {
+      unawaited(_enterStartedClassicRoomFromSnapshot(startedRoom));
+      return;
+    }
+
     ref.read(currentRoomProvider.notifier).set(startedRoom);
     _isNavigatingToGame = true;
+    context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
+  }
+
+  Future<void> _enterStartedClassicRoomFromSnapshot(Room startedRoom) async {
+    if (!mounted ||
+        _isNavigatingToGame ||
+        _isLoadingClassicEntrySnapshot ||
+        startedRoom.status != RoomStatus.playing ||
+        startedRoom.gameMode != GameMode.classic) {
+      return;
+    }
+
+    ClassicSnapshot snapshot;
+    _isLoadingClassicEntrySnapshot = true;
+    try {
+      snapshot = await ref
+          .read(gameServiceProvider)
+          .getClassicSnapshot(startedRoom.id);
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint(
+          'CLASSIC_SYNC lobby_snapshot_entry_failed '
+          'room_id=${startedRoom.id} error=$error\n$stackTrace',
+        );
+      }
+      return;
+    } finally {
+      _isLoadingClassicEntrySnapshot = false;
+    }
+
+    if (!mounted || _isNavigatingToGame) return;
+    if (!isValidClassicLobbyEntrySnapshot(
+      startedRoom: startedRoom,
+      snapshot: snapshot,
+    )) {
+      if (kDebugMode) {
+        debugPrint(
+          'CLASSIC_SYNC lobby_snapshot_entry_rejected '
+          'room_id=${startedRoom.id}',
+        );
+      }
+      return;
+    }
+
+    final room = snapshot.room;
+    final question = snapshot.question!;
+    final currentPlayerId = ref.read(currentPlayerProvider)?.id;
+    final winningGuess = room.roundPhase == RoundPhase.revealAnswer
+        ? snapshot.guesses.where((guess) => guess.isWinner).firstOrNull
+        : null;
+    final scores = <String, int>{
+      for (final player in snapshot.players) player.id: player.score,
+    };
+
+    ref.read(currentRoomProvider.notifier).set(room);
+    ref
+        .read(gameStateProvider.notifier)
+        .applySnapshot(
+          roomId: room.id,
+          roomCode: room.code,
+          currentRound: room.currentRound,
+          maxRounds: room.maxRounds,
+          phase: room.roundPhase,
+          currentQuestion: question,
+          guesses: snapshot.guesses,
+          bets: snapshot.bets,
+          scores: scores,
+          correctAnswer: room.roundPhase == RoundPhase.revealAnswer
+              ? question.answer
+              : null,
+          winningGuessId: winningGuess?.id,
+          hasSubmittedGuess:
+              currentPlayerId != null &&
+              snapshot.guesses.any(
+                (guess) => guess.playerId == currentPlayerId,
+              ),
+        );
+
+    _isNavigatingToGame = true;
+    _logClassicLobbyGameEntry(
+      source: 'room_snapshot_fallback',
+      room: room,
+      questionId: question.id,
+    );
     context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
   }
 
@@ -265,7 +377,36 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     if (_isNavigatingToGame || !mounted) return;
     _isNavigatingToGame = true;
     _seedStartedGame(payload);
+    final room = ref.read(currentRoomProvider);
+    if (room?.gameMode == GameMode.classic) {
+      _logClassicLobbyGameEntry(
+        source: 'broadcast',
+        room: room!,
+        questionId: room.currentQuestionId,
+      );
+    }
     context.goNamed('game', pathParameters: {'roomCode': widget.roomCode});
+  }
+
+  void _logClassicLobbyGameEntry({
+    required String source,
+    required Room room,
+    required String? questionId,
+  }) {
+    if (!kDebugMode) return;
+    String shortId(String? value) => value == null
+        ? 'none'
+        : value.length <= 8
+        ? value
+        : value.substring(0, 8);
+    debugPrint(
+      'CLASSIC_SYNC lobby_game_entry '
+      'source=$source room_id=${room.id} room_code=${room.code} '
+      'round=${room.currentRound} phase=${room.roundPhase.name} '
+      'state_version=${room.stateVersion} '
+      'classic_match_id=${shortId(room.classicMatchId)} '
+      'question_id=${shortId(questionId)}',
+    );
   }
 
   Future<void> _toggleReady() async {

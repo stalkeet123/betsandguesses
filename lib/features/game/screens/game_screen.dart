@@ -9,7 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/services/audio_service.dart';
@@ -45,6 +45,7 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen>
     with WidgetsBindingObserver {
+  static int _nextClassicScreenInstanceId = 0;
   List<Player> _players = [];
   Timer? _timer;
   Timer? _realtimeRetryTimer;
@@ -66,6 +67,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _slotScanTimer;
   Timer? _roundAdvanceTimer;
   Timer? _questionStartTimer;
+  Timer? _classicFailoverTimer;
   int? _scheduledQuestionStartRound;
   DateTime? _scheduledQuestionStartDeadline;
   int? _startingClassicRound;
@@ -102,7 +104,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _isAppInForeground = true;
   bool _isActive = true;
   bool _isDisposed = false;
-  GameState? _retainedClassicQuestion;
+  late final int _classicScreenInstanceId = ++_nextClassicScreenInstanceId;
+  String? _lastClassicPresentationDecision;
   int? _lastPresentedClassicRound;
   RoundPhase? _lastPresentedClassicPhase;
   late final AudioService _audioService;
@@ -111,10 +114,113 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool get _canUseRef =>
       mounted && _isActive && _isAppInForeground && !_isDisposed;
 
+  void _classicSyncLog(String event, [Map<String, Object?> fields = const {}]) {
+    if (!kDebugMode) return;
+    final compact = fields.entries
+        .where((entry) => entry.value != null)
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join(' ');
+    debugPrint('CLASSIC_SYNC $event${compact.isEmpty ? '' : ' $compact'}');
+  }
+
+  String _shortClassicId(String? value) => value == null
+      ? 'none'
+      : value.length <= 8
+      ? value
+      : value.substring(0, 8);
+
+  void _reconcileClassicPresentation(Room room) {
+    if (room.gameMode != GameMode.classic) return;
+    ref
+        .read(classicPresentationProvider.notifier)
+        .reconcileSession(
+          roomId: room.id,
+          classicMatchId: room.classicMatchId,
+          round: room.currentRound,
+          questionId: room.currentQuestionId,
+          status: room.status,
+        );
+  }
+
+  void _markClassicQuestionPresented(Question question, String source) {
+    final room = ref.read(currentRoomProvider);
+    final state = ref.read(gameStateProvider);
+    if (room == null ||
+        room.gameMode != GameMode.classic ||
+        room.status != RoomStatus.playing ||
+        state.roomId != room.id ||
+        state.currentRound != room.currentRound) {
+      return;
+    }
+    final didMark = ref
+        .read(classicPresentationProvider.notifier)
+        .markQuestionPresented(
+          roomId: room.id,
+          classicMatchId: room.classicMatchId,
+          round: room.currentRound,
+          question: question,
+        );
+    if (didMark) {
+      _classicSyncLog('question_presented', {
+        'instance': _classicScreenInstanceId,
+        'source': source,
+        'room': room.id,
+        'match': _shortClassicId(room.classicMatchId),
+        'round': room.currentRound,
+        'phase': state.phase.name,
+        'version': room.stateVersion,
+        'question': _shortClassicId(question.id),
+      });
+    }
+  }
+
+  void _logClassicPresentationDecision({
+    required Room? room,
+    required GameState state,
+    required ClassicPresentationState presentation,
+    required String surface,
+    required String reason,
+  }) {
+    final signature = [
+      room?.classicMatchId,
+      state.currentRound,
+      state.phase,
+      room?.stateVersion,
+      room?.currentQuestionId,
+      state.currentQuestion?.id,
+      presentation.presentedQuestion?.id,
+      presentation.questionPresented,
+      surface,
+      reason,
+    ].join('|');
+    if (_lastClassicPresentationDecision == signature) return;
+    _lastClassicPresentationDecision = signature;
+    _classicSyncLog('presentation_decision', {
+      'instance': _classicScreenInstanceId,
+      'match': _shortClassicId(room?.classicMatchId),
+      'round': state.currentRound,
+      'phase': state.phase.name,
+      'version': room?.stateVersion,
+      'expectedQ': _shortClassicId(room?.currentQuestionId),
+      'actualQ': _shortClassicId(state.currentQuestion?.id),
+      'retainedQ': _shortClassicId(presentation.presentedQuestion?.id),
+      'presented': presentation.questionPresented,
+      'surface': surface,
+      'reason': reason,
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     final initialRoom = ref.read(currentRoomProvider);
+    _classicSyncLog('game_screen_init', {
+      'instance': _classicScreenInstanceId,
+      'room': initialRoom?.id,
+      'code': initialRoom?.code,
+      'round': initialRoom?.currentRound,
+      'match': _shortClassicId(initialRoom?.classicMatchId),
+    });
     if (initialRoom?.gameMode == GameMode.party) {
       _showPartyRoundTransition = true;
     }
@@ -132,6 +238,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _bootstrapVisibleGameState() {
     final room = ref.read(currentRoomProvider);
     if (room == null || room.status != RoomStatus.playing) return;
+    if (room.gameMode == GameMode.classic) {
+      _reconcileClassicPresentation(room);
+    }
 
     final phase = room.roundPhase;
     _syncAudioForPhase(
@@ -198,6 +307,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   @override
   void dispose() {
+    final room = ref.read(currentRoomProvider);
+    _classicSyncLog('game_screen_dispose', {
+      'instance': _classicScreenInstanceId,
+      'room': room?.id,
+      'code': room?.code,
+      'round': room?.currentRound,
+      'match': _shortClassicId(room?.classicMatchId),
+    });
     _isDisposed = true;
     _isActive = false;
     WidgetsBinding.instance.removeObserver(this);
@@ -210,6 +327,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _partyTransitionFallbackTimer?.cancel();
     _roundAdvanceTimer?.cancel();
     _questionStartTimer?.cancel();
+    _classicFailoverTimer?.cancel();
     _cancelRevealEffects();
     _scanSlotIndexNotifier.dispose();
     unawaited(_realtimeService.leaveRoom(widget.roomCode));
@@ -417,13 +535,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final stateRound = ref.read(gameStateProvider).currentRound;
     final roomRound = ref.read(currentRoomProvider)?.currentRound ?? 0;
     _playQuestionRevealForRoundOnce(max(1, max(stateRound, roomRound)));
-  }
-
-  void _retainClassicQuestionPresentation(GameState state) {
-    if (state.phase != RoundPhase.guessing || state.currentQuestion == null) {
-      return;
-    }
-    _retainedClassicQuestion = state;
   }
 
   void _playQuestionRevealForRoundOnce(int round) {
@@ -796,23 +907,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   .toIso8601String()
             : null);
     // Update the same authority cursor read by async snapshot/timer guards.
-    ref
-        .read(currentRoomProvider.notifier)
-        .set(
-          Room.fromJson({
-            ...room.toJson(),
-            'created_at': room.createdAt.toIso8601String(),
-            'status': RoomStatus.playing.name,
-            'current_round': round,
-            'round_phase': phase.name,
-            'state_version': payload['state_version'] ?? room.stateVersion,
-            'phase_started_at': started,
-            'phase_ends_at': deadline?.toIso8601String(),
-            'current_question_id': question is Map
-                ? question['id']
-                : (round == room.currentRound ? room.currentQuestionId : null),
-          }),
-        );
+    final updatedRoom = Room.fromJson({
+      ...room.toJson(),
+      'created_at': room.createdAt.toIso8601String(),
+      'status': RoomStatus.playing.name,
+      'current_round': round,
+      'round_phase': phase.name,
+      'state_version': payload['state_version'] ?? room.stateVersion,
+      'phase_started_at': started,
+      'phase_ends_at': deadline?.toIso8601String(),
+      'current_question_id': question is Map
+          ? question['id']
+          : (round == room.currentRound ? room.currentQuestionId : null),
+    });
+    ref.read(currentRoomProvider.notifier).set(updatedRoom);
+    _reconcileClassicPresentation(updatedRoom);
   }
 
   Map<String, int>? _scoresFromPayload(Object? rawScores) {
@@ -948,6 +1057,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
           return;
         }
         ref.read(currentRoomProvider.notifier).set(room);
+        if (room.gameMode == GameMode.classic) {
+          _reconcileClassicPresentation(room);
+        }
         _roomSyncDebounceTimer?.cancel();
         if (_canUseRef) {
           context.goNamed(
@@ -1021,6 +1133,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         notifier.setRound(room.currentRound);
         notifier.updatePhase(room.roundPhase);
       }
+      _reconcileClassicPresentation(room);
       _traceAppliedRoomPhase(
         'postgres_room_row',
         room,
@@ -1191,6 +1304,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       'round': currentRoom.currentRound,
       'phase': currentRoom.roundPhase.name,
     });
+    _classicSyncLog('snapshot_fetch_begin', {
+      'round': currentRoom.currentRound,
+      'phase': currentRoom.roundPhase.name,
+      'version': currentRoom.stateVersion,
+    });
     try {
       if (refreshRealtime) unawaited(_setupRealtime());
       final stageWatch = Stopwatch()..start();
@@ -1220,6 +1338,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           return;
         }
         ref.read(currentRoomProvider.notifier).set(room);
+        _reconcileClassicPresentation(room);
         context.goNamed(
           'results',
           pathParameters: {'roomCode': widget.roomCode},
@@ -1239,6 +1358,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }).toList();
       final bets = snapshot.bets;
       final question = snapshot.question;
+      _classicSyncLog('snapshot_fetch_end', {
+        'round': room.currentRound,
+        'phase': room.roundPhase.name,
+        'version': room.stateVersion,
+        'question': question?.id == null
+            ? null
+            : question!.id.substring(
+                0,
+                question.id.length > 8 ? 8 : question.id.length,
+              ),
+      });
 
       GameTraceService.instance.trace('classic_resync_game_data_fetch', {
         'duration_ms': stageWatch.elapsedMilliseconds,
@@ -1254,6 +1384,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
         incomingStateVersion: room.stateVersion,
         durationMilliseconds: traceWatch.elapsedMilliseconds,
       )) {
+        _classicSyncLog('snapshot_rejected', {
+          'round': round,
+          'phase': phase.name,
+          'version': room.stateVersion,
+        });
         _pendingBetEvents.clear();
         return;
       }
@@ -1312,6 +1447,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
             currentPlayer != null &&
             enrichedGuesses.any((guess) => guess.playerId == currentPlayer.id),
       );
+      _reconcileClassicPresentation(room);
+      _classicSyncLog('snapshot_accepted', {
+        'round': round,
+        'phase': phase.name,
+        'version': room.stateVersion,
+        'question': question?.id == null
+            ? null
+            : question!.id.substring(
+                0,
+                question.id.length > 8 ? 8 : question.id.length,
+              ),
+      });
       _traceAppliedRoomPhase(
         'classic_resync_snapshot',
         room,
@@ -2127,10 +2274,94 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
     if (gameState.phase == RoundPhase.guessing) {
-      _revealGuesses();
+      _runClassicPhaseOwner(
+        expectedPhase: RoundPhase.guessing,
+        source: 'guessing_deadline',
+        claim: _revealGuesses,
+      );
     } else if (gameState.phase == RoundPhase.betting) {
-      _revealAnswer();
+      _runClassicPhaseOwner(
+        expectedPhase: RoundPhase.betting,
+        source: 'betting_deadline',
+        claim: _revealAnswer,
+      );
     }
+  }
+
+  void _runClassicPhaseOwner({
+    required RoundPhase expectedPhase,
+    required String source,
+    required Future<void> Function() claim,
+  }) {
+    final room = ref.read(currentRoomProvider);
+    final state = ref.read(gameStateProvider);
+    if (room == null ||
+        room.gameMode != GameMode.classic ||
+        room.currentRound != state.currentRound ||
+        room.roundPhase != expectedPhase ||
+        state.phase != expectedPhase) {
+      _classicSyncLog('claim_skipped', {
+        'source': source,
+        'reason': 'local_state_mismatch',
+      });
+      return;
+    }
+    if (ref.read(isHostProvider)) {
+      _classicSyncLog('claim_attempt', {
+        'source': source,
+        'owner': 'host',
+        'round': room.currentRound,
+        'phase': expectedPhase.name,
+        'version': room.stateVersion,
+      });
+      unawaited(claim());
+      return;
+    }
+
+    _classicFailoverTimer?.cancel();
+    final roomId = room.id;
+    final round = room.currentRound;
+    _classicSyncLog('failover_wait', {
+      'source': source,
+      'round': round,
+      'phase': expectedPhase.name,
+      'grace_ms': 2000,
+    });
+    _classicFailoverTimer = Timer(const Duration(seconds: 2), () async {
+      if (!_canUseRef) return;
+      _classicSyncLog('failover_resync', {
+        'source': source,
+        'round': round,
+        'phase': expectedPhase.name,
+      });
+      await _resyncFromServer(synchronizeClock: false);
+      if (!_canUseRef) return;
+      final refreshedRoom = ref.read(currentRoomProvider);
+      final refreshedState = ref.read(gameStateProvider);
+      if (refreshedRoom == null ||
+          refreshedRoom.id != roomId ||
+          refreshedRoom.currentRound != round ||
+          refreshedRoom.roundPhase != expectedPhase ||
+          refreshedState.currentRound != round ||
+          refreshedState.phase != expectedPhase) {
+        _classicSyncLog('failover_claim_skipped', {
+          'source': source,
+          'reason': 'authoritative_snapshot_advanced',
+          'round': refreshedRoom?.currentRound,
+          'phase': refreshedRoom?.roundPhase.name,
+          'version': refreshedRoom?.stateVersion,
+        });
+        return;
+      }
+      _classicSyncLog('claim_attempt', {
+        'source': source,
+        'owner': 'failover_nonhost',
+        'round': round,
+        'phase': expectedPhase.name,
+        'version': refreshedRoom.stateVersion,
+      });
+      await claim();
+    });
   }
 
   Future<void> _startRound(int round) async {
@@ -2719,7 +2950,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return Duration(milliseconds: max(0, remaining));
   }
 
-  void _scheduleQuestionStart(Room room, {bool primary = false}) {
+  void _scheduleQuestionStart(Room room) {
     if (room.roundPhase != RoundPhase.question) return;
     if (_startingClassicRound == room.currentRound) return;
     if (_scheduledQuestionStartRound == room.currentRound &&
@@ -2738,9 +2969,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       room.phaseEndsAt,
       const Duration(seconds: GameConstants.roundTransitionSeconds),
     );
-    final failoverGrace = primary || ref.read(isHostProvider)
-        ? Duration.zero
-        : const Duration(milliseconds: 250);
     GameTraceService.instance.trace('classic_question_start_scheduled', {
       'round': room.currentRound,
       if (room.phaseEndsAt != null)
@@ -2749,9 +2977,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
           .read(roomServiceProvider)
           .serverNow
           .toIso8601String(),
-      'delay_ms': delay.inMilliseconds + failoverGrace.inMilliseconds,
+      'delay_ms': delay.inMilliseconds,
     });
-    _questionStartTimer = Timer(delay + failoverGrace, () {
+    _questionStartTimer = Timer(delay, () {
       _questionStartTimer = null;
       _scheduledQuestionStartRound = null;
       _scheduledQuestionStartDeadline = null;
@@ -2765,7 +2993,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
           latestRoom?.roundPhase == RoundPhase.question &&
           latestState.currentRound == room.currentRound &&
           latestState.phase == RoundPhase.question) {
-        unawaited(_startRound(room.currentRound));
+        _runClassicPhaseOwner(
+          expectedPhase: RoundPhase.question,
+          source: 'question_deadline',
+          claim: () => _startRound(room.currentRound),
+        );
         return;
       }
       GameTraceService.instance
@@ -2797,7 +3029,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
               current.phase != RoundPhase.revealAnswer)) {
         return;
       }
-      unawaited(_nextRound());
+      if (isClassic) {
+        _runClassicPhaseOwner(
+          expectedPhase: RoundPhase.revealAnswer,
+          source: 'reveal_deadline',
+          claim: _nextRound,
+        );
+      } else {
+        unawaited(_nextRound());
+      }
     });
   }
 
@@ -8038,6 +8278,32 @@ class _GameScreenState extends ConsumerState<GameScreen>
       // subscribe to the next round and start that round's transition again.
       final gameState = ref.watch(gameStateProvider);
       final room = ref.watch(currentRoomProvider);
+      final presentation = ref.watch(classicPresentationProvider);
+      final presentationMatches =
+          room != null &&
+          presentation.matches(
+            roomId: room.id,
+            classicMatchId: room.classicMatchId,
+            round: gameState.currentRound,
+          );
+      final questionAlreadyPresented =
+          presentationMatches && presentation.questionPresented;
+      final surface = questionAlreadyPresented
+          ? 'question'
+          : phase == RoundPhase.question || gameState.currentQuestion == null
+          ? 'transition'
+          : 'question';
+      _logClassicPresentationDecision(
+        room: room,
+        state: gameState,
+        presentation: presentation,
+        surface: surface,
+        reason: questionAlreadyPresented
+            ? 'durable_presented'
+            : gameState.currentQuestion == null
+            ? 'missing_question'
+            : phase.name,
+      );
       return _buildPhaseSurfaceTransition(
         surfaceKey: 'guessing-surface',
         child: ClassicQuestionStage(
@@ -8045,8 +8311,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
           expectedQuestionId: room?.currentRound == gameState.currentRound
               ? room?.currentQuestionId
               : null,
-          retainedQuestion: _retainedClassicQuestion,
-          onQuestionPresented: _retainClassicQuestionPresentation,
+          classicMatchId: room?.classicMatchId,
+          stateVersion: room?.stateVersion,
+          questionAlreadyPresented: questionAlreadyPresented,
+          retainedPresentedQuestion: questionAlreadyPresented
+              ? presentation.presentedQuestion
+              : null,
+          onQuestionPresented: _markClassicQuestionPresented,
           questionRevealAt: room?.currentRound == gameState.currentRound
               ? room?.phaseEndsAt
               : null,

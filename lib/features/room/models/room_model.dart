@@ -15,6 +15,7 @@ class Room {
   final int partyChallengesPerPlayer;
   final RoundPhase roundPhase;
   final String? currentQuestionId;
+  final String? classicMatchId;
   final int stateVersion;
   final DateTime? phaseStartedAt;
   final DateTime? phaseEndsAt;
@@ -35,6 +36,7 @@ class Room {
         GameConstants.partyDefaultChallengesPerPlayer,
     this.roundPhase = RoundPhase.idle,
     this.currentQuestionId,
+    this.classicMatchId,
     this.stateVersion = 0,
     this.phaseStartedAt,
     this.phaseEndsAt,
@@ -62,6 +64,7 @@ class Room {
         json['round_phase'] as String? ?? 'idle',
       ),
       currentQuestionId: json['current_question_id'] as String?,
+      classicMatchId: json['classic_match_id'] as String?,
       stateVersion: (json['state_version'] as num?)?.toInt() ?? 0,
       phaseStartedAt: _dateTimeOrNull(json['phase_started_at']),
       phaseEndsAt: _dateTimeOrNull(json['phase_ends_at']),
@@ -84,6 +87,7 @@ class Room {
       'party_challenges_per_player': partyChallengesPerPlayer,
       'round_phase': roundPhase.name,
       'current_question_id': currentQuestionId,
+      'classic_match_id': classicMatchId,
       'state_version': stateVersion,
       'phase_started_at': phaseStartedAt?.toIso8601String(),
       'phase_ends_at': phaseEndsAt?.toIso8601String(),
@@ -106,6 +110,7 @@ class Room {
     int? partyChallengesPerPlayer,
     RoundPhase? roundPhase,
     String? currentQuestionId,
+    String? classicMatchId,
     int? stateVersion,
     DateTime? phaseStartedAt,
     DateTime? phaseEndsAt,
@@ -126,6 +131,7 @@ class Room {
           partyChallengesPerPlayer ?? this.partyChallengesPerPlayer,
       roundPhase: roundPhase ?? this.roundPhase,
       currentQuestionId: currentQuestionId ?? this.currentQuestionId,
+      classicMatchId: classicMatchId ?? this.classicMatchId,
       stateVersion: stateVersion ?? this.stateVersion,
       phaseStartedAt: phaseStartedAt ?? this.phaseStartedAt,
       phaseEndsAt: phaseEndsAt ?? this.phaseEndsAt,
