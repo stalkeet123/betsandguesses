@@ -5,6 +5,118 @@ import '../models/guess_model.dart';
 import '../models/bet_model.dart';
 import '../../../core/constants/game_constants.dart';
 
+/// Durable visual latch for one Classic question presentation. This is kept
+/// outside GameScreen/ClassicQuestionStage so route and widget remounts cannot
+/// replay a round transition after the question has become visible.
+class ClassicPresentationState {
+  final String? roomId;
+  final String? classicMatchId;
+  final int? round;
+  final String? questionId;
+  final Question? presentedQuestion;
+  final bool questionPresented;
+
+  const ClassicPresentationState({
+    this.roomId,
+    this.classicMatchId,
+    this.round,
+    this.questionId,
+    this.presentedQuestion,
+    this.questionPresented = false,
+  });
+
+  bool matches({
+    required String roomId,
+    required String? classicMatchId,
+    required int round,
+  }) {
+    return this.roomId == roomId &&
+        this.classicMatchId == classicMatchId &&
+        this.round == round;
+  }
+}
+
+final classicPresentationProvider =
+    NotifierProvider<ClassicPresentationNotifier, ClassicPresentationState>(
+      ClassicPresentationNotifier.new,
+    );
+
+class ClassicPresentationNotifier extends Notifier<ClassicPresentationState> {
+  @override
+  ClassicPresentationState build() => const ClassicPresentationState();
+
+  void reconcileSession({
+    required String roomId,
+    required String? classicMatchId,
+    required int round,
+    required String? questionId,
+    required RoomStatus status,
+  }) {
+    if (status != RoomStatus.playing || round < 1) {
+      reset();
+      return;
+    }
+
+    final current = state;
+    final isNewSession =
+        current.roomId != roomId || current.classicMatchId != classicMatchId;
+    final currentRound = current.round;
+    final isNewerRound =
+        !isNewSession && (currentRound == null || round > currentRound);
+    if (isNewSession || isNewerRound) {
+      state = ClassicPresentationState(
+        roomId: roomId,
+        classicMatchId: classicMatchId,
+        round: round,
+        questionId: questionId,
+      );
+      return;
+    }
+
+    // A stale authoritative regression must never re-open an older round's
+    // transition or carry this round's presentation latch backward.
+    if (currentRound != null && round < currentRound) return;
+
+    // Same room/match/round: retain the latch and its Question even when a
+    // transient reconciliation has null question metadata.
+    state = ClassicPresentationState(
+      roomId: current.roomId,
+      classicMatchId: current.classicMatchId,
+      round: current.round,
+      questionId: questionId ?? current.questionId,
+      presentedQuestion: current.presentedQuestion,
+      questionPresented: current.questionPresented,
+    );
+  }
+
+  bool markQuestionPresented({
+    required String roomId,
+    required String? classicMatchId,
+    required int round,
+    required Question question,
+  }) {
+    if (!state.matches(
+      roomId: roomId,
+      classicMatchId: classicMatchId,
+      round: round,
+    )) {
+      return false;
+    }
+    if (state.questionPresented) return false;
+    state = ClassicPresentationState(
+      roomId: state.roomId,
+      classicMatchId: state.classicMatchId,
+      round: state.round,
+      questionId: question.id,
+      presentedQuestion: question,
+      questionPresented: true,
+    );
+    return true;
+  }
+
+  void reset() => state = const ClassicPresentationState();
+}
+
 // ── Game Timer Provider ──
 final gameTimerProvider = NotifierProvider<GameTimerNotifier, int>(() {
   return GameTimerNotifier();

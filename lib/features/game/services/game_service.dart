@@ -6,6 +6,7 @@ import '../../../core/errors/monetization_exceptions.dart';
 import '../models/question_model.dart';
 import '../models/guess_model.dart';
 import '../models/bet_model.dart';
+import '../models/classic_snapshot.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../room/models/room_model.dart';
 
@@ -14,6 +15,108 @@ class GameService {
   final SupabaseClient _client;
 
   GameService(this._client);
+
+  DateTime? _snapshotRpcUnavailableUntil;
+
+  Future<ClassicSnapshot> getClassicSnapshot(String roomId) async {
+    final requestStartedAt = DateTime.now().toUtc();
+    final response = await _readClassicSnapshot(
+      roomId,
+    ).timeout(const Duration(seconds: 10));
+    final responseReceivedAt = DateTime.now().toUtc();
+    final snapshot = ClassicSnapshot.fromResponse(response);
+    if (snapshot.room.id != roomId) {
+      throw StateError('Classic snapshot belongs to another room');
+    }
+    final serverNow = snapshot.serverNow;
+    if (serverNow == null) return snapshot;
+
+    // get_classic_snapshot_v1 timestamps the snapshot at the database. Move
+    // that timestamp to the estimated response midpoint before RoomService
+    // compares it with local receive time. Using the raw timestamp as "now"
+    // made a slower web client's phase clock lag by almost its full RPC time.
+    final halfRoundTripMicros =
+        responseReceivedAt.difference(requestStartedAt).inMicroseconds ~/ 2;
+    return snapshot.withServerNow(
+      serverNow.add(Duration(microseconds: halfRoundTripMicros)),
+    );
+  }
+
+  Future<Object?> _readClassicSnapshot(String roomId) async {
+    final retryAt = _snapshotRpcUnavailableUntil;
+    if (retryAt == null || !DateTime.now().isBefore(retryAt)) {
+      try {
+        final response = await _client.rpc(
+          'get_classic_snapshot_v1',
+          params: {'p_room_id': roomId},
+        );
+        _snapshotRpcUnavailableUntil = null;
+        return response;
+      } on PostgrestException catch (error) {
+        // Additive rollout only: auth/network/SQL errors must NOT fall back.
+        if (error.code != 'PGRST202') rethrow;
+        _snapshotRpcUnavailableUntil = DateTime.now().add(
+          const Duration(minutes: 1),
+        );
+      }
+    }
+    // Older servers: parallel data reads bracketed by authoritative room reads.
+    // A transition invalidates the whole read; never combine two phases/rounds.
+    // This preserves rollout compatibility, not the new RPC's MVCC guarantee.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final before = await _client
+          .from('rooms')
+          .select()
+          .eq('id', roomId)
+          .single();
+      final room = Room.fromJson(before);
+      final data = await Future.wait<Object?>([
+        _client
+            .from('players')
+            .select(
+              'id, room_id, device_id, name, avatar_color, score, bank_score, '
+              'is_host, is_ready, is_connected, last_seen, joined_at',
+            )
+            .eq('room_id', roomId)
+            .order('joined_at'),
+        _client
+            .from('guesses')
+            .select(_guessSelectColumns)
+            .eq('room_id', roomId)
+            .eq('round_number', room.currentRound),
+        _client
+            .from('bets')
+            .select('$_betSelectColumns, won')
+            .eq('room_id', roomId)
+            .eq('round_number', room.currentRound),
+        _client.rpc('get_current_question_v2', params: {'p_room_id': roomId}),
+      ]);
+      final after = await _client
+          .from('rooms')
+          .select()
+          .eq('id', roomId)
+          .single();
+      final latest = Room.fromJson(after);
+      if (room.stateVersion != latest.stateVersion ||
+          room.currentRound != latest.currentRound ||
+          room.roundPhase != latest.roundPhase ||
+          room.status != latest.status ||
+          room.currentQuestionId != latest.currentQuestionId ||
+          room.phaseEndsAt != latest.phaseEndsAt) {
+        continue;
+      }
+      return {
+        'room': after,
+        'players': data[0],
+        'guesses': data[1],
+        'bets': data[2],
+        'question': data[3],
+      };
+    }
+    throw StateError(
+      'Classic room changed during snapshot read; retry required',
+    );
+  }
 
   // ── Questions ──
 
@@ -72,6 +175,32 @@ class GameService {
     }
   }
 
+  Future<SecureRoundQuestion?> prepareNextClassicRound({
+    required String roomId,
+    required int roundNumber,
+    required int transitionSeconds,
+  }) async {
+    final response = await _client.rpc(
+      'prepare_next_classic_round_v1',
+      params: {
+        'p_room_id': roomId,
+        'p_round_number': roundNumber,
+        'p_transition_seconds': transitionSeconds,
+      },
+    );
+    if (response == null) return null;
+    final prepared = SecureRoundQuestion.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+    if (prepared.room.id != roomId ||
+        prepared.room.currentRound != roundNumber + 1 ||
+        prepared.room.roundPhase != RoundPhase.question ||
+        prepared.room.currentQuestionId != prepared.question.id) {
+      throw StateError('Invalid prepared Classic round');
+    }
+    return prepared;
+  }
+
   Future<SecureRoundQuestion?> claimNextQuestion({
     required String roomId,
     required int roundNumber,
@@ -105,6 +234,7 @@ class GameService {
       'submit_guess_v2',
       params: {'p_room_id': roomId, 'p_value': value},
     );
+    if (response == null) throw const GuessingWindowClosedException();
     return Guess.fromJson(Map<String, dynamic>.from(response as Map));
   }
 
@@ -369,6 +499,12 @@ class GameService {
   }
 
   // ── Used Questions ──
+}
+
+/// A late guess is a normal client/server timer race. The RPC returns null
+/// after the authoritative guessing window has closed.
+class GuessingWindowClosedException implements Exception {
+  const GuessingWindowClosedException();
 }
 
 /// A late write is a normal client/server timer race, not a malformed bet.

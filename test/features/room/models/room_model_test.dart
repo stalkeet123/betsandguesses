@@ -74,4 +74,22 @@ void main() {
       GameConstants.partyDefaultChallengesPerPlayer,
     );
   });
+
+  test(
+    'classic match identity round-trips without losing the existing value',
+    () {
+      final room = Room.fromJson({
+        ...roomJson(),
+        'classic_match_id': 'match-42',
+      });
+
+      expect(room.classicMatchId, 'match-42');
+      expect(room.toJson()['classic_match_id'], 'match-42');
+      expect(room.copyWith(currentRound: 2).classicMatchId, 'match-42');
+      expect(
+        room.copyWith(classicMatchId: 'match-43').classicMatchId,
+        'match-43',
+      );
+    },
+  );
 }

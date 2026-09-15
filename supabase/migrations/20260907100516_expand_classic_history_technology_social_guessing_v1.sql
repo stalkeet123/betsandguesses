@@ -1,0 +1,62 @@
+with new_questions(text_tr,text_en,answer,answer_unit,category,difficulty,source,access_tier) as (
+  values
+  ('Alcatraz federal hapishane olarak yaklaşık kaç yıl çalıştı?','About how many years did Alcatraz operate as a federal prison?',29,'years','History',2,'U.S. National Park Service','premium'),
+  ('Federal hapishane döneminde Alcatraz’dan toplam yaklaşık kaç mahkum geçti?','About how many prisoners passed through Alcatraz during its federal-prison years?',1500,'prisoners','History',3,'U.S. National Park Service','premium'),
+  ('Mount Rushmore’un oyulması yaklaşık kaç yıl sürdü?','About how many years did it take to carve Mount Rushmore?',14,'years','History',2,'U.S. National Park Service','starter'),
+  ('Mount Rushmore’un yapımında yaklaşık kaç kişi çalıştı?','About how many people worked on carving Mount Rushmore?',400,'workers','History',3,'U.S. National Park Service','premium'),
+  ('Oregon Trail doğudan batıya yaklaşık kaç mil uzanıyordu?','About how many miles did the Oregon Trail stretch from east to west?',2000,'miles','History',3,'U.S. National Park Service','starter'),
+  ('Efsanevi Pony Express gerçekte sadece yaklaşık kaç ay çalıştı?','The legendary Pony Express actually operated for only about how many months?',18,'months','History',2,'U.S. National Park Service','starter'),
+  ('Pony Express posta rotası yaklaşık kaç mil uzunluğundaydı?','About how many miles long was the Pony Express mail route?',1800,'miles','History',3,'U.S. National Park Service','premium'),
+  ('Pony Express bir mektubu ülkenin bir ucundan diğerine yaklaşık kaç günde ulaştırabiliyordu?','About how many days could the Pony Express take to deliver mail across its route?',10,'days','History',2,'U.S. National Park Service','premium'),
+  ('Martin Luther King Jr.’ın “I Have a Dream” konuşmasının yapıldığı Washington yürüyüşüne yaklaşık kaç kişi katıldı?','About how many people attended the March on Washington where Martin Luther King Jr. gave his “I Have a Dream” speech?',250000,'people','History',3,'U.S. National Park Service','starter'),
+  ('ABD Anayasa Konvansiyonu toplantılarına toplam kaç delege katıldı?','How many delegates attended sessions of the U.S. Constitutional Convention?',55,'delegates','History',2,'U.S. National Archives','premium'),
+  ('ABD Anayasasını kaç delege imzaladı?','How many delegates actually signed the U.S. Constitution?',39,'signers','History',2,'U.S. National Archives','premium'),
+  ('Birleşmiş Milletler kurulduğunda kaç asıl üye ülke vardı?','How many original member countries did the United Nations have when it was founded?',51,'countries','History',2,'United Nations','premium'),
+  ('Eyfel Kulesini bir arada tutmak için yaklaşık kaç perçin kullanıldı?','About how many rivets were used to hold the Eiffel Tower together?',2500000,'rivets','History',4,'Eiffel Tower official','starter'),
+  ('Eyfel Kulesinin metal iskeleti yaklaşık kaç ayrı demir parçadan oluşuyor?','About how many separate iron pieces make up the Eiffel Tower?',18038,'pieces','History',4,'Eiffel Tower official','premium'),
+  ('Eyfel Kulesinin inşası yaklaşık kaç ay sürdü?','About how many months did it take to build the Eiffel Tower?',26,'months','History',3,'Eiffel Tower official','premium'),
+  ('Empire State Building’in inşası yaklaşık kaç gün sürdü?','About how many days did it take to build the Empire State Building?',410,'days','History',3,'Empire State Building official','starter'),
+  ('D-Day günü Normandiya’ya yaklaşık kaç Müttefik askeri çıktı?','About how many Allied troops landed in Normandy on D-Day?',156000,'troops','History',4,'The National WWII Museum','premium'),
+  ('D-Day çıkarmasına yaklaşık kaç gemi ve çıkarma aracı katıldı?','About how many ships and landing craft took part in the D-Day invasion?',7000,'vessels','History',4,'The National WWII Museum','premium'),
+  ('D-Day operasyonunu havadan yaklaşık kaç uçak destekledi?','About how many aircraft supported the D-Day operation?',11000,'aircraft','History',4,'The National WWII Museum','premium'),
+  ('Küba Füze Krizi dünyayı kaç gün boyunca diken üstünde tuttu?','For about how many days did the Cuban Missile Crisis keep the world on edge?',13,'days','History',2,'John F. Kennedy Presidential Library','premium'),
+  ('Pony Express rotasında yaklaşık kaç aktarma istasyonu vardı?','About how many relay stations were used along the Pony Express route?',200,'stations','History',3,'U.S. National Park Service','premium'),
+  ('D-Day’deki beş ana çıkarma plajı Normandiya kıyısı boyunca yaklaşık kaç mil yayıldı?','The five main D-Day landing beaches stretched across about how many miles of Normandy coast?',50,'miles','History',3,'The National WWII Museum','starter'),
+
+  ('Uluslararası Uzay İstasyonu Dünya’nın etrafında bir günde yaklaşık kaç tur atıyor?','About how many times does the International Space Station orbit Earth in one day?',16,'orbits','Technology',2,'NASA','starter'),
+  ('Uluslararası Uzay İstasyonu yörüngede yaklaşık kaç mil/saat hızla gidiyor?','About how many miles per hour does the International Space Station travel?',17500,'miles per hour','Technology',3,'NASA','starter'),
+  ('Uluslararası Uzay İstasyonu uçtan uca yaklaşık kaç feet uzunluğunda?','About how many feet long is the International Space Station from end to end?',357,'feet','Technology',3,'NASA','premium'),
+  ('Uluslararası Uzay İstasyonu yaklaşık kaç pound ağırlığında?','About how many pounds does the International Space Station weigh?',925000,'pounds','Technology',4,'NASA','premium'),
+  ('Uluslararası Uzay İstasyonunun güneş panelleri uçtan uca yaklaşık kaç feet uzanıyor?','About how many feet across are the International Space Station’s solar arrays?',239,'feet','Technology',3,'NASA','premium'),
+  ('James Webb Uzay Teleskobunun ana aynası kaç ayrı altıgen parçadan oluşuyor?','How many separate hexagonal segments make up the James Webb Space Telescope’s main mirror?',18,'segments','Technology',2,'NASA','premium'),
+  ('James Webb’in ana aynası yaklaşık kaç feet genişliğinde?','About how many feet across is the James Webb Space Telescope’s main mirror?',21,'feet','Technology',3,'NASA','premium'),
+  ('James Webb Uzay Teleskobu Dünya’dan yaklaşık kaç mil uzakta çalışıyor?','About how many miles from Earth does the James Webb Space Telescope operate?',1000000,'miles','Technology',4,'NASA','starter'),
+  ('James Webb’in tenis kortu büyüklüğündeki güneş kalkanı yaklaşık kaç feet uzunluğunda?','About how many feet long is the James Webb Space Telescope’s tennis-court-sized sunshield?',70,'feet','Technology',3,'NASA','premium'),
+  ('Hubble Uzay Teleskobu yaklaşık kaç feet uzunluğunda?','About how many feet long is the Hubble Space Telescope?',44,'feet','Technology',2,'NASA','premium'),
+  ('Hubble Uzay Teleskobu yaklaşık kaç pound ağırlığında?','About how many pounds does the Hubble Space Telescope weigh?',27000,'pounds','Technology',3,'NASA','premium'),
+  ('Hubble Dünya’nın yaklaşık kaç mil üzerinde yörüngede dönüyor?','About how many miles above Earth does the Hubble Space Telescope orbit?',340,'miles','Technology',3,'NASA','starter'),
+  ('Hubble Dünya’nın etrafındaki bir turunu yaklaşık kaç dakikada tamamlıyor?','About how many minutes does Hubble take to complete one orbit around Earth?',95,'minutes','Technology',3,'NASA','premium'),
+  ('Apollo astronotlarını Ay’a taşıyan Saturn V roketi yaklaşık kaç feet boyundaydı?','About how many feet tall was the Saturn V rocket that sent Apollo astronauts toward the Moon?',363,'feet','Technology',3,'NASA','starter'),
+  ('Saturn V kalkışta yaklaşık kaç milyon pound itki üretiyordu?','About how many million pounds of thrust did Saturn V produce at liftoff?',7500000,'pounds of thrust','Technology',4,'NASA','premium'),
+  ('Tam yakıtlı bir Saturn V kalkışta yaklaşık kaç milyon pound ağırlığındaydı?','About how many pounds did a fully fueled Saturn V weigh at liftoff?',6200000,'pounds','Technology',4,'NASA','premium'),
+  ('Bir Space Shuttle sistemi kalkışta yaklaşık kaç milyon pound ağırlığındaydı?','About how many pounds did a Space Shuttle stack weigh at liftoff?',4500000,'pounds','Technology',4,'NASA','premium'),
+  ('Space Shuttle uçtan uca yaklaşık kaç feet uzunluğundaydı?','About how many feet long was the full Space Shuttle system?',184,'feet','Technology',3,'NASA','premium'),
+  ('Space Shuttle yörüngede yaklaşık kaç mil/saat hıza çıkıyordu?','About how many miles per hour did the Space Shuttle travel in orbit?',17300,'miles per hour','Technology',3,'NASA','premium'),
+  ('Mars’taki Perseverance roverı Dünya’da yaklaşık kaç pound geliyor?','About how many pounds does the Perseverance Mars rover weigh on Earth?',2260,'pounds','Technology',3,'NASA/JPL','starter'),
+  ('Perseverance roverı yaklaşık kaç feet uzunluğunda?','About how many feet long is the Perseverance Mars rover?',10,'feet','Technology',2,'NASA/JPL','premium'),
+  ('Perseverance’ı Mars’a indirirken kullanılan paraşüt açıldığında yaklaşık kaç feet çapındaydı?','About how many feet across was Perseverance’s parachute when fully deployed?',71,'feet','Technology',3,'NASA/JPL','premium'),
+  ('Dünyanın ilk ticari sabit disk sistemi sadece yaklaşık kaç megabayt veri tutabiliyordu?','About how many megabytes could the world’s first commercial hard-disk system store?',5,'megabytes','Technology',2,'IBM','starter'),
+  ('Golden Gate Bridge’in tek bir ana kablosunun içinde kaç ince çelik tel var?','How many individual steel wires are packed inside one main cable of the Golden Gate Bridge?',27572,'wires','Technology',4,'Golden Gate Bridge Highway and Transportation District','premium'),
+  ('Golden Gate Bridge’in iki ana kablosundaki çelik teller açılıp uç uca konsa yaklaşık kaç mil eder?','About how many miles of steel wire are packed into the Golden Gate Bridge’s two main cables?',80000,'miles','Technology',4,'Golden Gate Bridge Highway and Transportation District','premium'),
+  ('İngiltere ile Fransa’yı bağlayan Channel Tunnel yaklaşık kaç mil uzunluğunda?','About how many miles long is the Channel Tunnel between England and France?',31,'miles','Technology',3,'Eurotunnel / Getlink','premium'),
+  ('Hoover Dam temelinden tepesine yaklaşık kaç feet yüksekliğinde?','About how many feet tall is Hoover Dam from its foundation to the crest?',726,'feet','Technology',3,'U.S. Bureau of Reclamation','premium'),
+  ('Hoover Dam yaklaşık kaç milyon ton ağırlığında?','About how many tons does Hoover Dam weigh?',6600000,'tons','Technology',4,'U.S. Bureau of Reclamation','premium'),
+  ('Hoover Dam ve ona bağlı yapılarda toplam yaklaşık kaç milyon cubic yard beton kullanıldı?','About how many cubic yards of concrete were used in Hoover Dam and its related structures?',4360000,'cubic yards','Technology',4,'U.S. Bureau of Reclamation','premium'),
+  ('Concorde yaklaşık kaç yolcu taşıyabiliyordu?','About how many passengers could Concorde carry?',100,'passengers','Technology',2,'Smithsonian National Air and Space Museum','premium')
+)
+insert into public.questions (text_tr,text_en,answer,answer_unit,category,difficulty,source,access_tier,is_active)
+select nq.text_tr,nq.text_en,nq.answer,nq.answer_unit,nq.category,nq.difficulty,nq.source,nq.access_tier,true
+from new_questions nq
+where not exists (
+  select 1 from public.questions q where lower(btrim(q.text_en))=lower(btrim(nq.text_en))
+);

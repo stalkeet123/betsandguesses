@@ -9,11 +9,12 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../../../core/constants/game_constants.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/services/audio_service.dart';
 import '../../../core/services/realtime_service.dart';
+import '../../../core/services/game_trace_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/adaptive_question_text.dart';
 import '../../../core/widgets/cached_asset_image.dart';
@@ -31,6 +32,7 @@ import '../../../features/party/widgets/party_single_scene_layer.dart';
 import '../../../features/room/models/room_model.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../models/game_state.dart';
+import '../widgets/classic_question_stage.dart';
 import '../widgets/poker_chip.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
@@ -44,16 +46,21 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen>
     with WidgetsBindingObserver {
+  static int _nextClassicScreenInstanceId = 0;
   List<Player> _players = [];
   Timer? _timer;
   Timer? _realtimeRetryTimer;
   Timer? _roomSyncDebounceTimer;
+  Timer? _classicRecoveryTimer;
+  int _classicResyncFailures = 0;
+  bool _realtimeSetupInFlight = false;
   int _timerSeconds = 0;
   final List<String> _usedQuestionIds = [];
   String _guessInput = '';
   int? _selectedChipValue;
   String? _selectedBetId;
   bool _isBetOperationInFlight = false;
+  int _betCommandRevision = 0;
   bool _isSubmittingGuess = false;
   bool _isRevealingGuesses = false;
   Set<String> _roundWinners = {};
@@ -61,6 +68,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _slotScanTimer;
   Timer? _roundAdvanceTimer;
   Timer? _questionStartTimer;
+  Timer? _classicFailoverTimer;
+  int? _scheduledQuestionStartRound;
+  DateTime? _scheduledQuestionStartDeadline;
+  int? _startingClassicRound;
   final List<Timer> _revealEffectTimers = [];
   final ValueNotifier<int?> _scanSlotIndexNotifier = ValueNotifier(null);
   bool _showWinnerBadge = false;
@@ -72,6 +83,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _isResyncing = false;
   bool _resyncRequested = false;
   DateTime? _phaseDeadline;
+  int? _activeClassicTimerRound;
+  RoundPhase? _activeClassicTimerPhase;
+  DateTime? _activeClassicTimerDeadline;
+  int? _expiredClassicTimerRound;
+  RoundPhase? _expiredClassicTimerPhase;
+  bool _tickingRequested = false;
   final List<_PendingBetEvent> _pendingBetEvents = [];
   final Map<int, List<Bet>> _partyOwnBetsByRound = {};
   PartySnapshot? _partySnapshot;
@@ -88,16 +105,123 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _isAppInForeground = true;
   bool _isActive = true;
   bool _isDisposed = false;
+  late final int _classicScreenInstanceId = ++_nextClassicScreenInstanceId;
+  String? _lastClassicPresentationDecision;
+  int? _lastPresentedClassicRound;
+  RoundPhase? _lastPresentedClassicPhase;
   late final AudioService _audioService;
   late final RealtimeService _realtimeService;
 
   bool get _canUseRef =>
       mounted && _isActive && _isAppInForeground && !_isDisposed;
 
+  void _classicSyncLog(String event, [Map<String, Object?> fields = const {}]) {
+    if (!kDebugMode) return;
+    final compact = fields.entries
+        .where((entry) => entry.value != null)
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join(' ');
+    debugPrint('CLASSIC_SYNC $event${compact.isEmpty ? '' : ' $compact'}');
+  }
+
+  String _shortClassicId(String? value) => value == null
+      ? 'none'
+      : value.length <= 8
+      ? value
+      : value.substring(0, 8);
+
+  void _reconcileClassicPresentation(Room room) {
+    if (room.gameMode != GameMode.classic) return;
+    ref
+        .read(classicPresentationProvider.notifier)
+        .reconcileSession(
+          roomId: room.id,
+          classicMatchId: room.classicMatchId,
+          round: room.currentRound,
+          questionId: room.currentQuestionId,
+          status: room.status,
+        );
+  }
+
+  void _markClassicQuestionPresented(Question question, String source) {
+    final room = ref.read(currentRoomProvider);
+    final state = ref.read(gameStateProvider);
+    if (room == null ||
+        room.gameMode != GameMode.classic ||
+        room.status != RoomStatus.playing ||
+        state.roomId != room.id ||
+        state.currentRound != room.currentRound) {
+      return;
+    }
+    final didMark = ref
+        .read(classicPresentationProvider.notifier)
+        .markQuestionPresented(
+          roomId: room.id,
+          classicMatchId: room.classicMatchId,
+          round: room.currentRound,
+          question: question,
+        );
+    if (didMark) {
+      _classicSyncLog('question_presented', {
+        'instance': _classicScreenInstanceId,
+        'source': source,
+        'room': room.id,
+        'match': _shortClassicId(room.classicMatchId),
+        'round': room.currentRound,
+        'phase': state.phase.name,
+        'version': room.stateVersion,
+        'question': _shortClassicId(question.id),
+      });
+    }
+  }
+
+  void _logClassicPresentationDecision({
+    required Room? room,
+    required GameState state,
+    required ClassicPresentationState presentation,
+    required String surface,
+    required String reason,
+  }) {
+    final signature = [
+      room?.classicMatchId,
+      state.currentRound,
+      state.phase,
+      room?.stateVersion,
+      room?.currentQuestionId,
+      state.currentQuestion?.id,
+      presentation.presentedQuestion?.id,
+      presentation.questionPresented,
+      surface,
+      reason,
+    ].join('|');
+    if (_lastClassicPresentationDecision == signature) return;
+    _lastClassicPresentationDecision = signature;
+    _classicSyncLog('presentation_decision', {
+      'instance': _classicScreenInstanceId,
+      'match': _shortClassicId(room?.classicMatchId),
+      'round': state.currentRound,
+      'phase': state.phase.name,
+      'version': room?.stateVersion,
+      'expectedQ': _shortClassicId(room?.currentQuestionId),
+      'actualQ': _shortClassicId(state.currentQuestion?.id),
+      'retainedQ': _shortClassicId(presentation.presentedQuestion?.id),
+      'presented': presentation.questionPresented,
+      'surface': surface,
+      'reason': reason,
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     final initialRoom = ref.read(currentRoomProvider);
+    _classicSyncLog('game_screen_init', {
+      'instance': _classicScreenInstanceId,
+      'room': initialRoom?.id,
+      'code': initialRoom?.code,
+      'round': initialRoom?.currentRound,
+      'match': _shortClassicId(initialRoom?.classicMatchId),
+    });
     if (initialRoom?.gameMode == GameMode.party) {
       _showPartyRoundTransition = true;
     }
@@ -115,20 +239,51 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _bootstrapVisibleGameState() {
     final room = ref.read(currentRoomProvider);
     if (room == null || room.status != RoomStatus.playing) return;
+    if (room.gameMode == GameMode.classic) {
+      _reconcileClassicPresentation(room);
+    }
 
     final phase = room.roundPhase;
-    _syncAudioForPhase(phase);
+    _syncAudioForPhase(
+      phase,
+      source: 'bootstrap_room',
+      round: room.currentRound,
+      stateVersion: room.stateVersion,
+      deadline: room.phaseEndsAt,
+    );
     if (phase == RoundPhase.guessing) {
-      _startTimer(GameConstants.guessTimerSeconds, deadline: room.phaseEndsAt);
+      if (room.gameMode == GameMode.classic) {
+        _reconcileClassicTimer(
+          source: 'bootstrap_room',
+          round: room.currentRound,
+          phase: phase,
+          fallbackSeconds: GameConstants.guessTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      } else {
+        _startTimer(
+          GameConstants.guessTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      }
     } else if (phase == RoundPhase.betting) {
-      _startTimer(
-        room.gameMode == GameMode.party
-            ? GameConstants.partyBetTimerSeconds
-            : GameConstants.betTimerSeconds,
-        deadline: room.phaseEndsAt,
-      );
+      if (room.gameMode == GameMode.classic) {
+        _reconcileClassicTimer(
+          source: 'bootstrap_room',
+          round: room.currentRound,
+          phase: phase,
+          fallbackSeconds: GameConstants.betTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      } else {
+        _startTimer(
+          GameConstants.partyBetTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
+      }
     }
-    if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
+    if ((phase == RoundPhase.question || phase == RoundPhase.guessing) &&
+        ref.read(gameStateProvider).currentQuestion != null) {
       _playQuestionRevealForRoundOnce(max(1, room.currentRound));
     }
   }
@@ -153,6 +308,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   @override
   void dispose() {
+    final room = ref.read(currentRoomProvider);
+    _classicSyncLog('game_screen_dispose', {
+      'instance': _classicScreenInstanceId,
+      'room': room?.id,
+      'code': room?.code,
+      'round': room?.currentRound,
+      'match': _shortClassicId(room?.classicMatchId),
+    });
     _isDisposed = true;
     _isActive = false;
     WidgetsBinding.instance.removeObserver(this);
@@ -160,10 +323,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _partyRoundTransitionTimer?.cancel();
     _realtimeRetryTimer?.cancel();
     _roomSyncDebounceTimer?.cancel();
+    _classicRecoveryTimer?.cancel();
     _partySnapshotWatchdogTimer?.cancel();
     _partyTransitionFallbackTimer?.cancel();
     _roundAdvanceTimer?.cancel();
     _questionStartTimer?.cancel();
+    _classicFailoverTimer?.cancel();
     _cancelRevealEffects();
     _scanSlotIndexNotifier.dispose();
     unawaited(_realtimeService.leaveRoom(widget.roomCode));
@@ -180,13 +345,64 @@ class _GameScreenState extends ConsumerState<GameScreen>
     } else {
       _isAppInForeground = false;
       _stopTimer(clearDeadline: false);
+      _classicRecoveryTimer?.cancel();
+      _classicRecoveryTimer = null;
+      if (ref.read(currentRoomProvider)?.gameMode == GameMode.classic) {
+        _cancelRevealEffects();
+        _revealedResultRound = null;
+      }
       _stopPartySnapshotWatchdog();
       _partyTransitionFallbackTimer?.cancel();
       _partyTransitionFallbackTimer = null;
     }
   }
 
-  void _syncAudioForPhase(RoundPhase phase) {
+  void _syncAudioForPhase(
+    RoundPhase phase, {
+    String source = 'local',
+    int? round,
+    int? stateVersion,
+    DateTime? deadline,
+  }) {
+    final room = ref.read(currentRoomProvider);
+    if (room?.gameMode == GameMode.classic) {
+      final gameState = ref.read(gameStateProvider);
+      final eventRound =
+          round ??
+          (gameState.currentRound > 0
+              ? gameState.currentRound
+              : room?.currentRound ?? 0);
+      final serverNow = ref.read(roomServiceProvider).serverNow;
+      final shouldPresent = GameSyncPolicy.shouldPresentPhaseEntry(
+        presentedRound: _lastPresentedClassicRound,
+        presentedPhase: _lastPresentedClassicPhase,
+        eventRound: eventRound,
+        eventPhase: phase,
+      );
+      GameTraceService.instance.trace(
+        shouldPresent
+            ? 'classic_phase_presentation_applied'
+            : 'classic_phase_presentation_deduped',
+        {
+          'source': source,
+          'round': eventRound,
+          'phase': phase.name,
+          if (stateVersion != null) 'state_version': stateVersion,
+          if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+          'server_now_utc': serverNow.toIso8601String(),
+          if (deadline != null)
+            'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+          if (_lastPresentedClassicRound != null)
+            'presented_round': _lastPresentedClassicRound,
+          if (_lastPresentedClassicPhase != null)
+            'presented_phase': _lastPresentedClassicPhase!.name,
+        },
+      );
+      if (!shouldPresent) return;
+      _lastPresentedClassicRound = eventRound;
+      _lastPresentedClassicPhase = phase;
+    }
+
     final audio = ref.read(audioServiceProvider);
     switch (phase) {
       case RoundPhase.idle:
@@ -209,6 +425,79 @@ class _GameScreenState extends ConsumerState<GameScreen>
         audio.startMainBgm();
         break;
     }
+  }
+
+  bool _shouldAcceptClassicAuthority({
+    required String source,
+    required String rejectionEvent,
+    required String incomingRoomId,
+    required int incomingRound,
+    required RoundPhase incomingPhase,
+    int? incomingStateVersion,
+    int? durationMilliseconds,
+  }) {
+    final currentState = ref.read(gameStateProvider);
+    final currentRoom = ref.read(currentRoomProvider);
+    final compareGameState =
+        currentState.roomId == incomingRoomId &&
+        (currentRoom == null || currentRoom.status == RoomStatus.playing);
+    final freshAgainstGameState =
+        !compareGameState ||
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: currentState.currentRound,
+          currentPhase: currentState.phase,
+          incomingRound: incomingRound,
+          incomingPhase: incomingPhase,
+        );
+    final compareRoom =
+        currentRoom != null &&
+        currentRoom.id == incomingRoomId &&
+        currentRoom.gameMode == GameMode.classic &&
+        currentRoom.status == RoomStatus.playing;
+    final freshAgainstRoom =
+        !compareRoom ||
+        GameSyncPolicy.shouldApplyClassicSnapshot(
+          currentRound: currentRoom.currentRound,
+          currentPhase: currentRoom.roundPhase,
+          currentStateVersion: currentRoom.stateVersion,
+          incomingRound: incomingRound,
+          incomingPhase: incomingPhase,
+          incomingStateVersion: incomingStateVersion,
+        );
+    if (freshAgainstGameState && freshAgainstRoom) return true;
+
+    GameTraceService.instance.trace(rejectionEvent, {
+      'source': source,
+      'incoming_round': incomingRound,
+      'incoming_phase': incomingPhase.name,
+      if (incomingStateVersion != null)
+        'incoming_state_version': incomingStateVersion,
+      'current_round': currentState.currentRound,
+      'current_phase': currentState.phase.name,
+      if (currentRoom?.id == incomingRoomId)
+        'current_state_version': currentRoom?.stateVersion,
+      if (durationMilliseconds != null)
+        'resync_duration_ms': durationMilliseconds,
+    });
+    return false;
+  }
+
+  void _cancelQuestionStartTimerForNewerPhase({
+    required String source,
+    required int round,
+    required RoundPhase phase,
+  }) {
+    if (phase == RoundPhase.question) return;
+    final timer = _questionStartTimer;
+    if (timer == null || !timer.isActive) return;
+    timer.cancel();
+    _questionStartTimer = null;
+    _scheduledQuestionStartRound = null;
+    _scheduledQuestionStartDeadline = null;
+    GameTraceService.instance.trace(
+      'classic_question_timer_cancelled_by_newer_phase',
+      {'source': source, 'round': round, 'phase': phase.name},
+    );
   }
 
   Future<void> _initializeGame() async {
@@ -237,54 +526,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
 
-    final roomService = ref.read(roomServiceProvider);
-    final room = await roomService.getRoom(initialRoom.id);
-    ref.read(currentRoomProvider.notifier).set(room);
-
-    final playerService = ref.read(playerServiceProvider);
-    _players = await playerService.getPlayers(room.id);
-    _restoreCurrentPlayer(room.id);
-
-    final gameNotifier = ref.read(gameStateProvider.notifier);
-    final scores = <String, int>{};
-    for (final player in _players) {
-      scores[player.id] = player.score;
-    }
-
-    final seededState = ref.read(gameStateProvider);
-    Question? currentQuestion = seededState.roomId == room.id
-        ? seededState.currentQuestion
-        : null;
-    final currentQuestionId = room.currentQuestionId;
-    if (currentQuestionId != null && currentQuestion?.id != currentQuestionId) {
-      currentQuestion = await ref
-          .read(gameServiceProvider)
-          .getQuestionForRoom(room.id);
-    }
-
-    gameNotifier.initialize(
-      room.id,
-      room.code,
-      room.maxRounds,
-      currentRound: room.currentRound,
-      phase: room.roundPhase,
-      currentQuestion: currentQuestion,
-      scores: scores,
-    );
-
-    // Realtime improves responsiveness, but it must never block the first
-    // question, timer, audio, or navigation. Server snapshots remain the
-    // authoritative startup path while the channel connects in parallel.
-    unawaited(_setupRealtime());
-
-    if (room.roundPhase == RoundPhase.question) {
-      _playQuestionRevealForRoundOnce(max(1, room.currentRound));
-      _scheduleQuestionStart(room, primary: ref.read(isHostProvider));
-      return;
-    }
-
-    await _resyncFromServer(roomOverride: room);
-    _playQuestionRevealOnce(ref.read(gameStateProvider).currentQuestion);
+    // Listen immediately; recover once now and after every successful join.
+    unawaited(_setupRealtime(resyncAfterConnect: true));
+    await _resyncFromServer();
   }
 
   void _playQuestionRevealOnce(Question? question) {
@@ -297,10 +541,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _playQuestionRevealForRoundOnce(int round) {
     if (_revealedQuestionAudioRound == round) return;
     _revealedQuestionAudioRound = round;
+    GameTraceService.instance.trace('question_reveal_marked_round', {
+      'round': round,
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      GameTraceService.instance.trace('question_reveal_postframe', {
+        'round': round,
+      });
       if (!_canUseRef) return;
       final state = ref.read(gameStateProvider);
       if (state.currentRound != round || state.phase != RoundPhase.question) {
+        GameTraceService.instance.trace('question_reveal_postframe_skipped', {
+          'round': round,
+          'current_round': state.currentRound,
+          'phase': state.phase.name,
+        });
         return;
       }
       unawaited(ref.read(audioServiceProvider).playQuestionReveal());
@@ -326,7 +581,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _setupRealtime({bool resyncAfterConnect = false}) async {
-    if (!_canUseRef) return;
+    if (!_canUseRef || _realtimeSetupInFlight) return;
+    _realtimeSetupInFlight = true;
     _realtimeRetryTimer?.cancel();
     _realtimeRetryTimer = null;
     final realtimeService = _realtimeService;
@@ -336,106 +592,77 @@ class _GameScreenState extends ConsumerState<GameScreen>
         widget.roomCode,
         roomId: roomId,
         onPhaseChange: (payload) {
-          try {
-            if (!_canUseRef) return;
-            if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
-              _schedulePartyRealtimeResync();
-              return;
-            }
-            final phase = RoundPhase.fromString(
-              payload['phase'] as String? ?? 'idle',
-            );
-            final round = (payload['round'] as num?)?.toInt();
-            if (round == null) return;
-            final currentState = ref.read(gameStateProvider);
-            if (!GameSyncPolicy.shouldApplyPhase(
-              currentRound: currentState.currentRound,
-              currentPhase: currentState.phase,
-              eventRound: round,
-              eventPhase: phase,
-            )) {
-              return;
-            }
-            if (_isResyncing) _resyncRequested = true;
-
-            final isNewRound = round > currentState.currentRound;
-            final deadline = _deadlineFromPayload(payload);
-            final gameNotifier = ref.read(gameStateProvider.notifier);
-
-            gameNotifier.setRound(round);
-            gameNotifier.updatePhase(phase);
-            _syncAudioForPhase(phase);
-
-            if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
-              final questionData = payload['question'] as Map<String, dynamic>?;
-              if (questionData != null) {
-                final question = Question.fromJson(questionData);
-                gameNotifier.setQuestion(question);
-                if (!_usedQuestionIds.contains(question.id)) {
-                  _usedQuestionIds.add(question.id);
-                }
-                _playQuestionRevealOnce(question);
-              }
-              if (isNewRound) {
-                _roundWinners.clear();
-                _incomingOtherBetIds.clear();
-                _playedOtherBetEntryIds.clear();
-                _selectedBetId = null;
-                gameNotifier.resetForNewRound();
-              }
-
-              if (phase == RoundPhase.guessing) {
-                _guessInput = '';
-                _isSubmittingGuess = false;
-                _startTimer(
-                  GameConstants.guessTimerSeconds,
-                  deadline: deadline,
-                );
-              }
-            }
-
-            if (phase == RoundPhase.betting) {
-              _startTimer(GameConstants.betTimerSeconds, deadline: deadline);
-            }
-
-            if (phase == RoundPhase.revealAnswer ||
-                phase == RoundPhase.scoring) {
-              _stopTimer();
-            }
-          } catch (e, st) {
-            debugPrint('Error in onPhaseChange: $e\n$st');
-          }
-        },
-        onGuessSubmitted: (_) {
-          if (_canUseRef) unawaited(_maybeAutoRevealGuesses());
-        },
-        onGuessesRevealed: (payload) {
           if (!_canUseRef) return;
-          if (!_payloadMatchesCurrentRound(payload)) return;
-          final guessesData = payload['guesses'] as List<dynamic>?;
-          if (guessesData != null) {
-            final guesses = guessesData
-                .map((g) => Guess.fromJson(g as Map<String, dynamic>))
-                .toList();
-            ref.read(gameStateProvider.notifier).setGuesses(guesses);
+          if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+            _schedulePartyRealtimeResync();
+            return;
           }
+          _acceptClassicRealtimeHint(
+            source: 'broadcast_phase_change',
+            payload: payload,
+          );
         },
+        onGuessSubmitted: (payload) => _acceptClassicRealtimeHint(
+          source: 'broadcast_guess_submitted',
+          payload: payload,
+        ),
+        onGuessesRevealed: (payload) => _acceptClassicRealtimeHint(
+          source: 'broadcast_guesses_revealed',
+          payload: payload,
+        ),
         onBetPlaced: (payload) {
-          if (_canUseRef) _applyBetPlacedPayload(payload);
+          if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+            _applyBetPlacedPayload(payload);
+          } else {
+            _acceptClassicRealtimeHint(
+              source: 'broadcast_bet_placed',
+              payload: payload,
+            );
+          }
         },
         onBetRemoved: (payload) {
-          if (_canUseRef) _applyBetRemovedPayload(payload);
+          if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
+            _applyBetRemovedPayload(payload);
+          } else {
+            _acceptClassicRealtimeHint(
+              source: 'broadcast_bet_removed',
+              payload: payload,
+            );
+          }
         },
         onBetRowChanged: (record, isDelete) {
-          if (_canUseRef) {
+          if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
             _applyBetDatabaseChange(record, isDelete: isDelete);
+          } else {
+            _acceptClassicRealtimeHint(
+              source: isDelete ? 'postgres_bet_delete' : 'postgres_bet_upsert',
+              payload: record,
+            );
           }
         },
         onRoomRowChanged: _applyRoomDatabaseChange,
+        onConnectionChanged: (status) {
+          if (!_canUseRef ||
+              ref.read(currentRoomProvider)?.gameMode != GameMode.classic) {
+            return;
+          }
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            _queueClassicResync();
+          } else {
+            _armClassicRecovery(const Duration(seconds: 2));
+          }
+        },
         onPlayerJoined: (_) => unawaited(_refreshPartyPlayers()),
         onPlayerLeft: (_) => unawaited(_refreshPartyPlayers()),
         onScoreUpdate: (payload) {
           if (!_canUseRef) return;
+          if (ref.read(currentRoomProvider)?.gameMode == GameMode.classic) {
+            _acceptClassicRealtimeHint(
+              source: 'broadcast_score_update',
+              payload: payload,
+            );
+            return;
+          }
           if (!_payloadMatchesCurrentRound(payload)) return;
           final scoresData =
               (payload['bank_scores'] ?? payload['scores'])
@@ -448,16 +675,80 @@ class _GameScreenState extends ConsumerState<GameScreen>
         onAnswerRevealed: (payload) {
           try {
             if (!_canUseRef) return;
+            if (ref.read(currentRoomProvider)?.gameMode == GameMode.classic) {
+              _acceptClassicRealtimeHint(
+                source: 'broadcast_answer_revealed',
+                payload: payload,
+              );
+              return;
+            }
             if (!_payloadMatchesCurrentRound(payload)) return;
             final answer = (payload['answer'] as num?)?.toInt();
             final winningGuessId = payload['winning_guess_id'] as String?;
             if (answer != null) {
+              final currentRoom = ref.read(currentRoomProvider);
+              final round =
+                  _eventRound(payload) ??
+                  ref.read(gameStateProvider).currentRound;
+              if (currentRoom == null ||
+                  !_shouldAcceptClassicAuthority(
+                    source: 'broadcast_answer_revealed',
+                    rejectionEvent: 'classic_snapshot_rejected_stale',
+                    incomingRoomId: currentRoom.id,
+                    incomingRound: round,
+                    incomingPhase: RoundPhase.revealAnswer,
+                    incomingStateVersion: (payload['state_version'] as num?)
+                        ?.toInt(),
+                  )) {
+                return;
+              }
+              _cancelQuestionStartTimerForNewerPhase(
+                source: 'broadcast_answer_revealed',
+                round: round,
+                phase: RoundPhase.revealAnswer,
+              );
+              final revealDeadline = GameSyncPolicy.classicRevealDeadline(
+                eventRound: round,
+                eventDeadline: _deadlineFromPayload(payload),
+                roomRound: currentRoom.currentRound,
+                roomPhase: currentRoom.roundPhase,
+                roomDeadline: currentRoom.phaseEndsAt,
+              );
+              if (revealDeadline == null) {
+                _queueClassicResync();
+                return;
+              }
+              _recordClassicBroadcastRoom(
+                payload,
+                round,
+                RoundPhase.revealAnswer,
+                revealDeadline,
+              );
+              _queueClassicResync();
               ref
                   .read(gameStateProvider.notifier)
                   .revealAnswer(answer: answer, winningGuessId: winningGuessId);
-              _syncAudioForPhase(RoundPhase.revealAnswer);
-              unawaited(_startRevealSequence(ref.read(gameStateProvider)));
-              _scheduleRoundAdvance();
+              _syncAudioForPhase(
+                RoundPhase.revealAnswer,
+                source: 'broadcast_answer_revealed',
+                round: ref.read(gameStateProvider).currentRound,
+              );
+              // Start the timeline from the consistent data read, not a sparse
+              // hint that may arrive before the final guesses/bets.
+              final deadline = GameSyncPolicy.classicRevealDeadline(
+                eventRound: round,
+                eventDeadline: _deadlineFromPayload(payload),
+                roomRound: currentRoom.currentRound,
+                roomPhase: currentRoom.roundPhase,
+                roomDeadline: currentRoom.phaseEndsAt,
+              );
+              if (deadline != null) {
+                _scheduleRoundAdvance(deadline: deadline);
+              } else {
+                // An old sender did not include server time. Fetch it instead
+                // of starting a new seven-second window at message arrival.
+                unawaited(_resyncFromServer(synchronizeClock: false));
+              }
             }
           } catch (e, st) {
             debugPrint('Error in onAnswerRevealed: $e\n$st');
@@ -465,6 +756,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         },
         onGameStarted: (payload) {
           if (!_canUseRef) return;
+          if (ref.read(currentRoomProvider)?.gameMode == GameMode.classic) {
+            _acceptClassicRealtimeHint(
+              source: 'broadcast_game_started',
+              payload: payload,
+            );
+            return;
+          }
           final questionData = payload['question'] as Map<String, dynamic>?;
           if (questionData == null) return;
 
@@ -477,12 +775,42 @@ class _GameScreenState extends ConsumerState<GameScreen>
             payload['bank_scores'] ?? payload['scores'],
           );
           final deadline = _deadlineFromPayload(payload);
+          final currentRoom = ref.read(currentRoomProvider);
+          if (currentRoom == null ||
+              !_shouldAcceptClassicAuthority(
+                source: 'game_started_broadcast',
+                rejectionEvent: 'classic_snapshot_rejected_stale',
+                incomingRoomId: currentRoom.id,
+                incomingRound: round,
+                incomingPhase: phase,
+                incomingStateVersion: (payload['state_version'] as num?)
+                    ?.toInt(),
+              )) {
+            return;
+          }
+          _cancelQuestionStartTimerForNewerPhase(
+            source: 'game_started_broadcast',
+            round: round,
+            phase: phase,
+          );
           final gameNotifier = ref.read(gameStateProvider.notifier);
+          final priorPhase = ref.read(gameStateProvider).phase;
+          _recordClassicBroadcastRoom(payload, round, phase, deadline);
+          _queueClassicResync();
           gameNotifier.startGame(
             round: round,
             phase: phase,
             question: question,
             scores: scores,
+          );
+          _traceAppliedRoomPhase(
+            'game_started_broadcast',
+            ref.read(currentRoomProvider),
+            roundOverride: round,
+            phaseOverride: phase,
+            deadlineOverride: deadline,
+            stateVersionOverride: (payload['state_version'] as num?)?.toInt(),
+            priorPhase: priorPhase,
           );
           if (!_usedQuestionIds.contains(question.id)) {
             _usedQuestionIds.add(question.id);
@@ -491,18 +819,26 @@ class _GameScreenState extends ConsumerState<GameScreen>
           if (phase == RoundPhase.guessing) {
             _guessInput = '';
             _isSubmittingGuess = false;
-            _startTimer(GameConstants.guessTimerSeconds, deadline: deadline);
-          }
-          _syncAudioForPhase(phase);
-        },
-        onGameEnded: (_) {
-          if (_canUseRef) {
-            context.goNamed(
-              'results',
-              pathParameters: {'roomCode': widget.roomCode},
+            _reconcileClassicTimer(
+              source: 'game_started_broadcast',
+              round: round,
+              phase: phase,
+              fallbackSeconds: GameConstants.guessTimerSeconds,
+              deadline: deadline,
             );
           }
+          _syncAudioForPhase(
+            phase,
+            source: 'game_started_broadcast',
+            round: round,
+            stateVersion: (payload['state_version'] as num?)?.toInt(),
+            deadline: deadline,
+          );
         },
+        onGameEnded: (payload) => _acceptClassicRealtimeHint(
+          source: 'broadcast_game_ended',
+          payload: payload,
+        ),
       );
       if (resyncAfterConnect && _canUseRef) {
         unawaited(_resyncFromServer());
@@ -515,7 +851,78 @@ class _GameScreenState extends ConsumerState<GameScreen>
           unawaited(_setupRealtime(resyncAfterConnect: true));
         }
       });
+    } finally {
+      _realtimeSetupInFlight = false;
     }
+  }
+
+  /// Broadcast and Postgres are delivery hints, not a second state authority.
+  /// A full server snapshot supplies room, question, guesses and bets together
+  /// before presentation, timers or audio are allowed to change.
+  void _acceptClassicRealtimeHint({
+    required String source,
+    required Map<String, dynamic> payload,
+  }) {
+    if (!_canUseRef ||
+        ref.read(currentRoomProvider)?.gameMode != GameMode.classic) {
+      return;
+    }
+    final round = _eventRound(payload);
+    final phase = payload['phase'] is String
+        ? RoundPhase.fromString(payload['phase'] as String)
+        : null;
+    GameTraceService.instance.trace('classic_realtime_hint_received', {
+      'source': source,
+      if (round != null) 'round': round,
+      if (phase != null) 'phase': phase.name,
+      if (payload['state_version'] is num)
+        'state_version': (payload['state_version'] as num).toInt(),
+      if (payload['phase_ends_at'] != null)
+        'deadline_utc': '${payload['phase_ends_at']}',
+    });
+    if (_isResyncing) {
+      _resyncRequested = true;
+      return;
+    }
+    _queueClassicResync();
+  }
+
+  void _recordClassicBroadcastRoom(
+    Map<String, dynamic> payload,
+    int round,
+    RoundPhase phase,
+    DateTime? deadline,
+  ) {
+    final room = ref.read(currentRoomProvider);
+    if (room == null || room.gameMode != GameMode.classic) return;
+    final samePhase = room.currentRound == round && room.roundPhase == phase;
+    final question = payload['question'];
+    final started =
+        payload['phase_started_at'] ??
+        (samePhase ? room.phaseStartedAt?.toIso8601String() : null) ??
+        (phase == RoundPhase.revealAnswer
+            ? deadline
+                  ?.subtract(
+                    const Duration(seconds: GameConstants.roundResultsSeconds),
+                  )
+                  .toIso8601String()
+            : null);
+    // Update the same authority cursor read by async snapshot/timer guards.
+    final updatedRoom = Room.fromJson({
+      ...room.toJson(),
+      'created_at': room.createdAt.toIso8601String(),
+      'status': RoomStatus.playing.name,
+      'current_round': round,
+      'round_phase': phase.name,
+      'state_version': payload['state_version'] ?? room.stateVersion,
+      'phase_started_at': started,
+      'phase_ends_at': deadline?.toIso8601String(),
+      'current_question_id': question is Map
+          ? question['id']
+          : (round == room.currentRound ? room.currentQuestionId : null),
+    });
+    ref.read(currentRoomProvider.notifier).set(updatedRoom);
+    _reconcileClassicPresentation(updatedRoom);
   }
 
   Map<String, int>? _scoresFromPayload(Object? rawScores) {
@@ -636,20 +1043,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
     try {
       final room = Room.fromJson(record);
       final currentRoom = ref.read(currentRoomProvider);
-      if (currentRoom != null) {
-        if (room.stateVersion < currentRoom.stateVersion) return;
-        final sameAuthority =
-            room.stateVersion == currentRoom.stateVersion &&
-            room.status == currentRoom.status &&
-            room.currentRound == currentRoom.currentRound &&
-            room.roundPhase == currentRoom.roundPhase &&
-            room.currentQuestionId == currentRoom.currentQuestionId &&
-            room.phaseEndsAt == currentRoom.phaseEndsAt;
-        if (sameAuthority) return;
-      }
+      final sameAuthority =
+          currentRoom != null &&
+          room.stateVersion == currentRoom.stateVersion &&
+          room.status == currentRoom.status &&
+          room.currentRound == currentRoom.currentRound &&
+          room.roundPhase == currentRoom.roundPhase &&
+          room.currentQuestionId == currentRoom.currentQuestionId &&
+          room.phaseEndsAt == currentRoom.phaseEndsAt;
 
-      ref.read(currentRoomProvider.notifier).set(room);
       if (room.status == RoomStatus.finished) {
+        if (currentRoom != null &&
+            room.stateVersion < currentRoom.stateVersion) {
+          return;
+        }
+        ref.read(currentRoomProvider.notifier).set(room);
+        if (room.gameMode == GameMode.classic) {
+          _reconcileClassicPresentation(room);
+        }
         _roomSyncDebounceTimer?.cancel();
         if (_canUseRef) {
           context.goNamed(
@@ -661,16 +1072,53 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
 
       if (room.gameMode == GameMode.party) {
+        if (currentRoom != null &&
+            room.stateVersion < currentRoom.stateVersion) {
+          return;
+        }
+        if (sameAuthority) return;
+        ref.read(currentRoomProvider.notifier).set(room);
         _schedulePartyRealtimeResync(roomOverride: room);
         return;
       }
 
+      if (_shouldDeferClassicRoomRowToSnapshot(room)) {
+        // A room row contains only phase metadata. Applying it first creates
+        // a transient state with no matching question/guesses/bets, then the
+        // full snapshot replays the same phase. Treat it as a refresh hint.
+        _acceptClassicRealtimeHint(
+          source: 'postgres_room_row',
+          payload: record,
+        );
+        return;
+      }
+
+      if (!_shouldAcceptClassicAuthority(
+        source: 'postgres_room_row',
+        rejectionEvent: 'classic_postgres_rejected_stale',
+        incomingRoomId: room.id,
+        incomingRound: room.currentRound,
+        incomingPhase: room.roundPhase,
+        incomingStateVersion: room.stateVersion,
+      )) {
+        return;
+      }
+      if (sameAuthority) {
+        // A fast broadcast may already have advanced the authority cursor but
+        // not delivered guesses, scores or the current question.
+        _queueClassicResync();
+        return;
+      }
+
+      ref.read(currentRoomProvider.notifier).set(room);
       final gameState = ref.read(gameStateProvider);
       final newRound = room.currentRound > gameState.currentRound;
-      final questionChanged =
-          room.currentQuestionId != null &&
-          room.currentQuestionId != gameState.currentQuestion?.id;
-      if (newRound || questionChanged) {
+      _cancelQuestionStartTimerForNewerPhase(
+        source: 'postgres_room_row',
+        round: room.currentRound,
+        phase: room.roundPhase,
+      );
+      if (newRound) {
         ref
             .read(gameStateProvider.notifier)
             .beginAuthoritativeRound(room.currentRound, room.roundPhase);
@@ -686,20 +1134,40 @@ class _GameScreenState extends ConsumerState<GameScreen>
         notifier.setRound(room.currentRound);
         notifier.updatePhase(room.roundPhase);
       }
-
-      _syncAudioForPhase(room.roundPhase);
-      if (room.roundPhase == RoundPhase.question) {
-        _playQuestionRevealForRoundOnce(max(1, room.currentRound));
+      _reconcileClassicPresentation(room);
+      _traceAppliedRoomPhase(
+        'postgres_room_row',
+        room,
+        priorPhase: gameState.phase,
+      );
+      _syncAudioForPhase(
+        room.roundPhase,
+        source: 'postgres_room_row',
+        round: room.currentRound,
+        stateVersion: room.stateVersion,
+        deadline: room.phaseEndsAt,
+      );
+      final presentedState = ref.read(gameStateProvider);
+      if (room.roundPhase == RoundPhase.question &&
+          presentedState.currentQuestion != null) {
+        _playQuestionRevealOnce(presentedState.currentQuestion);
       }
       if (room.roundPhase == RoundPhase.guessing) {
-        _questionStartTimer?.cancel();
-        _startTimer(
-          GameConstants.guessTimerSeconds,
+        _reconcileClassicTimer(
+          source: 'postgres_room_row',
+          round: room.currentRound,
+          phase: room.roundPhase,
+          fallbackSeconds: GameConstants.guessTimerSeconds,
           deadline: room.phaseEndsAt,
         );
       } else if (room.roundPhase == RoundPhase.betting) {
-        _questionStartTimer?.cancel();
-        _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
+        _reconcileClassicTimer(
+          source: 'postgres_room_row',
+          round: room.currentRound,
+          phase: room.roundPhase,
+          fallbackSeconds: GameConstants.betTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
       } else {
         _stopTimer();
       }
@@ -714,15 +1182,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _roomSyncDebounceTimer?.cancel();
       _roomSyncDebounceTimer = Timer(const Duration(milliseconds: 80), () {
         if (_canUseRef) {
-          unawaited(
-            _resyncFromServer(roomOverride: room, synchronizeClock: false),
-          );
+          unawaited(_resyncFromServer(synchronizeClock: false));
         }
       });
     } catch (error, stackTrace) {
       debugPrint('Room realtime sync failed: $error\n$stackTrace');
     }
   }
+
+  bool _shouldDeferClassicRoomRowToSnapshot(Room room) =>
+      room.gameMode == GameMode.classic;
 
   void _applyBetRemovedPayload(
     Map<String, dynamic> payload, {
@@ -755,6 +1224,54 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  void _traceAppliedRoomPhase(
+    String source,
+    Room? room, {
+    int? roundOverride,
+    RoundPhase? phaseOverride,
+    DateTime? deadlineOverride,
+    int? stateVersionOverride,
+    RoundPhase? priorPhase,
+  }) {
+    final deadline = deadlineOverride ?? room?.phaseEndsAt;
+    final serverNow = ref.read(roomServiceProvider).serverNow;
+    final round = roundOverride ?? room?.currentRound;
+    final phase = phaseOverride ?? room?.roundPhase;
+    final stateVersion = stateVersionOverride ?? room?.stateVersion;
+    GameTraceService.instance.trace('phase_applied', {
+      'source': source,
+      if (round != null) 'round': round,
+      if (phase != null) 'phase': phase.name,
+      if (stateVersion != null) 'state_version': stateVersion,
+      if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+      'server_now_utc': serverNow.toIso8601String(),
+      if (deadline != null)
+        'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+    });
+    if (priorPhase != null && priorPhase != phase) {
+      if (phase == RoundPhase.question) {
+        GameTraceService.instance.trace('classic_transition_enter', {
+          'source': source,
+          if (round != null) 'round': round,
+          if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+          'server_now_utc': serverNow.toIso8601String(),
+          if (deadline != null)
+            'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+        });
+      } else if (priorPhase == RoundPhase.question) {
+        GameTraceService.instance.trace('classic_transition_exit', {
+          'source': source,
+          if (round != null) 'round': round,
+          if (phase != null) 'phase': phase.name,
+          if (deadline != null) 'deadline_utc': deadline.toIso8601String(),
+          'server_now_utc': serverNow.toIso8601String(),
+          if (deadline != null)
+            'remaining_ms': deadline.difference(serverNow).inMilliseconds,
+        });
+      }
+    }
+  }
+
   Future<void> _resyncFromServer({
     bool refreshRealtime = false,
     Room? roomOverride,
@@ -763,6 +1280,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (!_canUseRef) return;
     if (_isResyncing) {
       _resyncRequested = true;
+      GameTraceService.instance.trace('classic_resync_requested_while_busy');
       return;
     }
     final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
@@ -775,84 +1293,142 @@ class _GameScreenState extends ConsumerState<GameScreen>
       );
       return;
     }
+    final roomService = ref.read(roomServiceProvider);
+    final gameService = ref.read(gameServiceProvider);
 
     _isResyncing = true;
     _resyncRequested = false;
     _pendingBetEvents.clear();
+    final traceWatch = Stopwatch()..start();
+    GameTraceService.instance.trace('classic_resync_begin', {
+      'source': 'classic_resync_snapshot',
+      'round': currentRoom.currentRound,
+      'phase': currentRoom.roundPhase.name,
+    });
+    _classicSyncLog('snapshot_fetch_begin', {
+      'round': currentRoom.currentRound,
+      'phase': currentRoom.roundPhase.name,
+      'version': currentRoom.stateVersion,
+    });
     try {
-      if (refreshRealtime) await _setupRealtime();
-
-      final roomService = ref.read(roomServiceProvider);
-      final playerService = ref.read(playerServiceProvider);
-      final gameService = ref.read(gameServiceProvider);
-      final gameNotifier = ref.read(gameStateProvider.notifier);
+      if (refreshRealtime) unawaited(_setupRealtime());
+      final stageWatch = Stopwatch()..start();
 
       if (synchronizeClock) {
-        try {
-          await roomService.synchronizeServerClock(force: refreshRealtime);
-        } catch (_) {
-          // The local fallback remains available for older schemas or outages.
-        }
+        // Do not hold the first visible question behind the cold three-sample
+        // clock calibration. The authoritative snapshot below carries its own
+        // server timestamp; this longer calibration only refines the offset in
+        // the background for later deadline precision.
+        unawaited(_refreshClassicServerClock(force: refreshRealtime));
       }
 
-      final room = roomOverride ?? await roomService.getRoom(currentRoom.id);
-      ref.read(currentRoomProvider.notifier).set(room);
-
+      final betRevision = _betCommandRevision;
+      final betWasInFlight = _isBetOperationInFlight;
+      final snapshot = await gameService.getClassicSnapshot(currentRoom.id);
+      if (!mounted || !_canUseRef) return;
+      final snapshotServerNow = snapshot.serverNow;
+      if (snapshotServerNow != null) {
+        roomService.observeServerClock(snapshotServerNow);
+      }
+      final room = snapshot.room;
       if (room.status == RoomStatus.finished) {
-        if (mounted) {
-          context.goNamed(
-            'results',
-            pathParameters: {'roomCode': widget.roomCode},
-          );
+        final latest = ref.read(currentRoomProvider);
+        if (latest != null &&
+            latest.id == room.id &&
+            latest.stateVersion > room.stateVersion) {
+          return;
         }
+        ref.read(currentRoomProvider.notifier).set(room);
+        _reconcileClassicPresentation(room);
+        context.goNamed(
+          'results',
+          pathParameters: {'roomCode': widget.roomCode},
+        );
+        return;
+      }
+      final players = snapshot.players;
+      final scores = <String, int>{for (final p in players) p.id: p.score};
+      final phase = room.roundPhase;
+      final round = room.currentRound;
+      final enrichedGuesses = snapshot.guesses.map((guess) {
+        final player = players.where((p) => p.id == guess.playerId).firstOrNull;
+        return guess.copyWith(
+          playerName: player?.name,
+          playerColor: player?.avatarColor,
+        );
+      }).toList();
+      final bets = snapshot.bets;
+      final question = snapshot.question;
+      _classicSyncLog('snapshot_fetch_end', {
+        'round': room.currentRound,
+        'phase': room.roundPhase.name,
+        'version': room.stateVersion,
+        'question': question?.id == null
+            ? null
+            : question!.id.substring(
+                0,
+                question.id.length > 8 ? 8 : question.id.length,
+              ),
+      });
+
+      GameTraceService.instance.trace('classic_resync_game_data_fetch', {
+        'duration_ms': stageWatch.elapsedMilliseconds,
+        if (round <= 0) 'skipped': true,
+      });
+      if (!_canUseRef) return;
+      if (!_shouldAcceptClassicAuthority(
+        source: 'classic_resync_snapshot',
+        rejectionEvent: 'classic_snapshot_rejected_stale',
+        incomingRoomId: room.id,
+        incomingRound: round,
+        incomingPhase: phase,
+        incomingStateVersion: room.stateVersion,
+        durationMilliseconds: traceWatch.elapsedMilliseconds,
+      )) {
+        _classicSyncLog('snapshot_rejected', {
+          'round': round,
+          'phase': phase.name,
+          'version': room.stateVersion,
+        });
+        _pendingBetEvents.clear();
         return;
       }
 
-      _players = await playerService.getPlayers(room.id);
-      final currentPlayer = _restoreCurrentPlayer(room.id);
-      final scores = <String, int>{
-        for (final player in _players) player.id: player.score,
-      };
-      final phase = room.roundPhase;
-      final round = room.currentRound;
-      final oldState = ref.read(gameStateProvider);
-      var enrichedGuesses = <Guess>[];
-      var bets = <Bet>[];
-      Question? question;
-      String? winningGuessId;
-
-      if (round > 0) {
-        final guesses = await gameService.getGuesses(room.id, round);
-        enrichedGuesses = guesses.map((guess) {
-          final player = _playerById(guess.playerId);
-          return guess.copyWith(
-            playerName: player?.name,
-            playerColor: player?.avatarColor,
-          );
-        }).toList();
-        bets = await gameService.getBets(room.id, round);
-        final hasQuestion =
-            room.currentQuestionId != null ||
-            enrichedGuesses.any((guess) => guess.questionId != null);
-        question = !hasQuestion
-            ? (oldState.currentRound == round ? oldState.currentQuestion : null)
-            : await gameService.getQuestionForRoom(room.id);
-
-        if (question != null) {
-          if (!_usedQuestionIds.contains(question.id)) {
-            _usedQuestionIds.add(question.id);
-          }
-        }
-
-        if ((phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) &&
-            question != null) {
-          winningGuessId = enrichedGuesses
-              .where((guess) => guess.isWinner)
-              .map((guess) => guess.id)
-              .firstOrNull;
-        }
+      final previousState = ref.read(gameStateProvider);
+      if (GameSyncPolicy.shouldDeferBetSnapshot(
+        snapshotRound: round,
+        snapshotPhase: phase,
+        currentRound: previousState.currentRound,
+        currentPhase: previousState.phase,
+        commandWasInFlight: betWasInFlight,
+        commandIsInFlight: _isBetOperationInFlight,
+        revisionAtRead: betRevision,
+        currentRevision: _betCommandRevision,
+      )) {
+        if (!_isBetOperationInFlight) _queueClassicResync();
+        return;
       }
+      if (question != null && !_usedQuestionIds.contains(question.id)) {
+        _usedQuestionIds.add(question.id);
+      }
+      final winningGuessId =
+          (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) &&
+              question != null
+          ? enrichedGuesses
+                .where((guess) => guess.isWinner)
+                .map((guess) => guess.id)
+                .firstOrNull
+          : null;
 
+      _players = players;
+      ref.read(currentRoomProvider.notifier).set(room);
+      final currentPlayer = _restoreCurrentPlayer(room.id);
+      final gameNotifier = ref.read(gameStateProvider.notifier);
+      _cancelQuestionStartTimerForNewerPhase(
+        source: 'classic_resync_snapshot',
+        round: round,
+        phase: phase,
+      );
       gameNotifier.applySnapshot(
         roomId: room.id,
         roomCode: room.code,
@@ -872,12 +1448,29 @@ class _GameScreenState extends ConsumerState<GameScreen>
             currentPlayer != null &&
             enrichedGuesses.any((guess) => guess.playerId == currentPlayer.id),
       );
+      _reconcileClassicPresentation(room);
+      _classicSyncLog('snapshot_accepted', {
+        'round': round,
+        'phase': phase.name,
+        'version': room.stateVersion,
+        'question': question?.id == null
+            ? null
+            : question!.id.substring(
+                0,
+                question.id.length > 8 ? 8 : question.id.length,
+              ),
+      });
+      _traceAppliedRoomPhase(
+        'classic_resync_snapshot',
+        room,
+        roundOverride: round,
+        phaseOverride: phase,
+        priorPhase: previousState.phase,
+      );
       if (phase == RoundPhase.question || phase == RoundPhase.guessing) {
         _playQuestionRevealOnce(question);
       }
 
-      _incomingOtherBetIds.clear();
-      _playedOtherBetEntryIds.clear();
       final pendingBetEvents = List<_PendingBetEvent>.of(_pendingBetEvents);
       _pendingBetEvents.clear();
       for (final event in pendingBetEvents) {
@@ -892,7 +1485,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
       }
 
-      if (round != oldState.currentRound) {
+      if (round != previousState.currentRound) {
+        _incomingOtherBetIds.clear();
+        _playedOtherBetEntryIds.clear();
         _guessInput = '';
         _selectedChipValue = null;
         _selectedBetId = null;
@@ -902,7 +1497,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _revealedResultRound = null;
       }
 
-      _syncAudioForPhase(phase);
+      _syncAudioForPhase(
+        phase,
+        source: 'classic_resync_snapshot',
+        round: round,
+        stateVersion: room.stateVersion,
+        deadline: room.phaseEndsAt,
+      );
       if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
         unawaited(_startRevealSequence(ref.read(gameStateProvider)));
         _scheduleRoundAdvance(deadline: room.phaseEndsAt);
@@ -912,31 +1513,100 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
       if (phase == RoundPhase.question) {
         _scheduleQuestionStart(room);
-      } else {
-        _questionStartTimer?.cancel();
       }
 
       if (phase == RoundPhase.revealAnswer || phase == RoundPhase.scoring) {
         _stopTimer();
       } else if (phase == RoundPhase.guessing) {
-        _startTimer(
-          GameConstants.guessTimerSeconds,
+        _reconcileClassicTimer(
+          source: 'classic_resync_snapshot',
+          round: round,
+          phase: phase,
+          fallbackSeconds: GameConstants.guessTimerSeconds,
           deadline: room.phaseEndsAt,
         );
       } else if (phase == RoundPhase.betting) {
-        _startTimer(GameConstants.betTimerSeconds, deadline: room.phaseEndsAt);
+        _reconcileClassicTimer(
+          source: 'classic_resync_snapshot',
+          round: round,
+          phase: phase,
+          fallbackSeconds: GameConstants.betTimerSeconds,
+          deadline: room.phaseEndsAt,
+        );
       } else if (phase == RoundPhase.question && round > 0) {
         _stopTimer();
       }
-      if (mounted) setState(() {});
+      if (_canUseRef) setState(() {});
+      _classicResyncFailures = 0;
+    } catch (error, stackTrace) {
+      _classicResyncFailures++;
+      GameTraceService.instance.trace('classic_resync_failed', {
+        'error_type': error.runtimeType.toString(),
+        'attempt': _classicResyncFailures,
+      });
+      debugPrint('Classic snapshot recovery failed: $error\n$stackTrace');
     } finally {
+      GameTraceService.instance.trace('classic_resync_end', {
+        'source': 'classic_resync_snapshot',
+        'duration_ms': traceWatch.elapsedMilliseconds,
+      });
       _isResyncing = false;
       final shouldResyncAgain = _resyncRequested;
       _resyncRequested = false;
-      if (shouldResyncAgain && mounted) {
-        unawaited(_resyncFromServer());
+      if (_canUseRef) {
+        if (shouldResyncAgain && _classicResyncFailures == 0) {
+          _queueClassicResync();
+        }
+        _armClassicRecovery(
+          Duration(
+            seconds: _classicResyncFailures == 0
+                ? 5
+                : min(30, 2 * (1 << min(4, _classicResyncFailures - 1))),
+          ),
+        );
       }
     }
+  }
+
+  Future<void> _refreshClassicServerClock({required bool force}) async {
+    final watch = Stopwatch()..start();
+    try {
+      await ref.read(roomServiceProvider).synchronizeServerClock(force: force);
+      GameTraceService.instance.trace('classic_resync_clock_sync', {
+        'duration_ms': watch.elapsedMilliseconds,
+        'blocking': false,
+      });
+    } catch (_) {
+      // A snapshot timestamp or local clock remains sufficient for rendering.
+      GameTraceService.instance.trace('classic_resync_clock_sync_failed', {
+        'duration_ms': watch.elapsedMilliseconds,
+      });
+    }
+  }
+
+  void _queueClassicResync() {
+    if (!_canUseRef ||
+        ref.read(currentRoomProvider)?.gameMode != GameMode.classic) {
+      return;
+    }
+    if (_roomSyncDebounceTimer?.isActive ?? false) return;
+    _roomSyncDebounceTimer = Timer(const Duration(milliseconds: 80), () {
+      _roomSyncDebounceTimer = null;
+      if (_canUseRef) unawaited(_resyncFromServer(synchronizeClock: false));
+    });
+  }
+
+  void _armClassicRecovery(Duration delay) {
+    _classicRecoveryTimer?.cancel();
+    _classicRecoveryTimer = null;
+    if (!_canUseRef ||
+        ref.read(currentRoomProvider)?.gameMode != GameMode.classic) {
+      return;
+    }
+    _classicRecoveryTimer = Timer(delay, () {
+      _classicRecoveryTimer = null;
+      if (_canUseRef) unawaited(_resyncFromServer());
+    });
   }
 
   Future<void> _resyncPartySnapshot({
@@ -947,6 +1617,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (!_canUseRef) return;
     if (_isResyncing) {
       _resyncRequested = true;
+      GameTraceService.instance.trace('classic_resync_requested_while_busy');
       return;
     }
     final currentRoom = roomOverride ?? ref.read(currentRoomProvider);
@@ -1296,8 +1967,29 @@ class _GameScreenState extends ConsumerState<GameScreen>
     context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
   }
 
+  void _publishTimerSeconds() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_canUseRef) {
+        ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
+      }
+    });
+  }
+
+  void _setTickingRequested(bool shouldBeActive) {
+    if (_tickingRequested == shouldBeActive) return;
+    _tickingRequested = shouldBeActive;
+    if (shouldBeActive) {
+      _audioService.startTicking();
+    } else {
+      unawaited(_audioService.stopTicking());
+    }
+  }
+
   void _startTimer(int fallbackSeconds, {DateTime? deadline}) {
     _stopTimer();
+    _activeClassicTimerRound = null;
+    _activeClassicTimerPhase = null;
+    _activeClassicTimerDeadline = null;
     _phaseDeadline = deadline;
     _timerSeconds = deadline == null
         ? fallbackSeconds
@@ -1305,50 +1997,210 @@ class _GameScreenState extends ConsumerState<GameScreen>
             deadline: deadline,
             now: ref.read(roomServiceProvider).serverNow,
           );
+    _publishTimerSeconds();
+    _startPeriodicTimer(isClassic: false);
+  }
 
-    // Defer the provider update until after the build cycle
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_canUseRef) {
-        ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
-      }
-    });
+  void _reconcileClassicTimer({
+    required String source,
+    required int round,
+    required RoundPhase phase,
+    required int fallbackSeconds,
+    required DateTime? deadline,
+  }) {
+    if (deadline == null) {
+      // Never invent a local Classic phase deadline from message arrival.
+      _stopTimer();
+      _timerSeconds = fallbackSeconds;
+      _publishTimerSeconds();
+      _queueClassicResync();
+      return;
+    }
+    final now = ref.read(roomServiceProvider).serverNow;
+    final timerAlreadyExisted = _timer != null;
+    final reconciliation = GameSyncPolicy.classicTimerReconciliation(
+      activeRound: _activeClassicTimerRound,
+      activePhase: _activeClassicTimerPhase,
+      activeDeadline: _activeClassicTimerDeadline,
+      eventRound: round,
+      eventPhase: phase,
+      eventDeadline: deadline,
+    );
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_canUseRef) {
-        timer.cancel();
-        if (identical(_timer, timer)) _timer = null;
-        return;
+    if (reconciliation == ClassicTimerReconciliation.startNewLifecycle) {
+      _timer?.cancel();
+      _timer = null;
+      _setTickingRequested(false);
+      _activeClassicTimerRound = round;
+      _activeClassicTimerPhase = phase;
+      _activeClassicTimerDeadline = deadline;
+      _phaseDeadline = deadline;
+    } else if (reconciliation == ClassicTimerReconciliation.updateDeadline) {
+      _activeClassicTimerDeadline = deadline;
+      _phaseDeadline = deadline;
+    }
+
+    _phaseDeadline = deadline;
+    final remainingSeconds = GameSyncPolicy.remainingSeconds(
+      deadline: deadline,
+      now: now,
+    );
+    if (remainingSeconds > 0 &&
+        _expiredClassicTimerRound == round &&
+        _expiredClassicTimerPhase == phase) {
+      _expiredClassicTimerRound = null;
+      _expiredClassicTimerPhase = null;
+    }
+    final tickingShouldBeActive = GameSyncPolicy.shouldTick(
+      remainingSeconds: remainingSeconds,
+    );
+    _timerSeconds = remainingSeconds;
+    _publishTimerSeconds();
+
+    final traceFields = <String, Object?>{
+      'source': source,
+      'round': round,
+      'phase': phase.name,
+      'deadline_utc': deadline.toIso8601String(),
+      'server_now_utc': now.toIso8601String(),
+      'remaining_ms': deadline.difference(now).inMilliseconds,
+      'remaining_seconds': remainingSeconds,
+      'timer_already_existed': timerAlreadyExisted,
+      'ticking_should_be_active': tickingShouldBeActive,
+    };
+    switch (reconciliation) {
+      case ClassicTimerReconciliation.startNewLifecycle:
+        GameTraceService.instance.trace('classic_timer_started', traceFields);
+        break;
+      case ClassicTimerReconciliation.updateDeadline:
+        GameTraceService.instance.trace(
+          'classic_timer_deadline_updated',
+          traceFields,
+        );
+        break;
+      case ClassicTimerReconciliation.keepAlive:
+        GameTraceService.instance.trace('classic_timer_deduped', traceFields);
+        break;
+    }
+    GameTraceService.instance.trace('classic_timer_reconciled', traceFields);
+
+    _setTickingRequested(tickingShouldBeActive);
+    if (remainingSeconds <= 0) {
+      _timer?.cancel();
+      _timer = null;
+      _expireClassicTimer(source: source, now: now);
+      return;
+    }
+    if (_timer == null) {
+      _startPeriodicTimer(isClassic: true);
+      if (reconciliation != ClassicTimerReconciliation.startNewLifecycle) {
+        GameTraceService.instance.trace('classic_timer_started', {
+          ...traceFields,
+          'restored_missing_periodic_timer': true,
+        });
       }
-      final deadline = _phaseDeadline;
-      final remaining = deadline == null
-          ? max(0, _timerSeconds - 1)
-          : GameSyncPolicy.remainingSeconds(
-              deadline: deadline,
+    }
+  }
+
+  void _startPeriodicTimer({required bool isClassic}) {
+    if (_timer != null) return;
+
+    _timer = Timer.periodic(
+      isClassic
+          ? const Duration(milliseconds: 100)
+          : const Duration(seconds: 1),
+      (timer) {
+        if (!_canUseRef) {
+          timer.cancel();
+          if (identical(_timer, timer)) _timer = null;
+          return;
+        }
+        final deadline = _phaseDeadline;
+        final remaining = deadline == null
+            ? max(0, _timerSeconds - 1)
+            : GameSyncPolicy.remainingSeconds(
+                deadline: deadline,
+                now: ref.read(roomServiceProvider).serverNow,
+              );
+        if (remaining > 0) {
+          if (_timerSeconds != remaining) {
+            _timerSeconds = remaining;
+            ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
+          }
+          if (isClassic) {
+            _setTickingRequested(
+              GameSyncPolicy.shouldTick(remainingSeconds: remaining),
+            );
+          } else if (_timerSeconds == 10) {
+            _setTickingRequested(true);
+          }
+        } else {
+          timer.cancel();
+          if (identical(_timer, timer)) _timer = null;
+          _timerSeconds = 0;
+          ref.read(gameTimerProvider.notifier).setTimer(0);
+          _setTickingRequested(false);
+          if (isClassic) {
+            _expireClassicTimer(
+              source: 'periodic_deadline',
               now: ref.read(roomServiceProvider).serverNow,
             );
-      if (remaining > 0) {
-        _timerSeconds = remaining;
-        ref.read(gameTimerProvider.notifier).setTimer(_timerSeconds);
-        if (_timerSeconds == 10) {
-          _audioService.startTicking();
+          } else {
+            _audioService.playTimeUp();
+            _handleTimerFinished();
+          }
         }
-      } else {
-        timer.cancel();
-        _timer = null;
-        _timerSeconds = 0;
-        ref.read(gameTimerProvider.notifier).setTimer(0);
-        _audioService.stopTicking();
-        _audioService.playTimeUp();
-        _handleTimerFinished();
-      }
+      },
+    );
+  }
+
+  void _expireClassicTimer({required String source, required DateTime now}) {
+    final round = _activeClassicTimerRound;
+    final phase = _activeClassicTimerPhase;
+    if (!_canUseRef || round == null || phase == null) return;
+    final current = ref.read(gameStateProvider);
+    if (current.currentRound != round || current.phase != phase) return;
+    final shouldHandle = GameSyncPolicy.shouldHandleTimerExpiration(
+      expiredRound: _expiredClassicTimerRound,
+      expiredPhase: _expiredClassicTimerPhase,
+      eventRound: round,
+      eventPhase: phase,
+    );
+    if (!shouldHandle) {
+      GameTraceService.instance.trace('classic_timer_deduped', {
+        'source': source,
+        'round': round,
+        'phase': phase.name,
+        'reason': 'expiration_already_handled',
+      });
+      return;
+    }
+    _expiredClassicTimerRound = round;
+    _expiredClassicTimerPhase = phase;
+    GameTraceService.instance.trace('classic_timer_expired', {
+      'source': source,
+      'round': round,
+      'phase': phase.name,
+      if (_activeClassicTimerDeadline != null)
+        'deadline_utc': _activeClassicTimerDeadline!.toIso8601String(),
+      'server_now_utc': now.toIso8601String(),
+      if (_activeClassicTimerDeadline != null)
+        'remaining_ms': _activeClassicTimerDeadline!
+            .difference(now)
+            .inMilliseconds,
+      'remaining_seconds': 0,
+      'timer_already_existed': false,
+      'ticking_should_be_active': false,
     });
+    _audioService.playTimeUp();
+    _handleTimerFinished();
   }
 
   void _stopTimer({bool clearDeadline = true}) {
     _timer?.cancel();
     _timer = null;
     if (clearDeadline) _phaseDeadline = null;
-    unawaited(_audioService.stopTicking());
+    _setTickingRequested(false);
   }
 
   void _schedulePartyTransitionFallback({
@@ -1423,68 +2275,163 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
     if (gameState.phase == RoundPhase.guessing) {
-      _revealGuesses();
+      _runClassicPhaseOwner(
+        expectedPhase: RoundPhase.guessing,
+        source: 'guessing_deadline',
+        claim: _revealGuesses,
+      );
     } else if (gameState.phase == RoundPhase.betting) {
-      _revealAnswer();
+      _runClassicPhaseOwner(
+        expectedPhase: RoundPhase.betting,
+        source: 'betting_deadline',
+        claim: _revealAnswer,
+      );
     }
+  }
+
+  void _runClassicPhaseOwner({
+    required RoundPhase expectedPhase,
+    required String source,
+    required Future<void> Function() claim,
+  }) {
+    final room = ref.read(currentRoomProvider);
+    final state = ref.read(gameStateProvider);
+    if (room == null ||
+        room.gameMode != GameMode.classic ||
+        room.currentRound != state.currentRound ||
+        room.roundPhase != expectedPhase ||
+        state.phase != expectedPhase) {
+      _classicSyncLog('claim_skipped', {
+        'source': source,
+        'reason': 'local_state_mismatch',
+      });
+      return;
+    }
+    if (ref.read(isHostProvider)) {
+      _classicSyncLog('claim_attempt', {
+        'source': source,
+        'owner': 'host',
+        'round': room.currentRound,
+        'phase': expectedPhase.name,
+        'version': room.stateVersion,
+      });
+      unawaited(claim());
+      return;
+    }
+
+    _classicFailoverTimer?.cancel();
+    final roomId = room.id;
+    final round = room.currentRound;
+    _classicSyncLog('failover_wait', {
+      'source': source,
+      'round': round,
+      'phase': expectedPhase.name,
+      'grace_ms': 2000,
+    });
+    _classicFailoverTimer = Timer(const Duration(seconds: 2), () async {
+      if (!_canUseRef) return;
+      _classicSyncLog('failover_resync', {
+        'source': source,
+        'round': round,
+        'phase': expectedPhase.name,
+      });
+      await _resyncFromServer(synchronizeClock: false);
+      if (!_canUseRef) return;
+      final refreshedRoom = ref.read(currentRoomProvider);
+      final refreshedState = ref.read(gameStateProvider);
+      if (refreshedRoom == null ||
+          refreshedRoom.id != roomId ||
+          refreshedRoom.currentRound != round ||
+          refreshedRoom.roundPhase != expectedPhase ||
+          refreshedState.currentRound != round ||
+          refreshedState.phase != expectedPhase) {
+        _classicSyncLog('failover_claim_skipped', {
+          'source': source,
+          'reason': 'authoritative_snapshot_advanced',
+          'round': refreshedRoom?.currentRound,
+          'phase': refreshedRoom?.roundPhase.name,
+          'version': refreshedRoom?.stateVersion,
+        });
+        return;
+      }
+      _classicSyncLog('claim_attempt', {
+        'source': source,
+        'owner': 'failover_nonhost',
+        'round': round,
+        'phase': expectedPhase.name,
+        'version': refreshedRoom.stateVersion,
+      });
+      await claim();
+    });
   }
 
   Future<void> _startRound(int round) async {
+    if (!_canUseRef || _startingClassicRound == round) return;
+    _startingClassicRound = round;
+    try {
+      await _claimPreparedRound(round);
+    } catch (error, stackTrace) {
+      debugPrint('Classic round start failed: $error\n$stackTrace');
+      if (_canUseRef) _queueClassicResync();
+    } finally {
+      if (_startingClassicRound == round) {
+        _startingClassicRound = null;
+        if (_canUseRef) {
+          final room = ref.read(currentRoomProvider);
+          if (room?.currentRound == round &&
+              room?.roundPhase == RoundPhase.question) {
+            // A slightly early claim can lose to the server deadline. Resync
+            // after releasing the guard so it can schedule the retry.
+            _queueClassicResync();
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _claimPreparedRound(int round) async {
+    if (!_canUseRef) return;
+    GameTraceService.instance.trace('classic_start_round_begin', {
+      'round': round,
+    });
     final room = ref.read(currentRoomProvider);
+    final state = ref.read(gameStateProvider);
     if (room == null ||
         room.currentRound != round ||
-        room.roundPhase != RoundPhase.question) {
+        room.roundPhase != RoundPhase.question ||
+        state.currentRound != round ||
+        state.phase != RoundPhase.question) {
       return;
     }
     _questionStartTimer?.cancel();
+    _questionStartTimer = null;
 
-    final gameService = ref.read(gameServiceProvider);
-    final realtimeService = ref.read(realtimeServiceProvider);
-    final gameNotifier = ref.read(gameStateProvider.notifier);
-
-    final secureQuestion = await gameService.claimNextQuestion(
-      roomId: room.id,
-      roundNumber: round,
-      durationSeconds: GameConstants.guessTimerSeconds,
-    );
-    if (secureQuestion == null) {
-      await _resyncFromServer();
+    final response = await ref
+        .read(gameServiceProvider)
+        .claimNextQuestion(
+          roomId: room.id,
+          roundNumber: round,
+          durationSeconds: GameConstants.guessTimerSeconds,
+        );
+    if (!_canUseRef) return;
+    if (response == null) {
+      await _resyncFromServer(synchronizeClock: false);
       return;
     }
-    final question = secureQuestion.question;
-    _usedQuestionIds.add(question.id);
-    final claimedRoom = secureQuestion.room;
-    ref.read(currentRoomProvider.notifier).set(claimedRoom);
 
-    gameNotifier.setRound(round);
-    gameNotifier.setQuestion(question);
-    gameNotifier.updatePhase(RoundPhase.guessing);
-    _syncAudioForPhase(RoundPhase.guessing);
-    _cancelRevealEffects();
-    _roundWinners.clear();
-    _roundPayouts.clear();
-    _revealedResultRound = null;
-    gameNotifier.resetForNewRound();
-    _guessInput = '';
-    _selectedChipValue = null;
-    _isSubmittingGuess = false;
-
-    await realtimeService.broadcast(widget.roomCode, 'phase_change', {
-      'phase': RoundPhase.guessing.name,
+    // The RPC has advanced the database, but it is not presentation authority.
+    // Re-read the complete snapshot so every client opens the same question,
+    // timer and audio scene from one server version.
+    GameTraceService.instance.trace('classic_command_accepted', {
+      'command': 'claim_next_question',
       'round': round,
-      'question': question.toJson(),
-      'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
+      'state_version': response.room.stateVersion,
     });
-
-    _startTimer(
-      GameConstants.guessTimerSeconds,
-      deadline: claimedRoom.phaseEndsAt,
-    );
-    if (mounted) setState(() {});
-    _playQuestionRevealOnce(question);
+    await _resyncFromServer(synchronizeClock: false);
   }
 
   Future<void> _revealGuesses() async {
+    if (!_canUseRef) return;
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
     final gameState = ref.read(gameStateProvider);
@@ -1503,9 +2450,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         );
         return;
       }
-      final gameService = ref.read(gameServiceProvider);
-      final realtimeService = ref.read(realtimeServiceProvider);
-      final gameNotifier = ref.read(gameStateProvider.notifier);
+
       final claimedRoom = await ref
           .read(roomServiceProvider)
           .claimPhaseTransition(
@@ -1515,58 +2460,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
             nextPhase: RoundPhase.betting.name,
             durationSeconds: GameConstants.betTimerSeconds,
           );
+      if (!_canUseRef) return;
       if (claimedRoom == null) {
-        await _resyncFromServer();
+        await _resyncFromServer(synchronizeClock: false);
         return;
       }
 
-      final guesses = await gameService.getGuesses(
-        room.id,
-        gameState.currentRound,
-      );
-      final enrichedGuesses = guesses.map((guess) {
-        final player = _playerById(guess.playerId);
-        return guess.copyWith(
-          playerName: player?.name,
-          playerColor: player?.avatarColor,
-        );
-      }).toList();
-
-      gameNotifier.setGuesses(enrichedGuesses);
-      gameNotifier.updatePhase(RoundPhase.betting);
-      _syncAudioForPhase(RoundPhase.betting);
-      _stopTimer();
-
-      await realtimeService.broadcast(widget.roomCode, 'guesses_revealed', {
+      GameTraceService.instance.trace('classic_command_accepted', {
+        'command': 'claim_guessing_to_betting',
         'round': gameState.currentRound,
-        'guesses': enrichedGuesses
-            .map(
-              (g) => {
-                ...g.toJson(),
-                'id': g.id,
-                'player_name': g.playerName,
-                'player_color': g.playerColor,
-              },
-            )
-            .toList(),
+        'state_version': claimedRoom.stateVersion,
       });
-
-      await realtimeService.broadcast(widget.roomCode, 'phase_change', {
-        'phase': RoundPhase.betting.name,
-        'round': gameState.currentRound,
-        'phase_ends_at': claimedRoom.phaseEndsAt?.toIso8601String(),
-      });
-
-      _startTimer(
-        GameConstants.betTimerSeconds,
-        deadline: claimedRoom.phaseEndsAt,
-      );
+      await _resyncFromServer(synchronizeClock: false);
     } finally {
       _isRevealingGuesses = false;
     }
   }
 
   Future<void> _revealAnswer() async {
+    if (!_canUseRef) return;
     final room = ref.read(currentRoomProvider);
     if (room == null) return;
 
@@ -1578,65 +2490,26 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
 
-    final gameService = ref.read(gameServiceProvider);
-    final realtimeService = ref.read(realtimeServiceProvider);
-    final gameNotifier = ref.read(gameStateProvider.notifier);
-    final gameState = ref.read(gameStateProvider);
+    final round = ref.read(gameStateProvider).currentRound;
     _stopTimer();
-
-    final bets = await gameService.getBets(room.id, gameState.currentRound);
-    late final RoundSettlementResult settlement;
     try {
-      settlement = await gameService.settleRound(
-        roomId: room.id,
-        roundNumber: gameState.currentRound,
-      );
+      final settlement = await ref
+          .read(gameServiceProvider)
+          .settleRound(roomId: room.id, roundNumber: round);
+      if (!_canUseRef) return;
+      GameTraceService.instance.trace('classic_command_accepted', {
+        'command': 'settle_round',
+        'round': round,
+        'did_settle': settlement.didSettle,
+        'state_version': settlement.stateVersion,
+      });
     } catch (error, stackTrace) {
       debugPrint('Atomic round settlement failed: $error\n$stackTrace');
-      await _resyncFromServer();
-      return;
     }
-    final correctAnswer = settlement.answer;
-    final winningGuessId = settlement.winningGuessId;
-    final newScores = settlement.scores;
-    final payouts = settlement.payouts;
-    ref
-        .read(currentRoomProvider.notifier)
-        .set(
-          room.copyWith(
-            roundPhase: RoundPhase.revealAnswer,
-            stateVersion: settlement.stateVersion,
-            phaseEndsAt: settlement.phaseEndsAt,
-          ),
-        );
 
-    gameNotifier.revealAnswer(
-      answer: correctAnswer,
-      winningGuessId: winningGuessId,
-      bets: bets,
-      scores: newScores,
-    );
-    _syncAudioForPhase(RoundPhase.revealAnswer);
-    unawaited(
-      _startRevealSequence(ref.read(gameStateProvider), payouts: payouts),
-    );
-
-    await realtimeService.broadcast(widget.roomCode, 'answer_revealed', {
-      'round': gameState.currentRound,
-      'answer': correctAnswer,
-      'winning_guess_id': winningGuessId,
-    });
-    await realtimeService.broadcast(widget.roomCode, 'score_update', {
-      'round': gameState.currentRound,
-      'scores': settlement.legacyScores,
-      'bank_scores': newScores,
-    });
-    await realtimeService.broadcast(widget.roomCode, 'phase_change', {
-      'phase': RoundPhase.revealAnswer.name,
-      'round': gameState.currentRound,
-    });
-
-    _scheduleRoundAdvance(deadline: settlement.phaseEndsAt);
+    if (_canUseRef) {
+      await _resyncFromServer(synchronizeClock: false);
+    }
   }
 
   void _playRevealAudioForCurrentPlayer(GameState gameState) {
@@ -1653,6 +2526,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     GameState gameState, {
     Map<String, int>? payouts,
   }) async {
+    if (ref.read(currentRoomProvider)?.gameMode == GameMode.classic) {
+      _startClassicRevealSequence(gameState, payouts: payouts);
+      return;
+    }
     final correctAnswer = gameState.correctAnswer;
     if (correctAnswer == null ||
         _revealedResultRound == gameState.currentRound) {
@@ -1734,6 +2611,118 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
       _audioService.playClick();
       _scanSlotIndexNotifier.value = scanOrder[step];
+    });
+  }
+
+  void _startClassicRevealSequence(
+    GameState state, {
+    Map<String, int>? payouts,
+  }) {
+    if (!_canUseRef ||
+        state.correctAnswer == null ||
+        _revealedResultRound == state.currentRound) {
+      return;
+    }
+    final room = ref.read(currentRoomProvider);
+    if (room == null ||
+        room.currentRound != state.currentRound ||
+        room.roundPhase != RoundPhase.revealAnswer ||
+        room.phaseEndsAt == null) {
+      _queueClassicResync();
+      return;
+    }
+    final started =
+        room.phaseStartedAt ??
+        room.phaseEndsAt!.subtract(
+          const Duration(seconds: GameConstants.roundResultsSeconds),
+        );
+    final roomService = ref.read(roomServiceProvider);
+    _cancelRevealEffects();
+    _revealedResultRound = state.currentRound;
+    final sequence = _revealSequenceId;
+    bool current() {
+      if (!_canUseRef || sequence != _revealSequenceId) return false;
+      final currentState = ref.read(gameStateProvider);
+      final currentRoom = ref.read(currentRoomProvider);
+      return currentRoom?.id == room.id &&
+          currentRoom?.currentRound == state.currentRound &&
+          currentRoom?.roundPhase == RoundPhase.revealAnswer &&
+          currentState.currentRound == state.currentRound &&
+          currentState.phase == RoundPhase.revealAnswer;
+    }
+
+    Duration elapsed() =>
+        GameSyncPolicy.elapsedSince(started, roomService.serverNow);
+    final winningSlot = _winningBetSlotIndex(state);
+    final order = [
+      4,
+      3,
+      2,
+      1,
+      0,
+      4,
+      3,
+      2,
+      1,
+      0,
+      if (winningSlot != null) winningSlot,
+    ];
+    final resolved =
+        payouts ??
+        ref
+            .read(gameServiceProvider)
+            .calculatePayouts(
+              guesses: state.sortedGuesses,
+              bets: state.bets,
+              correctAnswer: state.correctAnswer!,
+            );
+    final step = GameSyncPolicy.classicRevealStep(elapsed(), order.length);
+    setState(() {
+      _roundPayouts = resolved;
+      _roundWinners = resolved.entries
+          .where((e) => e.value > 0)
+          .map((e) => e.key)
+          .toSet();
+      _showWinnerBadge = step >= order.length;
+      _scanSlotIndexNotifier.value = step >= order.length
+          ? winningSlot
+          : order[step];
+    });
+    GameTraceService.instance.trace('classic_reveal_timeline', {
+      'round': state.currentRound,
+      'phase_started_at_utc': started.toIso8601String(),
+      'elapsed_ms': elapsed().inMilliseconds,
+      'scan_step': step,
+    });
+    // Loading/unlocking audio never holds the board's server timeline.
+    unawaited(
+      _audioService.playResultReveal(position: elapsed, isCurrent: current),
+    );
+    void at(Duration offset, void Function() action) {
+      final wait = offset - elapsed();
+      if (wait <= Duration.zero) return;
+      _revealEffectTimers.add(
+        Timer(wait, () {
+          if (current()) action();
+        }),
+      );
+    }
+
+    for (var index = step + 1; index < order.length; index++) {
+      final slot = order[index];
+      at(GameSyncPolicy.classicScanInterval * index, () {
+        _scanSlotIndexNotifier.value = slot;
+        unawaited(_audioService.playClick());
+      });
+    }
+    final impact = GameSyncPolicy.classicScanInterval * order.length;
+    at(impact, () {
+      setState(() => _showWinnerBadge = true);
+      _scanSlotIndexNotifier.value = winningSlot;
+      _playRevealAudioForCurrentPlayer(state);
+    });
+    at(impact + const Duration(milliseconds: 240), () {
+      unawaited(_audioService.playClink());
     });
   }
 
@@ -1920,59 +2909,37 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
       return;
     }
-    final roomService = ref.read(roomServiceProvider);
-    final realtimeService = ref.read(realtimeServiceProvider);
 
     if (gameState.currentRound >= gameState.maxRounds) {
-      final didFinish = await roomService.finishGameIfCurrent(
-        roomId: room.id,
-        round: gameState.currentRound,
-      );
-      if (!didFinish) {
-        await _resyncFromServer();
-        return;
-      }
-      // Finishing the row is authoritative. Navigate immediately instead of
-      // waiting for an optional broadcast that may arrive late or fail.
-      ref
-          .read(currentRoomProvider.notifier)
-          .set(
-            room.copyWith(
-              status: RoomStatus.finished,
-              roundPhase: RoundPhase.idle,
-            ),
-          );
-      unawaited(
-        realtimeService.broadcast(widget.roomCode, 'game_ended', {}).catchError(
-          (Object error, StackTrace stackTrace) {
-            debugPrint('Game-ended broadcast failed: $error\n$stackTrace');
-          },
-        ),
-      );
-      if (!mounted || !_canUseRef) return;
-      context.goNamed('results', pathParameters: {'roomCode': widget.roomCode});
+      final didFinish = await ref
+          .read(roomServiceProvider)
+          .finishGameIfCurrent(roomId: room.id, round: gameState.currentRound);
+      if (!_canUseRef) return;
+      GameTraceService.instance.trace('classic_command_accepted', {
+        'command': 'finish_game',
+        'round': gameState.currentRound,
+        'did_finish': didFinish,
+      });
     } else {
-      final nextRound = gameState.currentRound + 1;
-      final claimedRoom = await roomService.claimPhaseTransition(
-        roomId: room.id,
-        round: gameState.currentRound,
-        expectedPhase: RoundPhase.revealAnswer.name,
-        nextPhase: RoundPhase.question.name,
-        nextRound: nextRound,
-        durationSeconds: GameConstants.roundTransitionSeconds,
-      );
-      if (claimedRoom == null) {
-        await _resyncFromServer();
-        return;
+      final preparedRound = await ref
+          .read(gameServiceProvider)
+          .prepareNextClassicRound(
+            roomId: room.id,
+            roundNumber: gameState.currentRound,
+            transitionSeconds: GameConstants.roundTransitionSeconds,
+          );
+      if (!_canUseRef) return;
+      if (preparedRound != null) {
+        GameTraceService.instance.trace('classic_command_accepted', {
+          'command': 'prepare_next_round',
+          'round': preparedRound.room.currentRound,
+          'state_version': preparedRound.room.stateVersion,
+        });
       }
-      ref.read(currentRoomProvider.notifier).set(claimedRoom);
-      ref
-          .read(gameStateProvider.notifier)
-          .beginAuthoritativeRound(nextRound, RoundPhase.question);
-      _syncAudioForPhase(RoundPhase.question);
-      _playQuestionRevealForRoundOnce(nextRound);
-      if (mounted) setState(() {});
-      _scheduleQuestionStart(claimedRoom, primary: true);
+    }
+
+    if (_canUseRef) {
+      await _resyncFromServer(synchronizeClock: false);
     }
   }
 
@@ -1984,34 +2951,94 @@ class _GameScreenState extends ConsumerState<GameScreen>
     return Duration(milliseconds: max(0, remaining));
   }
 
-  void _scheduleQuestionStart(Room room, {bool primary = false}) {
+  void _scheduleQuestionStart(Room room) {
     if (room.roundPhase != RoundPhase.question) return;
+    if (_startingClassicRound == room.currentRound) return;
+    if (_scheduledQuestionStartRound == room.currentRound &&
+        _scheduledQuestionStartDeadline == room.phaseEndsAt &&
+        (_questionStartTimer?.isActive ?? false)) {
+      GameTraceService.instance.trace('classic_question_start_deduped', {
+        'round': room.currentRound,
+      });
+      return;
+    }
     _questionStartTimer?.cancel();
+    _questionStartTimer = null;
+    _scheduledQuestionStartRound = room.currentRound;
+    _scheduledQuestionStartDeadline = room.phaseEndsAt;
     final delay = _phaseDelay(
       room.phaseEndsAt,
       const Duration(seconds: GameConstants.roundTransitionSeconds),
     );
-    final failoverGrace = primary
-        ? Duration.zero
-        : const Duration(milliseconds: 250);
-    _questionStartTimer = Timer(delay + failoverGrace, () {
+    GameTraceService.instance.trace('classic_question_start_scheduled', {
+      'round': room.currentRound,
+      if (room.phaseEndsAt != null)
+        'deadline_utc': room.phaseEndsAt!.toIso8601String(),
+      'server_now_utc': ref
+          .read(roomServiceProvider)
+          .serverNow
+          .toIso8601String(),
+      'delay_ms': delay.inMilliseconds,
+    });
+    _questionStartTimer = Timer(delay, () {
+      _questionStartTimer = null;
+      _scheduledQuestionStartRound = null;
+      _scheduledQuestionStartDeadline = null;
+      GameTraceService.instance.trace('classic_question_start_timer_fired', {
+        'round': room.currentRound,
+      });
       if (!_canUseRef) return;
       final latestRoom = ref.read(currentRoomProvider);
+      final latestState = ref.read(gameStateProvider);
       if (latestRoom?.currentRound == room.currentRound &&
-          latestRoom?.roundPhase == RoundPhase.question) {
-        unawaited(_startRound(room.currentRound));
+          latestRoom?.roundPhase == RoundPhase.question &&
+          latestState.currentRound == room.currentRound &&
+          latestState.phase == RoundPhase.question) {
+        _runClassicPhaseOwner(
+          expectedPhase: RoundPhase.question,
+          source: 'question_deadline',
+          claim: () => _startRound(room.currentRound),
+        );
+        return;
       }
+      GameTraceService.instance
+          .trace('classic_question_timer_cancelled_by_newer_phase', {
+            'source': 'question_timer_authority_check',
+            'round': room.currentRound,
+            'current_room_round': latestRoom?.currentRound,
+            'current_room_phase': latestRoom?.roundPhase.name,
+            'current_state_round': latestState.currentRound,
+            'current_state_phase': latestState.phase.name,
+          });
     });
   }
 
   void _scheduleRoundAdvance({DateTime? deadline, Duration? fallback}) {
     _roundAdvanceTimer?.cancel();
+    final scheduledRound = ref.read(gameStateProvider).currentRound;
+    final isClassic =
+        ref.read(currentRoomProvider)?.gameMode == GameMode.classic;
     final delay = _phaseDelay(
       deadline,
       fallback ?? const Duration(seconds: GameConstants.roundResultsSeconds),
     );
     _roundAdvanceTimer = Timer(delay, () {
-      if (_canUseRef) unawaited(_nextRound());
+      if (!_canUseRef) return;
+      final current = ref.read(gameStateProvider);
+      if (isClassic &&
+          (current.currentRound != scheduledRound ||
+              current.phase != RoundPhase.revealAnswer)) {
+        return;
+      }
+      if (isClassic) {
+        _runClassicPhaseOwner(
+          expectedPhase: RoundPhase.revealAnswer,
+          source: 'reveal_deadline',
+          claim: _nextRound,
+        );
+      } else {
+        unawaited(_nextRound());
+      }
     });
   }
 
@@ -2026,6 +3053,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ref.read(currentPlayerProvider) ?? _restoreCurrentPlayer(room.id);
     if (player == null) {
       await _resyncFromServer();
+      if (!_canUseRef) return;
       player =
           ref.read(currentPlayerProvider) ?? _restoreCurrentPlayer(room.id);
       gameState = ref.read(gameStateProvider);
@@ -2052,22 +3080,31 @@ class _GameScreenState extends ConsumerState<GameScreen>
         questionId: gameState.currentQuestion?.id ?? '',
         value: value,
       );
+      if (!_canUseRef) return;
 
       ref.read(gameStateProvider.notifier).setGuessSubmitted(true);
       await realtimeService.broadcast(widget.roomCode, 'guess_submitted', {
         'round': gameState.currentRound,
         'player_id': player.id,
       });
+      if (!_canUseRef) return;
       await _maybeAutoRevealGuesses();
+    } on GuessingWindowClosedException {
+      if (_canUseRef) {
+        await _resyncFromServer(synchronizeClock: false);
+      }
     } catch (error, stackTrace) {
       debugPrint('Guess submit failed: $error\n$stackTrace');
-      _showGameMessage('Guess could not be sent. Try again.');
+      if (_canUseRef) {
+        _showGameMessage('Guess could not be sent. Try again.');
+      }
     } finally {
       if (_canUseRef) setState(() => _isSubmittingGuess = false);
     }
   }
 
   Future<void> _maybeAutoRevealGuesses() async {
+    if (!_canUseRef) return;
     final isHost = ref.read(isHostProvider);
     final room = ref.read(currentRoomProvider);
     final gameState = ref.read(gameStateProvider);
@@ -2175,6 +3212,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameService = ref.read(gameServiceProvider);
     final realtimeService = ref.read(realtimeServiceProvider);
     _isBetOperationInFlight = true;
+    _betCommandRevision++;
 
     ref.read(audioServiceProvider).playDrop();
 
@@ -2311,6 +3349,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
     } finally {
       _isBetOperationInFlight = false;
+      _betCommandRevision++;
     }
 
     if (_selectedChipValue != null) {
@@ -2417,6 +3456,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
 
     _isBetOperationInFlight = true;
+    _betCommandRevision++;
     ref.read(audioServiceProvider).playDrop();
     gameNotifier.addBet(optimisticBet);
     if (_canUseRef) setState(() {});
@@ -2499,6 +3539,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
     } finally {
       _isBetOperationInFlight = false;
+      _betCommandRevision++;
     }
 
     _selectedBetId = sourceBet.id;
@@ -2522,6 +3563,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameNotifier = ref.read(gameStateProvider.notifier);
 
     _isBetOperationInFlight = true;
+    _betCommandRevision++;
     ref.read(audioServiceProvider).playClick();
     if (_selectedBetId == bet.id) _selectedBetId = null;
     gameNotifier.removeBetById(bet.id);
@@ -2586,6 +3628,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
     } finally {
       _isBetOperationInFlight = false;
+      _betCommandRevision++;
     }
 
     if (_canUseRef) setState(() {});
@@ -3509,8 +4552,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
               ),
             ),
-            if (gameState.phase == RoundPhase.question)
-              Positioned.fill(child: _buildRoundTransitionOverlay(gameState)),
           ],
         ),
       ),
@@ -3520,7 +4561,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildRoundTransitionOverlay(GameState gameState) {
     final content = IgnorePointer(
       child: ColoredBox(
-        color: AppColors.feltDark.withValues(alpha: 0.97),
+        color: AppColors.feltDark,
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -7248,13 +8289,64 @@ class _GameScreenState extends ConsumerState<GameScreen>
         (phase == RoundPhase.idle ||
             phase == RoundPhase.question ||
             phase == RoundPhase.guessing)) {
+      // Capture the state outside AnimatedSwitcher. An outgoing scene must not
+      // subscribe to the next round and start that round's transition again.
+      final gameState = ref.watch(gameStateProvider);
+      final room = ref.watch(currentRoomProvider);
+      final presentation = ref.watch(classicPresentationProvider);
+      final presentationMatches =
+          room != null &&
+          presentation.matches(
+            roomId: room.id,
+            classicMatchId: room.classicMatchId,
+            round: gameState.currentRound,
+          );
+      final questionAlreadyPresented =
+          presentationMatches && presentation.questionPresented;
+      final surface = questionAlreadyPresented
+          ? 'question'
+          : phase == RoundPhase.question || gameState.currentQuestion == null
+          ? 'transition'
+          : 'question';
+      _logClassicPresentationDecision(
+        room: room,
+        state: gameState,
+        presentation: presentation,
+        surface: surface,
+        reason: questionAlreadyPresented
+            ? 'durable_presented'
+            : gameState.currentQuestion == null
+            ? 'missing_question'
+            : phase.name,
+      );
       return _buildPhaseSurfaceTransition(
         surfaceKey: 'guessing-surface',
-        child: Consumer(
-          builder: (context, ref, _) {
-            final gameState = ref.watch(gameStateProvider);
-            return _buildGuessingScreen(gameState);
-          },
+        child: ClassicQuestionStage(
+          gameState: gameState,
+          expectedQuestionId: room?.currentRound == gameState.currentRound
+              ? room?.currentQuestionId
+              : null,
+          classicMatchId: room?.classicMatchId,
+          stateVersion: room?.stateVersion,
+          questionAlreadyPresented: questionAlreadyPresented,
+          retainedPresentedQuestion: questionAlreadyPresented
+              ? presentation.presentedQuestion
+              : null,
+          onQuestionPresented: _markClassicQuestionPresented,
+          questionRevealAt: room?.currentRound == gameState.currentRound
+              ? room?.phaseEndsAt
+              : null,
+          serverNow: () => ref.read(roomServiceProvider).serverNow,
+          transitionBuilder: (context) => PopScope(
+            canPop: false,
+            child: Scaffold(
+              backgroundColor: AppColors.feltDark,
+              body: SizedBox.expand(
+                child: _buildRoundTransitionOverlay(gameState),
+              ),
+            ),
+          ),
+          questionBuilder: (context, state) => _buildGuessingScreen(state),
         ),
       );
     }

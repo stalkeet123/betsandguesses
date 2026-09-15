@@ -47,7 +47,10 @@ final appRouter = GoRouter(
       path: '/premium',
       name: 'premium',
       builder: (context, state) {
-        return const PaywallScreen();
+        final entryPoint = state.extra is String
+            ? state.extra as String
+            : 'unknown';
+        return PaywallScreen(entryPoint: entryPoint);
       },
     ),
     GoRoute(

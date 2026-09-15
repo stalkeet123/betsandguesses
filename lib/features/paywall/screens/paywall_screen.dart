@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,14 +7,20 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/revenuecat_constants.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/monetization_copy.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 
 class PaywallScreen extends ConsumerStatefulWidget {
   final bool enableStartupWork;
+  final String entryPoint;
 
-  const PaywallScreen({super.key, this.enableStartupWork = true});
+  const PaywallScreen({
+    super.key,
+    this.enableStartupWork = true,
+    this.entryPoint = 'unknown',
+  });
 
   @override
   ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
@@ -26,6 +34,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   String? _busyPackageIdentifier;
   bool _isRestoring = false;
   bool _isPremium = false;
+  bool _didTrackPaywallView = false;
 
   @override
   void initState() {
@@ -38,10 +47,25 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     )..repeat(reverse: true);
     if (widget.enableStartupWork) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         ref.read(audioServiceProvider).startMainBgm();
         _loadRevenueCat();
+        _trackPaywallViewed();
       });
     }
+  }
+
+  void _trackPaywallViewed() {
+    if (_didTrackPaywallView) return;
+    _didTrackPaywallView = true;
+    unawaited(
+      ref
+          .read(analyticsServiceProvider)
+          .track(
+            AnalyticsEventName.paywallViewed,
+            properties: {'entry_point': widget.entryPoint},
+          ),
+    );
   }
 
   @override
@@ -135,6 +159,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
     setState(() => _busyPackageIdentifier = packageIdentifier);
 
+    unawaited(
+      ref
+          .read(analyticsServiceProvider)
+          .track(
+            AnalyticsEventName.purchaseStarted,
+            properties: {'package_identifier': packageIdentifier},
+          ),
+    );
+
     await _ensureCanonicalRevenueCatIdentity();
     final service = ref.read(revenueCatServiceProvider);
     final result = await service.purchasePackage(packageIdentifier);
@@ -147,7 +180,17 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       _isPremium = result.isPremium;
     });
 
-    if (result.cancelled) return;
+    if (result.cancelled) {
+      unawaited(
+        ref
+            .read(analyticsServiceProvider)
+            .track(
+              AnalyticsEventName.purchaseCancelled,
+              properties: {'package_identifier': packageIdentifier},
+            ),
+      );
+      return;
+    }
 
     if (result.success) {
       if (result.isPremium) await _syncMonetizationNonFatally();
@@ -156,6 +199,14 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
         'Premium access is now active.',
       );
     } else {
+      unawaited(
+        ref
+            .read(analyticsServiceProvider)
+            .track(
+              AnalyticsEventName.purchaseFailed,
+              properties: {'package_identifier': packageIdentifier},
+            ),
+      );
       _showErrorDialog(
         'Purchase Failed',
         result.message ?? 'Unable to complete purchase.',

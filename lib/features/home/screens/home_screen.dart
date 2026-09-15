@@ -357,7 +357,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     onPressed: () async {
                       Navigator.of(context).pop();
                       if (requiresPremiumAction) {
-                        await _goPremium();
+                        await _goPremium(
+                          entryPoint: hostingExhausted
+                              ? 'host_limit'
+                              : 'setup_limit',
+                        );
                         return;
                       }
                       _createRoom(
@@ -489,7 +493,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    ref.read(audioServiceProvider).startMainBgm();
     setState(() => _isLoading = true);
     ref.read(playerNameProvider.notifier).setName(name);
 
@@ -536,13 +539,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .set(room.copyWith(hostId: player.id));
 
       if (mounted) {
+        // On web this is often the very first user gesture. Claim the Lobby
+        // scene before routing so an in-flight Home BGM request is superseded
+        // instead of briefly starting and being cut off after navigation.
+        ref.read(audioServiceProvider).startLobbyMusic();
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
     } on FreeHostLimitReachedException {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
       _showSnack("You've used your 3 free hosted games.");
-      if (mounted) await _goPremium();
+      if (mounted) await _goPremium(entryPoint: 'host_limit');
     } on PremiumSetupRequiredException catch (error) {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
@@ -555,7 +562,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           'Choosing a category requires premium.',
       };
       _showSnack(message);
-      if (mounted) await _goPremium();
+      if (mounted) await _goPremium(entryPoint: 'setup_limit');
     } catch (e) {
       _showSnack('Room could not be created: $e');
     } finally {
@@ -586,7 +593,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     ref.read(audioServiceProvider).playClick();
-    ref.read(audioServiceProvider).startMainBgm();
     setState(() => _isLoading = true);
     try {
       final roomService = ref.read(roomServiceProvider);
@@ -614,6 +620,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.read(currentRoomProvider.notifier).set(room);
 
       if (mounted) {
+        // See the create path above: the destination owns its BGM before the
+        // route changes, avoiding a web unlock/Home/Lobby request race.
+        ref.read(audioServiceProvider).startLobbyMusic();
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
     } catch (e) {
@@ -668,12 +677,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  Future<void> _goPremium() async {
+  Future<void> _goPremium({String entryPoint = 'home'}) async {
     if (kIsWeb) return;
 
     ref.read(audioServiceProvider).playClick();
     ref.read(audioServiceProvider).startMainBgm();
-    await context.pushNamed('premium');
+    await context.pushNamed('premium', extra: entryPoint);
     if (mounted) {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
