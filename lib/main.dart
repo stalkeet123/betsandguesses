@@ -15,6 +15,7 @@ import 'core/router/app_router.dart';
 import 'core/providers/core_providers.dart';
 import 'core/services/analytics_service.dart';
 import 'core/services/game_trace_service.dart';
+import 'features/notifications/services/daily_party_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,6 +137,22 @@ class _TahminAppState extends ConsumerState<TahminApp>
     WidgetsBinding.instance.addObserver(this);
     _setScreenAwake(true);
     _trackAppOpen();
+    if (isDailyPartyNotificationSupportedPlatform) {
+      unawaited(_initializeDailyPartyNotifications());
+    }
+  }
+
+  Future<void> _initializeDailyPartyNotifications() async {
+    final notifications = ref.read(dailyPartyNotificationServiceProvider);
+    await notifications.initialize();
+    await notifications.refreshIfNeeded();
+  }
+
+  void _refreshDailyPartyNotifications() {
+    if (!isDailyPartyNotificationSupportedPlatform) return;
+    unawaited(
+      ref.read(dailyPartyNotificationServiceProvider).refreshIfNeeded(),
+    );
   }
 
   void _trackAppOpen() {
@@ -173,6 +190,7 @@ class _TahminAppState extends ConsumerState<TahminApp>
       case AppLifecycleState.resumed:
         _setScreenAwake(true);
         ref.read(audioServiceProvider).setAppActive(true);
+        _refreshDailyPartyNotifications();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:

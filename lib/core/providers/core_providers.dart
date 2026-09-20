@@ -14,6 +14,7 @@ import '../../features/player/services/player_service.dart';
 import '../../features/game/services/game_service.dart';
 import '../../features/party/services/party_game_service.dart';
 import '../../features/player/models/player_model.dart';
+import '../../features/notifications/services/daily_party_notification_service.dart';
 
 // ── Supabase Client ──
 final supabaseClientProvider = Provider<SupabaseClient>((ref) {
@@ -49,6 +50,13 @@ final audioServiceProvider = Provider<AudioService>((ref) {
   ref.onDispose(() => service.dispose());
   return service;
 });
+
+final dailyPartyNotificationServiceProvider =
+    Provider<DailyPartyNotificationService>((ref) {
+      return DailyPartyNotificationService(
+        preferences: ref.watch(sharedPrefsProvider),
+      );
+    });
 
 final revenueCatServiceProvider = Provider<RevenueCatService>((ref) {
   return RevenueCatService();
