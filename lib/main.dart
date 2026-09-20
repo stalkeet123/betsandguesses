@@ -138,14 +138,17 @@ class _TahminAppState extends ConsumerState<TahminApp>
     _setScreenAwake(true);
     _trackAppOpen();
     if (isDailyPartyNotificationSupportedPlatform) {
-      unawaited(_initializeDailyPartyNotifications());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_requestDailyPartyNotificationPermission());
+      });
     }
   }
 
-  Future<void> _initializeDailyPartyNotifications() async {
-    final notifications = ref.read(dailyPartyNotificationServiceProvider);
-    await notifications.initialize();
-    await notifications.refreshIfNeeded();
+  Future<void> _requestDailyPartyNotificationPermission() async {
+    await ref
+        .read(dailyPartyNotificationServiceProvider)
+        .requestPermissionAndSchedule();
   }
 
   void _refreshDailyPartyNotifications() {

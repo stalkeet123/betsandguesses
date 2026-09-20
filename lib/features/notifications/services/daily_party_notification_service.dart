@@ -11,11 +11,10 @@ const dailyPartyNotificationsEnabledKey = 'daily_party_notifications_enabled';
 const dailyPartyNotificationsTimezoneKey = 'daily_party_notifications_timezone';
 const dailyPartyNotificationsScheduleDateKey =
     'daily_party_notifications_schedule_date';
+const dailyPartyNotificationTitle = 'Tonight’s question 👀';
 
 bool get isDailyPartyNotificationSupportedPlatform =>
-    !kIsWeb &&
-    (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS);
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
 abstract interface class DailyPartyNotificationBackend {
   Future<void> initialize();
@@ -33,14 +32,6 @@ class FlutterDailyPartyNotificationBackend
   ]) : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   static const _notificationDetails = NotificationDetails(
-    android: AndroidNotificationDetails(
-      'daily_party_questions',
-      'Daily Party Questions',
-      channelDescription: 'One Party Question every evening.',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      playSound: true,
-    ),
     iOS: DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: false,
@@ -51,7 +42,6 @@ class FlutterDailyPartyNotificationBackend
   @override
   Future<void> initialize() async {
     const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
@@ -63,30 +53,19 @@ class FlutterDailyPartyNotificationBackend
 
   @override
   Future<bool> requestPermission() async {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return await _plugin
-              .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin
-              >()
-              ?.requestNotificationsPermission() ??
-          false;
-    }
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return await _plugin
-              .resolvePlatformSpecificImplementation<
-                IOSFlutterLocalNotificationsPlugin
-              >()
-              ?.requestPermissions(alert: true, badge: false, sound: true) ??
-          false;
-    }
-    return false;
+    return await _plugin
+            .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin
+            >()
+            ?.requestPermissions(alert: true, badge: false, sound: true) ??
+        false;
   }
 
   @override
   Future<void> schedule(DailyPartyNotificationScheduleEntry entry) {
     return _plugin.zonedSchedule(
       id: entry.notificationId,
-      title: 'Tonight’s Party Question 👀',
+      title: dailyPartyNotificationTitle,
       body: entry.question.text,
       payload: entry.payload,
       scheduledDate: entry.scheduledAt,
@@ -138,29 +117,29 @@ class DailyPartyNotificationService {
     }
   }
 
-  Future<bool> enable() async {
+  Future<bool> requestPermissionAndSchedule() async {
     try {
-      await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
+      final wasEnabled = isEnabled;
       if (!await initialize()) {
-        await _resetFailedEnableState();
+        await _resetFailedScheduleState();
         return false;
       }
       if (!await _backend.requestPermission()) {
-        await _resetFailedEnableState();
+        await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
         return false;
       }
 
       await _preferences.setBool(dailyPartyNotificationsEnabledKey, true);
-      if (await refreshIfNeeded(force: true)) {
+      if (await refreshIfNeeded(force: !wasEnabled)) {
         return true;
       }
 
-      await _resetFailedEnableState(cancelSchedules: false);
+      await _resetFailedScheduleState(cancelSchedules: false);
       return false;
     } catch (error, stackTrace) {
-      debugPrint('Daily Party notification enable failed: $error');
+      debugPrint('Daily Party notification permission flow failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      await _resetFailedEnableState();
+      await _resetFailedScheduleState();
       return false;
     }
   }
@@ -225,7 +204,7 @@ class DailyPartyNotificationService {
     }
   }
 
-  Future<void> _resetFailedEnableState({bool cancelSchedules = true}) async {
+  Future<void> _resetFailedScheduleState({bool cancelSchedules = true}) async {
     try {
       await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
     } catch (error, stackTrace) {

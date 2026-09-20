@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -57,6 +58,18 @@ void main() {
   setUpAll(() {
     tz_data.initializeTimeZones();
     newYork = tz.getLocation('America/New_York');
+  });
+
+  tearDown(() {
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  test('supports daily notifications on native iOS only', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    expect(isDailyPartyNotificationSupportedPlatform, isTrue);
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    expect(isDailyPartyNotificationSupportedPlatform, isFalse);
   });
 
   group('daily Party questions', () {
@@ -187,6 +200,9 @@ void main() {
   });
 
   group('daily Party notification service', () {
+    test('uses the product notification title exactly', () {
+      expect(dailyPartyNotificationTitle, 'Tonight’s question 👀');
+    });
     test(
       'startup initialization never requests notification permission',
       () async {
@@ -219,7 +235,7 @@ void main() {
           localNow: (_) => now,
         );
 
-        expect(await service.enable(), isTrue);
+        expect(await service.requestPermissionAndSchedule(), isTrue);
         expect(service.isEnabled, isTrue);
         expect(backend.initialized, isTrue);
         expect(backend.scheduled, hasLength(30));
@@ -283,7 +299,7 @@ void main() {
           timezoneResolver: () async => 'America/New_York',
         );
 
-        expect(await service.enable(), isFalse);
+        expect(await service.requestPermissionAndSchedule(), isFalse);
         expect(service.isEnabled, isFalse);
         expect(
           preferences.getString(dailyPartyNotificationsTimezoneKey),
@@ -310,7 +326,7 @@ void main() {
               throw StateError('timezone unavailable'),
         );
 
-        expect(await service.enable(), isFalse);
+        expect(await service.requestPermissionAndSchedule(), isFalse);
         expect(service.isEnabled, isFalse);
         expect(
           preferences.getString(dailyPartyNotificationsTimezoneKey),
@@ -337,7 +353,7 @@ void main() {
         localNow: (_) => tz.TZDateTime(newYork, 2026, 1, 2, 20),
       );
 
-      expect(await service.enable(), isFalse);
+      expect(await service.requestPermissionAndSchedule(), isFalse);
       expect(service.isEnabled, isFalse);
       expect(backend.scheduled, hasLength(10));
       expect(preferences.getString(dailyPartyNotificationsTimezoneKey), isNull);
@@ -377,15 +393,18 @@ void main() {
         );
       },
     );
-    test('keeps saved state off when permission is denied', () async {
+    test('denied permission leaves scheduling inactive', () async {
       SharedPreferences.setMockInitialValues({});
+      final backend = _FakeNotificationBackend(permissionGranted: false);
       final service = DailyPartyNotificationService(
         preferences: await SharedPreferences.getInstance(),
-        backend: _FakeNotificationBackend(permissionGranted: false),
+        backend: backend,
         timezoneResolver: () async => 'America/New_York',
       );
-      expect(await service.enable(), isFalse);
+
+      expect(await service.requestPermissionAndSchedule(), isFalse);
       expect(service.isEnabled, isFalse);
+      expect(backend.scheduled, isEmpty);
     });
   });
 }

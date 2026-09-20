@@ -19,7 +19,6 @@ import '../../../features/game/screens/debug_scene_editor_screen.dart';
 import '../../../features/party/theme/party_palette.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../widgets/party_setup_guide_card.dart';
-import '../../notifications/services/daily_party_notification_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final String? prefilledRoomCode;
@@ -716,11 +715,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       child: StatefulBuilder(
         builder: (context, setModalState) {
           final isMuted = audioService.isMuted;
-          final notifications = isDailyPartyNotificationSupportedPlatform
-              ? ref.read(dailyPartyNotificationServiceProvider)
-              : null;
-          final dailyPartyNotificationsEnabled =
-              notifications?.isEnabled ?? false;
           return Column(
             children: [
               Container(
@@ -804,104 +798,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
               ),
-              if (notifications != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  height: 76,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF1E1E1E),
-                        Color(0xFF121212),
-                        Color(0xFF080808),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: AppColors.brassLight.withValues(alpha: 0.34),
-                      width: 1.2,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          color: AppColors.brassLight.withValues(alpha: 0.14),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.brassLight.withValues(alpha: 0.38),
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.notifications_none_rounded,
-                          color: AppColors.brassLight,
-                          size: 27,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'DAILY PARTY QUESTION',
-                              style: _homeTextStyle(
-                                color: AppColors.ivory,
-                                size: 20,
-                                letterSpacing: 0.7,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            const Text(
-                              'One question every night at 9:00 PM',
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Switch.adaptive(
-                        value: dailyPartyNotificationsEnabled,
-                        activeThumbColor: AppColors.brassLight,
-                        activeTrackColor: AppColors.brass,
-                        inactiveThumbColor: AppColors.textMuted,
-                        inactiveTrackColor: Colors.black26,
-                        onChanged: (enabled) async {
-                          if (enabled) {
-                            final granted = await notifications.enable();
-                            if (!mounted) return;
-                            setModalState(() {});
-                            setState(() {});
-                            if (!granted) {
-                              ScaffoldMessenger.of(this.context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Notifications are turned off for Bets & Guesses.',
-                                  ),
-                                ),
-                              );
-                            }
-                            return;
-                          }
-                          await notifications.disable();
-                          if (!mounted) return;
-                          setModalState(() {});
-                          setState(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           );
         },
