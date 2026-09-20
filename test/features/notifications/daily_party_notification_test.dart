@@ -8,19 +8,34 @@ import 'package:witsgame/features/notifications/services/daily_party_notificatio
 
 class _FakeNotificationBackend implements DailyPartyNotificationBackend {
   final bool permissionGranted;
+  final Object? initializeError;
+  final int? scheduleFailureId;
+  final Set<int> cancelFailureIds;
   final List<DailyPartyNotificationScheduleEntry> scheduled = [];
   final List<int> cancelled = [];
   var initialized = false;
   var permissionRequests = 0;
 
-  _FakeNotificationBackend({this.permissionGranted = true});
+  _FakeNotificationBackend({
+    this.permissionGranted = true,
+    this.initializeError,
+    this.scheduleFailureId,
+    this.cancelFailureIds = const {},
+  });
 
   @override
-  Future<void> cancel(int notificationId) async =>
-      cancelled.add(notificationId);
+  Future<void> cancel(int notificationId) async {
+    cancelled.add(notificationId);
+    if (cancelFailureIds.contains(notificationId)) {
+      throw StateError('cancel failed for $notificationId');
+    }
+  }
 
   @override
-  Future<void> initialize() async => initialized = true;
+  Future<void> initialize() async {
+    if (initializeError != null) throw initializeError!;
+    initialized = true;
+  }
 
   @override
   Future<bool> requestPermission() async {
@@ -30,6 +45,9 @@ class _FakeNotificationBackend implements DailyPartyNotificationBackend {
 
   @override
   Future<void> schedule(DailyPartyNotificationScheduleEntry entry) async {
+    if (entry.notificationId == scheduleFailureId) {
+      throw StateError('schedule failed for ${entry.notificationId}');
+    }
     scheduled.add(entry);
   }
 }
@@ -247,6 +265,118 @@ void main() {
       },
     );
 
+    test(
+      'returns false and persists off when backend initialization fails',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          dailyPartyNotificationsEnabledKey: true,
+          dailyPartyNotificationsTimezoneKey: 'America/New_York',
+          dailyPartyNotificationsScheduleDateKey: '2026-01-02',
+        });
+        final preferences = await SharedPreferences.getInstance();
+        final backend = _FakeNotificationBackend(
+          initializeError: StateError('backend unavailable'),
+        );
+        final service = DailyPartyNotificationService(
+          preferences: preferences,
+          backend: backend,
+          timezoneResolver: () async => 'America/New_York',
+        );
+
+        expect(await service.enable(), isFalse);
+        expect(service.isEnabled, isFalse);
+        expect(
+          preferences.getString(dailyPartyNotificationsTimezoneKey),
+          isNull,
+        );
+        expect(
+          preferences.getString(dailyPartyNotificationsScheduleDateKey),
+          isNull,
+        );
+        expect(backend.permissionRequests, 0);
+      },
+    );
+
+    test(
+      'returns false and persists off when timezone resolution fails',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final preferences = await SharedPreferences.getInstance();
+        final backend = _FakeNotificationBackend();
+        final service = DailyPartyNotificationService(
+          preferences: preferences,
+          backend: backend,
+          timezoneResolver: () async =>
+              throw StateError('timezone unavailable'),
+        );
+
+        expect(await service.enable(), isFalse);
+        expect(service.isEnabled, isFalse);
+        expect(
+          preferences.getString(dailyPartyNotificationsTimezoneKey),
+          isNull,
+        );
+        expect(
+          preferences.getString(dailyPartyNotificationsScheduleDateKey),
+          isNull,
+        );
+        expect(backend.scheduled, isEmpty);
+      },
+    );
+
+    test('rolls back every reserved ID when schedule creation fails', () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final backend = _FakeNotificationBackend(
+        scheduleFailureId: dailyPartyNotificationIdStart + 10,
+      );
+      final service = DailyPartyNotificationService(
+        preferences: preferences,
+        backend: backend,
+        timezoneResolver: () async => 'America/New_York',
+        localNow: (_) => tz.TZDateTime(newYork, 2026, 1, 2, 20),
+      );
+
+      expect(await service.enable(), isFalse);
+      expect(service.isEnabled, isFalse);
+      expect(backend.scheduled, hasLength(10));
+      expect(preferences.getString(dailyPartyNotificationsTimezoneKey), isNull);
+      expect(
+        preferences.getString(dailyPartyNotificationsScheduleDateKey),
+        isNull,
+      );
+      expect(backend.cancelled, hasLength(60));
+      expect(
+        backend.cancelled.skip(30),
+        List.generate(30, (offset) => dailyPartyNotificationIdStart + offset),
+      );
+    });
+
+    test(
+      'attempts every reserved cancellation even when one cancellation fails',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          dailyPartyNotificationsEnabledKey: true,
+        });
+        final preferences = await SharedPreferences.getInstance();
+        final backend = _FakeNotificationBackend(
+          cancelFailureIds: {dailyPartyNotificationIdStart + 10},
+        );
+        final service = DailyPartyNotificationService(
+          preferences: preferences,
+          backend: backend,
+          timezoneResolver: () async => 'America/New_York',
+        );
+
+        await service.disable();
+
+        expect(service.isEnabled, isFalse);
+        expect(
+          backend.cancelled,
+          List.generate(30, (offset) => dailyPartyNotificationIdStart + offset),
+        );
+      },
+    );
     test('keeps saved state off when permission is denied', () async {
       SharedPreferences.setMockInitialValues({});
       final service = DailyPartyNotificationService(

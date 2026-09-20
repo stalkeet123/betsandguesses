@@ -124,50 +124,58 @@ class DailyPartyNotificationService {
   bool get isEnabled =>
       _preferences.getBool(dailyPartyNotificationsEnabledKey) ?? false;
 
-  Future<void> initialize() async {
-    if (_initialized) return;
+  Future<bool> initialize() async {
+    if (_initialized) return true;
     try {
       tz_data.initializeTimeZones();
       await _backend.initialize();
       _initialized = true;
+      return true;
     } catch (error, stackTrace) {
       debugPrint('Daily Party notification initialization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
+      return false;
     }
   }
 
   Future<bool> enable() async {
     try {
-      await initialize();
-      if (!await _backend.requestPermission()) {
-        await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
+      await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
+      if (!await initialize()) {
+        await _resetFailedEnableState();
         return false;
       }
+      if (!await _backend.requestPermission()) {
+        await _resetFailedEnableState();
+        return false;
+      }
+
       await _preferences.setBool(dailyPartyNotificationsEnabledKey, true);
-      await refreshIfNeeded(force: true);
-      return true;
+      if (await refreshIfNeeded(force: true)) {
+        return true;
+      }
+
+      await _resetFailedEnableState(cancelSchedules: false);
+      return false;
     } catch (error, stackTrace) {
-      debugPrint('Daily Party notification permission request failed: $error');
+      debugPrint('Daily Party notification enable failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
+      await _resetFailedEnableState();
       return false;
     }
   }
 
   Future<void> disable() async {
     await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
-    try {
-      await _cancelDailyPartyNotifications();
-    } catch (error, stackTrace) {
-      debugPrint('Daily Party notification cancellation failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
+    await _cancelDailyPartyNotifications();
   }
 
-  Future<void> refreshIfNeeded({bool force = false}) async {
-    if (!isEnabled) return;
+  Future<bool> refreshIfNeeded({bool force = false}) async {
+    if (!isEnabled) return true;
+    if (!await initialize()) return false;
+
+    var scheduleCreationStarted = false;
     try {
-      await initialize();
       final timezone = await _timezoneResolver();
       final location = tz.getLocation(timezone);
       tz.setLocalLocation(location);
@@ -186,9 +194,11 @@ class DailyPartyNotificationService {
             timezone: timezone,
             scheduleDate: scheduleDate,
           );
-      if (!needsRefresh) return;
+      if (!needsRefresh) return true;
 
-      await _cancelDailyPartyNotifications();
+      if (!await _cancelDailyPartyNotifications()) return false;
+
+      scheduleCreationStarted = true;
       final entries = buildDailyPartyNotificationSchedule(
         location: location,
         localNow: localNow,
@@ -204,19 +214,61 @@ class DailyPartyNotificationService {
         dailyPartyNotificationsScheduleDateKey,
         scheduleDate,
       );
+      return true;
     } catch (error, stackTrace) {
       debugPrint('Daily Party notification refresh failed: $error');
       debugPrintStack(stackTrace: stackTrace);
+      if (scheduleCreationStarted) {
+        await _cancelDailyPartyNotifications();
+      }
+      return false;
     }
   }
 
-  Future<void> _cancelDailyPartyNotifications() async {
+  Future<void> _resetFailedEnableState({bool cancelSchedules = true}) async {
+    try {
+      await _preferences.setBool(dailyPartyNotificationsEnabledKey, false);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Could not persist disabled Daily Party notifications: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
+      await _preferences.remove(dailyPartyNotificationsTimezoneKey);
+      await _preferences.remove(dailyPartyNotificationsScheduleDateKey);
+    } catch (error, stackTrace) {
+      debugPrint('Could not clear Daily Party notification metadata: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    if (cancelSchedules) {
+      await _cancelDailyPartyNotifications();
+    }
+  }
+
+  Future<bool> _cancelDailyPartyNotifications() async {
+    final failures = <Object>[];
     for (
       var id = dailyPartyNotificationIdStart;
       id < dailyPartyNotificationIdStart + dailyPartyNotificationCount;
       id++
     ) {
-      await _backend.cancel(id);
+      try {
+        await _backend.cancel(id);
+      } catch (error) {
+        failures.add(error);
+      }
     }
+
+    if (failures.isNotEmpty) {
+      debugPrint(
+        'Failed to cancel ${failures.length} Daily Party notifications.',
+      );
+      return false;
+    }
+
+    return true;
   }
 }
