@@ -18,6 +18,8 @@ import '../../room/providers/room_providers.dart';
 import '../constants/party_poll_rules.dart';
 import '../models/party_poll_snapshot.dart';
 import '../providers/party_poll_session_provider.dart';
+import '../utils/party_poll_deadline.dart';
+import '../utils/party_poll_snapshot_reload.dart';
 import '../widgets/party_poll_production_view.dart';
 
 class PartyPollGameScreen extends ConsumerStatefulWidget {
@@ -101,6 +103,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_synchronizeServerClock());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_initialLoad());
     });
@@ -108,9 +111,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       unawaited(_runDeadlineTransitionIfNeeded());
       final snapshot = ref.read(partyPollSessionProvider).snapshot;
       final deadline = snapshot?.round.phaseEndsAt;
-      final second = deadline == null
-          ? 0
-          : max(0, deadline.difference(DateTime.now().toUtc()).inSeconds);
+      final second = partyPollDeadline(
+        phaseEndsAt: deadline,
+        serverNow: ref.read(roomServiceProvider).serverNow,
+      ).remaining.inSeconds;
       if (mounted && second != _lastDisplayedRemainingSecond) {
         _lastDisplayedRemainingSecond = second;
         setState(() {});
@@ -144,6 +148,14 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
     unawaited(audio.startPartyGameBgm());
     unawaited(audio.preparePartyPollRevealAudio());
     await _loadSnapshot(connectRealtime: true);
+  }
+
+  Future<void> _synchronizeServerClock() async {
+    try {
+      await ref.read(roomServiceProvider).synchronizeServerClock();
+    } catch (_) {
+      // Keep using the shared cached/default offset if the clock RPC fails.
+    }
   }
 
   String _revealKey(PartyPollSnapshot snapshot) =>
@@ -355,18 +367,8 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             onAnswerRevealed: (_) => _scheduleSnapshotReload(),
             onGameStarted: (_) => _scheduleSnapshotReload(),
             onGameEnded: (_) => _scheduleSnapshotReload(),
-            onRoomRowChanged: (record) {
-              GameTraceService.instance.trace('party_phase_hint_received', {
-                'source': 'postgres',
-                if (record['current_round'] is num)
-                  'round': (record['current_round'] as num).toInt(),
-                if (record['round_phase'] != null)
-                  'phase': '${record['round_phase']}',
-                if (record['state_version'] is num)
-                  'state_version': (record['state_version'] as num).toInt(),
-              });
-              _scheduleSnapshotReload();
-            },
+            onRoomRowChanged: (record) =>
+                handlePartyPollRoomRowChanged(record, _scheduleSnapshotReload),
           );
     } catch (_) {
       // Periodic snapshot refresh remains the recovery path.
@@ -374,21 +376,21 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
   }
 
   void _scheduleSnapshotReload() {
-    GameTraceService.instance.trace('party_resync_scheduled', {
-      'source': 'party_snapshot',
-      'delay_ms': 350,
-    });
-    _reloadDebounce?.cancel();
-    _reloadDebounce = Timer(const Duration(milliseconds: 350), () {
-      unawaited(_loadSnapshot());
-    });
+    _reloadDebounce = schedulePartyPollSnapshotReload(
+      pending: _reloadDebounce,
+      reload: () => unawaited(_loadSnapshot()),
+    );
   }
 
   Future<void> _runDeadlineTransitionIfNeeded() async {
     final snapshot = ref.read(partyPollSessionProvider).snapshot;
     if (!mounted || snapshot == null || _transitionCommandInFlight) return;
-    final deadline = snapshot.round.phaseEndsAt;
-    if (deadline == null || DateTime.now().toUtc().isBefore(deadline)) return;
+    if (!partyPollDeadline(
+      phaseEndsAt: snapshot.round.phaseEndsAt,
+      serverNow: ref.read(roomServiceProvider).serverNow,
+    ).expired) {
+      return;
+    }
 
     _transitionCommandInFlight = true;
     try {
@@ -958,11 +960,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
             )
         ? _selectedBetId
         : null;
-    final deadline = snapshot.round.phaseEndsAt;
-    final rawRemaining = deadline == null
-        ? Duration.zero
-        : deadline.difference(DateTime.now().toUtc());
-    final remaining = rawRemaining.isNegative ? Duration.zero : rawRemaining;
+    final remaining = partyPollDeadline(
+      phaseEndsAt: snapshot.round.phaseEndsAt,
+      serverNow: ref.read(roomServiceProvider).serverNow,
+    ).remaining;
 
     return Scaffold(
       body: Stack(

@@ -51,7 +51,7 @@ PartyPollSnapshot selectPartyPollSnapshot(
   PartyPollSnapshot incoming,
 ) {
   if (current == null || current.room.id != incoming.room.id) return incoming;
-  return incoming.stateVersion >= current.stateVersion ? incoming : current;
+  return incoming.stateVersion > current.stateVersion ? incoming : current;
 }
 
 class PartyPollSessionState {
