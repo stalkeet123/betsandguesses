@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/features/home/widgets/party_setup_guide_card.dart';
+import 'package:witsgame/l10n/l10n.dart';
 
 void main() {
   testWidgets('party setup guide fits compact phone allocations', (
@@ -15,7 +16,11 @@ void main() {
       await tester.pumpWidget(
         MediaQuery(
           data: const MediaQueryData(textScaler: TextScaler.linear(1.2)),
-          child: const MaterialApp(home: Scaffold(body: PartySetupGuideCard())),
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: supportedAppLocales,
+            home: const Scaffold(body: PartySetupGuideCard()),
+          ),
         ),
       );
       await tester.pump();

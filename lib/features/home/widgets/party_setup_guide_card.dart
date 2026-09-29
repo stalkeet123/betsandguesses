@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../party/theme/party_palette.dart';
+import '../../../l10n/l10n.dart';
 
 /// Party setup guidance that deliberately uses the panel space it receives.
 class PartySetupGuideCard extends StatelessWidget {
@@ -33,43 +34,43 @@ class PartySetupGuideCard extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.all(padding),
             child: switch (density) {
-              _PartyGuideDensity.full => const _PartyGuideRules(
+              _PartyGuideDensity.full => _PartyGuideRules(
                 rules: [
                   _PartyGuideRuleData(
                     icon: Icons.person_search_rounded,
-                    title: 'PICK A PLAYER',
-                    description: 'Choose who best fits the prompt.',
+                    title: context.l10n.partyGuidePickPlayer,
+                    description: context.l10n.partyGuidePickPlayerDescription,
                   ),
                   _PartyGuideRuleData(
                     icon: Icons.casino_rounded,
-                    title: 'PLACE YOUR CHIPS',
-                    description: 'Your chips are your vote and your risk.',
+                    title: context.l10n.partyGuidePlaceChips,
+                    description: context.l10n.partyGuidePlaceChipsDescription,
                   ),
                   _PartyGuideRuleData(
                     icon: Icons.emoji_events_rounded,
-                    title: 'HIGHEST TOTAL WINS',
-                    description: 'Winning chips score; losing chips cost you.',
+                    title: context.l10n.partyGuideHighestWins,
+                    description: context.l10n.partyGuideHighestWinsDescription,
                   ),
                 ],
               ),
-              _PartyGuideDensity.compact => const _PartyGuideRules(
+              _PartyGuideDensity.compact => _PartyGuideRules(
                 compact: true,
                 rules: [
                   _PartyGuideRuleData(
                     icon: Icons.how_to_vote_rounded,
-                    title: 'PICK + BET',
-                    description: 'Pick a player and put chips behind them.',
+                    title: context.l10n.partyGuidePickBet,
+                    description: context.l10n.partyGuidePickBetDescription,
                   ),
                   _PartyGuideRuleData(
                     icon: Icons.emoji_events_rounded,
-                    title: 'WIN THE POLL',
-                    description: 'Highest total wins; your chips are at risk.',
+                    title: context.l10n.partyGuideWinPoll,
+                    description: context.l10n.partyGuideWinPollDescription,
                   ),
                 ],
               ),
               _PartyGuideDensity.singleLine => Center(
                 child: Text(
-                  'Pick a player • Bet chips • Highest total wins',
+                  context.l10n.partyGuideSummary,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,

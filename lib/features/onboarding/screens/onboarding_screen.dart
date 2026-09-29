@@ -11,6 +11,7 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/services/analytics_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../l10n/l10n.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -25,44 +26,43 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   static const _heroCacheWidth = 960;
 
-  static const _slides = <OnboardingSlideData>[
-    OnboardingSlideData(
-      imageAsset: AppAssetPaths.onboarding1,
-      kicker: 'INSTANT JOIN',
-      title: 'ONE PHONE.\nWHOLE ROOM.',
-      body:
-          'Host from your phone. Friends scan the QR code and join from their browser — no app install needed.',
-      accent: AppColors.brassLight,
-      glowColor: Color(0xFFD7A84A),
-    ),
-    OnboardingSlideData(
-      imageAsset: AppAssetPaths.onboarding2,
-      kicker: 'GUESS & BET',
-      title: 'GUESS IT.\nTHEN BET IT.',
-      body:
-          'Make your number guess, then use your chips to bet where you think the real answer lands.',
-      accent: AppColors.neonCyan,
-      glowColor: Color(0xFF47C7C0),
-    ),
-    OnboardingSlideData(
-      imageAsset: AppAssetPaths.onboarding3,
-      kicker: 'READ THE ROOM',
-      title: 'BACK YOUR\nBEST READ.',
-      body:
-          'Every guess changes the table. Trust your instincts, place your chips and build the biggest bankroll.',
-      accent: AppColors.chipGold,
-      glowColor: Color(0xFFFFC84D),
-    ),
-    OnboardingSlideData(
-      imageAsset: AppAssetPaths.onboarding4,
-      kicker: 'TWO WAYS TO PLAY',
-      title: 'CLASSIC\nOR PARTY.',
-      body:
-          'Go Classic for number questions and betting, or Party for prompts where you vote on your friends with chips.',
-      accent: AppColors.neonOrange,
-      glowColor: Color(0xFFE58B37),
-    ),
-  ];
+  List<OnboardingSlideData> _slides(BuildContext context) {
+    final l10n = context.l10n;
+    return [
+      OnboardingSlideData(
+        imageAsset: AppAssetPaths.onboarding1,
+        kicker: l10n.onboardingInstantJoin,
+        title: l10n.onboardingOnePhone,
+        body: l10n.onboardingOnePhoneBody,
+        accent: AppColors.brassLight,
+        glowColor: const Color(0xFFD7A84A),
+      ),
+      OnboardingSlideData(
+        imageAsset: AppAssetPaths.onboarding2,
+        kicker: l10n.onboardingGuessBet,
+        title: l10n.onboardingGuessTitle,
+        body: l10n.onboardingGuessBody,
+        accent: AppColors.neonCyan,
+        glowColor: const Color(0xFF47C7C0),
+      ),
+      OnboardingSlideData(
+        imageAsset: AppAssetPaths.onboarding3,
+        kicker: l10n.onboardingReadRoom,
+        title: l10n.onboardingReadTitle,
+        body: l10n.onboardingReadBody,
+        accent: AppColors.chipGold,
+        glowColor: const Color(0xFFFFC84D),
+      ),
+      OnboardingSlideData(
+        imageAsset: AppAssetPaths.onboarding4,
+        kicker: l10n.onboardingTwoWays,
+        title: l10n.onboardingModesTitle,
+        body: l10n.onboardingModesBody,
+        accent: AppColors.neonOrange,
+        glowColor: const Color(0xFFE58B37),
+      ),
+    ];
+  }
 
   @override
   void initState() {
@@ -83,12 +83,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Future<void> _precacheNextSlide(int currentIndex) async {
     final nextIndex = currentIndex + 1;
-    if (nextIndex >= _slides.length || !mounted) return;
+    if (nextIndex >= _slides(context).length || !mounted) return;
 
     try {
       await precacheImage(
         ResizeImage(
-          AssetImage(_slides[nextIndex].imageAsset),
+          AssetImage(_slides(context)[nextIndex].imageAsset),
           width: _heroCacheWidth,
         ),
         context,
@@ -121,7 +121,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   void _next() {
     HapticFeedback.lightImpact();
     ref.read(audioServiceProvider).playClick();
-    if (_pageIndex == _slides.length - 1) {
+    if (_pageIndex == _slides(context).length - 1) {
       unawaited(_finish(method: 'completed'));
       return;
     }
@@ -186,12 +186,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildTopHeader(compact: veryShort),
+                          _buildTopHeader(context, compact: veryShort),
                           SizedBox(height: veryShort ? 6 : 12),
                           Expanded(
                             child: PageView.builder(
                               controller: _pageController,
-                              itemCount: _slides.length,
+                              itemCount: _slides(context).length,
                               onPageChanged: (index) {
                                 HapticFeedback.selectionClick();
                                 setState(() => _pageIndex = index);
@@ -199,7 +199,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                               },
                               itemBuilder: (context, index) {
                                 return OnboardingSlideContent(
-                                  slide: _slides[index],
+                                  slide: _slides(context)[index],
                                   isActive: index == _pageIndex,
                                   veryShort: veryShort,
                                   short: short,
@@ -209,10 +209,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             ),
                           ),
                           SizedBox(height: veryShort ? 6 : 10),
-                          _buildProgressIndicator(),
+                          _buildProgressIndicator(context),
                           SizedBox(height: veryShort ? 8 : 12),
                           _buildBottomAction(
-                            isLast: _pageIndex == _slides.length - 1,
+                            context,
+                            isLast: _pageIndex == _slides(context).length - 1,
                           ),
                         ],
                       ),
@@ -227,7 +228,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
-  Widget _buildTopHeader({required bool compact}) {
+  Widget _buildTopHeader(BuildContext context, {required bool compact}) {
     return SizedBox(
       height: compact ? 40 : 44,
       child: Row(
@@ -292,8 +293,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ),
                 backgroundColor: Colors.black.withValues(alpha: 0.22),
               ),
-              child: const Text(
-                'SKIP',
+              child: Text(
+                context.l10n.skip,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w900,
@@ -307,16 +308,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
-  Widget _buildProgressIndicator() {
+  Widget _buildProgressIndicator(context) {
     return SizedBox(
       height: 28,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          for (var index = 0; index < _slides.length; index++)
+          for (var index = 0; index < _slides(context).length; index++)
             Semantics(
               button: true,
-              label: 'Go to onboarding page ${index + 1}',
+              label: context.l10n.onboardingPage(index + 1),
               child: InkWell(
                 borderRadius: BorderRadius.circular(999),
                 onTap: () {
@@ -365,10 +366,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
-  Widget _buildBottomAction({required bool isLast}) {
+  Widget _buildBottomAction(context, {required bool isLast}) {
     return Semantics(
       button: true,
-      label: isLast ? 'Let us play' : 'Continue',
+      label: isLast
+          ? context.l10n.letsPlaySemantic
+          : context.l10n.continueSemantic,
       child: SizedBox(
         height: 54,
         child: DecoratedBox(
@@ -395,7 +398,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               onTap: _next,
               child: Center(
                 child: Text(
-                  isLast ? "LET'S PLAY" : 'CONTINUE',
+                  isLast ? context.l10n.letsPlay : context.l10n.continueLabel,
                   style: const TextStyle(
                     fontFamily: 'RehnCondensed',
                     color: AppColors.ink,

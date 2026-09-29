@@ -1,6 +1,8 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/core/models/monetization_status.dart';
 import 'package:witsgame/core/utils/monetization_copy.dart';
+import 'package:witsgame/l10n/app_localizations.dart';
 
 void main() {
   test('parses free quota counts', () {
@@ -27,50 +29,94 @@ void main() {
 
   test('formats hosted-game status without inventing credits', () {
     expect(
-      setupFreeHostingStatusText(isPremium: true, freeHostGamesRemaining: 0),
+      setupFreeHostingStatusText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: true,
+        freeHostGamesRemaining: 0,
+      ),
       'PREMIUM • UNLIMITED HOSTING',
     );
     expect(
-      setupFreeHostingStatusText(isPremium: false, freeHostGamesRemaining: 3),
+      setupFreeHostingStatusText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 3,
+      ),
       '3 FREE HOSTED GAMES INCLUDED',
     );
     expect(
-      setupFreeHostingStatusText(isPremium: false, freeHostGamesRemaining: 2),
+      setupFreeHostingStatusText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 2,
+      ),
       '2 FREE HOSTED GAMES LEFT',
     );
     expect(
-      setupFreeHostingStatusText(isPremium: false, freeHostGamesRemaining: 1),
+      setupFreeHostingStatusText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 1,
+      ),
       'LAST FREE HOSTED GAME',
     );
     expect(
-      setupFreeHostingStatusText(isPremium: false, freeHostGamesRemaining: 0),
+      setupFreeHostingStatusText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 0,
+      ),
       'FREE HOSTING USED • PREMIUM NEEDED FOR ANOTHER GAME',
     );
   });
 
   test('formats the paywall plan strip from hosted game credits', () {
     expect(
-      paywallCurrentPlanText(isPremium: true, freeHostGamesRemaining: 0),
+      paywallCurrentPlanText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: true,
+        freeHostGamesRemaining: 0,
+      ),
       'PREMIUM ACTIVE',
     );
     expect(
-      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 3),
+      paywallCurrentPlanText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 3,
+      ),
       'FREE • 3 HOSTED GAMES INCLUDED',
     );
     expect(
-      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 2),
+      paywallCurrentPlanText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 2,
+      ),
       'FREE • 2 HOSTED GAMES LEFT',
     );
     expect(
-      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 1),
+      paywallCurrentPlanText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 1,
+      ),
       'FREE • LAST HOSTED GAME',
     );
     expect(
-      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: 0),
+      paywallCurrentPlanText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: 0,
+      ),
       'FREE HOSTING USED',
     );
     expect(
-      paywallCurrentPlanText(isPremium: false, freeHostGamesRemaining: null),
+      paywallCurrentPlanText(
+        lookupAppLocalizations(const Locale('en')),
+        isPremium: false,
+        freeHostGamesRemaining: null,
+      ),
       'CURRENT PLAN: FREE',
     );
   });

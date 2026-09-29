@@ -1,28 +1,30 @@
-String setupFreeHostingStatusText({
+import '../../l10n/app_localizations.dart';
+
+String setupFreeHostingStatusText(
+  AppLocalizations l10n, {
   required bool isPremium,
   required int freeHostGamesRemaining,
 }) {
-  if (isPremium) return 'PREMIUM • UNLIMITED HOSTING';
-
+  if (isPremium) return l10n.premiumUnlimitedHosting;
   return switch (freeHostGamesRemaining) {
-    3 => '3 FREE HOSTED GAMES INCLUDED',
-    2 => '2 FREE HOSTED GAMES LEFT',
-    1 => 'LAST FREE HOSTED GAME',
-    _ => 'FREE HOSTING USED • PREMIUM NEEDED FOR ANOTHER GAME',
+    3 => l10n.freeHostedGamesIncluded,
+    2 => l10n.freeHostedGamesLeft,
+    1 => l10n.lastFreeHostedGame,
+    _ => l10n.freeHostingUsedPremiumNeeded,
   };
 }
 
-String paywallCurrentPlanText({
+String paywallCurrentPlanText(
+  AppLocalizations l10n, {
   required bool isPremium,
   int? freeHostGamesRemaining,
 }) {
-  if (isPremium) return 'PREMIUM ACTIVE';
-  if (freeHostGamesRemaining == null) return 'CURRENT PLAN: FREE';
-
+  if (isPremium) return l10n.premiumActive;
+  if (freeHostGamesRemaining == null) return l10n.currentPlanFree;
   return switch (freeHostGamesRemaining) {
-    3 => 'FREE • 3 HOSTED GAMES INCLUDED',
-    2 => 'FREE • 2 HOSTED GAMES LEFT',
-    1 => 'FREE • LAST HOSTED GAME',
-    _ => 'FREE HOSTING USED',
+    3 => l10n.freePlanIncluded,
+    2 => l10n.freePlanLeft,
+    1 => l10n.freePlanLast,
+    _ => l10n.freeHostingUsed,
   };
 }

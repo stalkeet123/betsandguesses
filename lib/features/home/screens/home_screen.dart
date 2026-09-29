@@ -113,13 +113,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (_isLoading) return;
 
     if (kIsWeb) {
-      _showSnack('Web version is player-only.');
+      _showSnack(context.l10n.webPlayerOnly);
       return;
     }
 
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      _showSnack('Enter your name first.');
+      _showSnack(context.l10n.enterNameFirst);
       return;
     }
 
@@ -150,7 +150,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final setupThemeMode = ValueNotifier<GameMode>(selectedMode);
 
     _showHomeSheet(
-      title: 'SETUP',
+      title: context.l10n.setup,
+      isSetup: true,
       icon: Icons.tune_rounded,
       child: StatefulBuilder(
         builder: (context, setModalState) => LayoutBuilder(
@@ -257,7 +258,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   _setupSlider(
                     compact: compactSetup,
                     icon: Icons.casino_rounded,
-                    label: 'ROUNDS',
+                    label: context.l10n.rounds,
                     value: selectedRounds,
                     min: GameConstants.minRounds,
                     max: GameConstants.maxRounds,
@@ -273,7 +274,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   _setupSlider(
                     compact: compactSetup,
                     icon: Icons.groups_rounded,
-                    label: 'PLAYERS',
+                    label: context.l10n.players,
                     value: selectedMaxPlayers,
                     min: GameConstants.minPlayers,
                     max: GameConstants.maxPlayers,
@@ -293,7 +294,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   _setupSlider(
                     compact: compactSetup,
                     icon: Icons.groups_rounded,
-                    label: 'PLAYERS',
+                    label: context.l10n.players,
                     value: selectedMaxPlayers,
                     min: 3,
                     max: GameConstants.maxPlayers,
@@ -313,7 +314,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   _setupSlider(
                     compact: compactSetup,
                     icon: Icons.casino_rounded,
-                    label: 'ROUNDS',
+                    label: context.l10n.rounds,
                     value: selectedRounds,
                     min: GameConstants.minRounds,
                     max: GameConstants.maxRounds,
@@ -384,10 +385,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ),
                     label: Text(
                       hostingExhausted
-                          ? 'GO PREMIUM'
+                          ? context.l10n.goPremium
                           : usesPremiumSetup
-                          ? 'UPGRADE TO CREATE'
-                          : 'CREATE LOBBY',
+                          ? context.l10n.upgradeToCreate
+                          : context.l10n.createLobby,
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: requiresPremiumAction
@@ -454,6 +455,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           Expanded(
             child: Text(
               setupFreeHostingStatusText(
+                context.l10n,
                 isPremium: isPremium,
                 freeHostGamesRemaining: freeHostGamesRemaining,
               ),
@@ -484,13 +486,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (_isLoading) return;
 
     if (kIsWeb) {
-      _showSnack('Web version is player-only.');
+      _showSnack(context.l10n.webPlayerOnly);
       return;
     }
 
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      _showSnack('Enter your name first.');
+      _showSnack(context.l10n.enterNameFirst);
       return;
     }
 
@@ -556,17 +558,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
       final message = switch (error.requirement) {
-        PremiumSetupRequirement.players =>
-          'More than 4 players requires premium.',
-        PremiumSetupRequirement.rounds =>
-          'More than 6 rounds requires premium.',
-        PremiumSetupRequirement.category =>
-          'Choosing a category requires premium.',
+        PremiumSetupRequirement.players => context.l10n.morePlayersPremium,
+        PremiumSetupRequirement.rounds => context.l10n.moreRoundsPremium,
+        PremiumSetupRequirement.category => context.l10n.categoryPremium,
       };
       _showSnack(message);
       if (mounted) await _goPremium(entryPoint: 'setup_limit');
     } catch (e) {
-      _showSnack('Room could not be created: $e');
+      _showSnack(context.l10n.roomCreationFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -577,7 +576,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      _showSnack('Enter your name first.');
+      _showSnack(context.l10n.enterNameFirst);
       _nameFocusNode.requestFocus();
       return;
     }
@@ -588,9 +587,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     final code = _roomCodeController.text.trim().toUpperCase();
     if (code.length != GameConstants.roomCodeLength) {
-      _showSnack(
-        'Enter a ${GameConstants.roomCodeLength}-character room code.',
-      );
+      _showSnack(context.l10n.roomCodeLength(GameConstants.roomCodeLength));
       return;
     }
 
@@ -602,12 +599,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final deviceId = ref.read(deviceIdProvider);
       final room = await roomService.findRoomByCode(code);
       if (room == null) {
-        _showSnack('Room not found.');
+        _showSnack(context.l10n.roomNotFoundMessage);
         return;
       }
 
       if (!room.canJoinLobby) {
-        _showSnack('That table is already playing.');
+        _showSnack(context.l10n.tableAlreadyPlaying);
         return;
       }
 
@@ -628,7 +625,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
     } catch (e) {
-      _showSnack('Could not join: $e');
+      _showSnack(context.l10n.roomJoinFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -694,14 +691,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showHowToPlaySheet() {
     ref.read(audioServiceProvider).playClick();
     _showHomeSheet(
-      title: 'HOW TO PLAY',
+      title: context.l10n.howToPlay,
       icon: Icons.menu_book_rounded,
       child: Column(
         children: [
-          _sheetStep('1', 'Answer numerical party questions.'),
-          _sheetStep('2', 'All guesses land on the betting board.'),
-          _sheetStep('3', 'Bet chips on the closest guess without going over.'),
-          _sheetStep('4', 'Correct bets pay out. Most chips wins.'),
+          _sheetStep('1', context.l10n.howToPlayStepOne),
+          _sheetStep('2', context.l10n.howToPlayStepTwo),
+          _sheetStep('3', context.l10n.howToPlayStepThree),
+          _sheetStep('4', context.l10n.howToPlayStepFour),
         ],
       ),
     );
@@ -717,7 +714,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       child: StatefulBuilder(
         builder: (context, setModalState) {
           final isMuted = audioService.isMuted;
-          final languageCode = ref.watch(appLocaleProvider).languageCode;
+
           return Column(
             children: [
               Container(
@@ -839,34 +836,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ),
                       ),
                     ),
-                    DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: languageCode,
-                        dropdownColor: const Color(0xFF1E1E1E),
-                        iconEnabledColor: AppColors.brassLight,
-                        style: const TextStyle(
-                          color: AppColors.ivory,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        items: [
-                          DropdownMenuItem(
-                            value: 'en',
-                            child: Text(context.l10n.english),
+                    Consumer(
+                      builder: (context, ref, child) {
+                        final languageCode = ref
+                            .watch(appLocaleProvider)
+                            .languageCode;
+                        return DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: languageCode,
+                            dropdownColor: const Color(0xFF1E1E1E),
+                            iconEnabledColor: AppColors.brassLight,
+                            style: const TextStyle(
+                              color: AppColors.ivory,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                value: 'en',
+                                child: Text(context.l10n.english),
+                              ),
+                              DropdownMenuItem(
+                                value: 'tr',
+                                child: Text(context.l10n.turkish),
+                              ),
+                            ],
+                            onChanged: (language) {
+                              if (language != null) {
+                                ref
+                                    .read(appLocaleProvider.notifier)
+                                    .setLanguage(language);
+                              }
+                            },
                           ),
-                          DropdownMenuItem(
-                            value: 'tr',
-                            child: Text(context.l10n.turkish),
-                          ),
-                        ],
-                        onChanged: (language) {
-                          if (language != null) {
-                            ref
-                                .read(appLocaleProvider.notifier)
-                                .setLanguage(language);
-                          }
-                        },
-                      ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -883,6 +887,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     required IconData icon,
     required Widget child,
     ValueListenable<GameMode>? themeMode,
+    bool isSetup = false,
   }) {
     final sheet = showModalBottomSheet<void>(
       context: context,
@@ -892,7 +897,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       builder: (context) {
         Widget buildSurface(GameMode mode) {
           final isParty = mode == GameMode.party;
-          final isSetup = title == 'SETUP';
+
           final mediaQuery = MediaQuery.of(context);
           final setupHeight = min(
             780.0,
@@ -1312,7 +1317,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               SizedBox(width: compact ? 7 : 10),
               Expanded(
                 child: Text(
-                  'CATEGORY',
+                  context.l10n.category,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _homeTextStyle(
@@ -1536,7 +1541,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               if (!kIsWeb) ...[
                                 _dimIfGuide(
                                   child: _buildHeroActionButton(
-                                    label: 'CREATE LOBBY',
+                                    label: context.l10n.createLobby,
                                     icon: Icons.groups_rounded,
                                     isLoading: _isLoading,
                                     onPressed: _isLoading
@@ -1667,7 +1672,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         Expanded(child: _goldRule()),
         const SizedBox(width: 16),
         Text(
-          'PARTY QUIZ & BETTING GAME',
+          context.l10n.partyQuizBettingGame,
           style: _homeTextStyle(
             color: AppColors.brassLight,
             size: 17,
@@ -1709,7 +1714,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           const SizedBox(width: 10),
           Text(
-            'WEB PLAYER MODE',
+            context.l10n.webPlayerMode,
             style: _homeTextStyle(
               color: AppColors.ivory,
               size: 24,
@@ -1747,7 +1752,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
               const SizedBox(width: 8),
               Text(
-                _showQrJoinGuide ? 'ENTER YOUR NAME' : 'YOUR NAME',
+                _showQrJoinGuide
+                    ? context.l10n.enterYourName
+                    : context.l10n.yourName,
                 style: _homeTextStyle(
                   color: AppColors.ivory,
                   size: 27,
@@ -1813,8 +1820,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               decoration: InputDecoration(
                 filled: false,
                 hintText: _showQrJoinGuide
-                    ? 'Type your name to join'
-                    : 'Your name',
+                    ? context.l10n.typeNameToJoin
+                    : context.l10n.yourName,
                 hintStyle: _homeTextStyle(
                   color: AppColors.ivory.withValues(alpha: 0.6),
                   size: _showQrJoinGuide ? 22 : 25,
@@ -1938,7 +1945,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               const SizedBox(width: 18),
               Expanded(
                 child: Text(
-                  kIsWeb ? 'JOIN GAME' : 'JOIN LOBBY',
+                  kIsWeb ? context.l10n.joinGame : context.l10n.joinLobby,
                   style: _homeTextStyle(
                     color: AppColors.ivory,
                     size: 41,
@@ -2002,7 +2009,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           size: 30,
         ),
         label: isQrJoin
-            ? const Text('JOIN', style: TextStyle(fontWeight: FontWeight.w900))
+            ? Text(
+                context.l10n.join,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              )
             : const SizedBox.shrink(),
       ),
     );
@@ -2043,7 +2053,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         cursorColor: AppColors.brassLight,
         decoration: InputDecoration(
-          hintText: 'Room code',
+          hintText: context.l10n.roomCode,
           counterText: '',
           hintStyle: _homeTextStyle(
             color: AppColors.ivory.withValues(alpha: 0.46),
@@ -2089,7 +2099,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'GO PREMIUM',
+                        context.l10n.goPremium,
                         style: _homeTextStyle(
                           color: AppColors.ink,
                           size: 43,
@@ -2118,7 +2128,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       children: [
         Expanded(
           child: _bottomActionButton(
-            label: 'HOW TO PLAY',
+            label: context.l10n.howToPlay,
             icon: Icons.menu_book_rounded,
             onTap: _showHowToPlaySheet,
           ),

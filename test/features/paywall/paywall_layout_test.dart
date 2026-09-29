@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:witsgame/core/models/monetization_status.dart';
 import 'package:witsgame/core/providers/core_providers.dart';
 import 'package:witsgame/features/paywall/screens/paywall_screen.dart';
+import 'package:witsgame/l10n/l10n.dart';
 
 void main() {
   const sizes = <Size>[
@@ -72,7 +73,11 @@ Future<void> _pumpPaywall(
       ],
       child: MediaQuery(
         data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-        child: const MaterialApp(home: PaywallScreen(enableStartupWork: false)),
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: supportedAppLocales,
+          home: const PaywallScreen(enableStartupWork: false),
+        ),
       ),
     ),
   );

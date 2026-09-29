@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_colors.dart';
+import '../../l10n/l10n.dart';
 
 class WebPromoBanner extends StatelessWidget {
   const WebPromoBanner({super.key});
@@ -48,14 +49,10 @@ class WebPromoBanner extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.apple,
-                color: AppColors.brassLight,
-                size: 20,
-              ),
+              const Icon(Icons.apple, color: AppColors.brassLight, size: 20),
               const SizedBox(width: 8),
               Text(
-                'DOWNLOAD ON THE APP STORE',
+                context.l10n.downloadAppStore,
                 style: GoogleFonts.outfit(
                   color: AppColors.ivory,
                   fontSize: 14,
