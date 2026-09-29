@@ -2858,8 +2858,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _isBettingClosedError(Object error) {
     return error is BettingWindowClosedException ||
         (error is PostgrestException &&
-            error.code == '40001' &&
-            error.message.toLowerCase().contains('betting'));
+            isBettingWindowClosedPostgrestError(error));
   }
 
   void _recoverFromClosedBettingWindow() {
