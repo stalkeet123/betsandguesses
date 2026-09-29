@@ -2504,7 +2504,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         'state_version': settlement.stateVersion,
       });
     } catch (error, stackTrace) {
-      debugPrint('Atomic round settlement failed: $error\n$stackTrace');
+      if (error is! ClassicPhaseRaceException) {
+        debugPrint('Atomic round settlement failed: $error\n$stackTrace');
+      }
     }
 
     if (_canUseRef) {
