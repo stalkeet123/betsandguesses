@@ -1,0 +1,14 @@
+{
+  "@@locale": "en",
+  "settings": "SETTINGS",
+  "sound": "SOUND",
+  "on": "ON",
+  "off": "OFF",
+  "language": "LANGUAGE",
+  "english": "English",
+  "turkish": "Türkçe",
+  "roomNotFound": "ROOM NOT FOUND",
+  "backToHome": "BACK TO HOME",
+  "secureConnectionUnavailable": "Secure connection unavailable",
+  "checkConnectionAndRestart": "Check your connection and restart the app."
+}

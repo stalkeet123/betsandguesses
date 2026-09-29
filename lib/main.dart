@@ -13,6 +13,8 @@ import 'core/widgets/cached_asset_image.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/providers/core_providers.dart';
+import 'core/providers/locale_provider.dart';
+import 'l10n/l10n.dart';
 import 'core/services/analytics_service.dart';
 import 'core/services/game_trace_service.dart';
 
@@ -87,31 +89,38 @@ class _StartupFailureApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.wifi_off_rounded, size: 40),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Secure connection unavailable',
-                    style: Theme.of(context).textTheme.titleLarge,
-                    textAlign: TextAlign.center,
+      locale: const Locale('en'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: supportedAppLocales,
+      home: Builder(
+        builder: (context) {
+          return Scaffold(
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.wifi_off_rounded, size: 40),
+                      const SizedBox(height: 16),
+                      Text(
+                        context.l10n.secureConnectionUnavailable,
+                        style: Theme.of(context).textTheme.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        context.l10n.checkConnectionAndRestart,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Check your connection and restart the app.',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -209,6 +218,9 @@ class _TahminAppState extends ConsumerState<TahminApp>
       title: 'Bets & Guesses',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
+      locale: ref.watch(appLocaleProvider),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: supportedAppLocales,
       routerConfig: appRouter,
       builder: (context, child) {
         return GameTraceOverlay(

@@ -1,0 +1,14 @@
+{
+  "@@locale": "tr",
+  "settings": "AYARLAR",
+  "sound": "SES",
+  "on": "AÇIK",
+  "off": "KAPALI",
+  "language": "DİL",
+  "english": "English",
+  "turkish": "Türkçe",
+  "roomNotFound": "ODA BULUNAMADI",
+  "backToHome": "ANA SAYFAYA DÖN",
+  "secureConnectionUnavailable": "Güvenli bağlantı kullanılamıyor",
+  "checkConnectionAndRestart": "Bağlantınızı kontrol edip uygulamayı yeniden başlatın."
+}

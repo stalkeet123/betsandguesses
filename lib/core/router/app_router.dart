@@ -14,6 +14,7 @@ import '../../features/onboarding/screens/onboarding_screen.dart';
 import '../../features/paywall/screens/paywall_screen.dart';
 
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 
 /// Global route observer for stopping animations when screens are hidden
 final RouteObserver<ModalRoute<void>> routeObserver =
@@ -146,11 +147,11 @@ class _GameRouteGateState extends ConsumerState<_GameRouteGate> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('ROOM NOT FOUND'),
+              Text(context.l10n.roomNotFound),
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () => context.goNamed('home'),
-                child: const Text('BACK TO HOME'),
+                child: Text(context.l10n.backToHome),
               ),
             ],
           ),

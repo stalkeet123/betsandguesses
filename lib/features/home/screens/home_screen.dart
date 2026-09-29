@@ -19,6 +19,8 @@ import '../../../features/game/screens/debug_scene_editor_screen.dart';
 import '../../../features/party/theme/party_palette.dart';
 import '../../../features/room/providers/room_providers.dart';
 import '../widgets/party_setup_guide_card.dart';
+import '../../../core/providers/locale_provider.dart';
+import '../../../l10n/l10n.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final String? prefilledRoomCode;
@@ -710,11 +712,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final audioService = ref.read(audioServiceProvider);
 
     _showHomeSheet(
-      title: 'SETTINGS',
+      title: context.l10n.settings,
       icon: Icons.settings_rounded,
       child: StatefulBuilder(
         builder: (context, setModalState) {
           final isMuted = audioService.isMuted;
+          final languageCode = ref.watch(appLocaleProvider).languageCode;
           return Column(
             children: [
               Container(
@@ -766,7 +769,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     const SizedBox(width: 14),
                     Expanded(
                       child: Text(
-                        'SOUND',
+                        context.l10n.sound,
                         style: _homeTextStyle(
                           color: AppColors.ivory,
                           size: 26,
@@ -775,7 +778,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       ),
                     ),
                     Text(
-                      isMuted ? 'OFF' : 'ON',
+                      isMuted ? context.l10n.off : context.l10n.on,
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -794,6 +797,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         setModalState(() {});
                         if (mounted) setState(() {});
                       },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 76,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF1E1E1E),
+                      Color(0xFF121212),
+                      Color(0xFF080808),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: AppColors.brassLight.withValues(alpha: 0.34),
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.language_rounded,
+                      color: AppColors.brassLight,
+                      size: 27,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        context.l10n.language,
+                        style: _homeTextStyle(
+                          color: AppColors.ivory,
+                          size: 26,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: languageCode,
+                        dropdownColor: const Color(0xFF1E1E1E),
+                        iconEnabledColor: AppColors.brassLight,
+                        style: const TextStyle(
+                          color: AppColors.ivory,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        items: [
+                          DropdownMenuItem(
+                            value: 'en',
+                            child: Text(context.l10n.english),
+                          ),
+                          DropdownMenuItem(
+                            value: 'tr',
+                            child: Text(context.l10n.turkish),
+                          ),
+                        ],
+                        onChanged: (language) {
+                          if (language != null) {
+                            ref
+                                .read(appLocaleProvider.notifier)
+                                .setLanguage(language);
+                          }
+                        },
+                      ),
                     ),
                   ],
                 ),
@@ -2053,7 +2126,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         const SizedBox(width: 14),
         Expanded(
           child: _bottomActionButton(
-            label: 'SETTINGS',
+            label: context.l10n.settings,
             icon: Icons.settings_rounded,
             onTap: _showSettingsSheet,
           ),
