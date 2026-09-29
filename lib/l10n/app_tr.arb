@@ -28,7 +28,7 @@
   "moreRounds": "DAHA FAZLA TUR",
   "partyGuidePickBet": "SEÇ + FİŞ KOY",
   "goPremium": "PREMIUM'A GEÇ",
-  "partyGuidePlaceChipsDescription": "Fişlerin hem oyun hem de aldığın risk.",
+  "partyGuidePlaceChipsDescription": "Verdiğin oy kadar fişini de riske atarsın.",
   "@onboardingPage": {
     "placeholders": {
       "page": {}

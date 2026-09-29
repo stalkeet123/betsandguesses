@@ -136,13 +136,6 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
     return _purchaseDataLoaded && price != null && price.trim().isNotEmpty;
   }
 
-  String _purchasePriceLabel(AppLocalizations l10n, String packageIdentifier) {
-    if (!_purchaseDataLoaded) return l10n.loading;
-    return _isPackagePurchasable(packageIdentifier)
-        ? _packagePrices[packageIdentifier]!
-        : l10n.currentlyUnavailable;
-  }
-
   String _purchaseCtaLabel(
     AppLocalizations l10n,
     String action,
@@ -161,6 +154,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
       return;
     }
 
+    final l10n = context.l10n;
     setState(() => _busyPackageIdentifier = packageIdentifier);
 
     unawaited(
@@ -198,10 +192,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
     if (result.success) {
       if (result.isPremium) await _syncMonetizationNonFatally();
-      _showSuccessDialog(
-        context.l10n.purchaseSuccessful,
-        context.l10n.premiumNowActive,
-      );
+      _showSuccessDialog(l10n.purchaseSuccessful, l10n.premiumNowActive);
     } else {
       unawaited(
         ref
@@ -212,8 +203,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
             ),
       );
       _showErrorDialog(
-        context.l10n.purchaseFailed,
-        result.message ?? context.l10n.unablePurchase,
+        l10n.purchaseFailed,
+        result.message ?? l10n.unablePurchase,
       );
     }
   }
@@ -221,6 +212,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   Future<void> _restorePurchases() async {
     if (_busyPackageIdentifier != null || _isRestoring) return;
 
+    final l10n = context.l10n;
     setState(() => _isRestoring = true);
 
     await _ensureCanonicalRevenueCatIdentity();
@@ -237,14 +229,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
 
     if (result.success) {
       if (result.isPremium) await _syncMonetizationNonFatally();
-      _showSuccessDialog(
-        context.l10n.purchasesRestored,
-        context.l10n.premiumRestored,
-      );
+      _showSuccessDialog(l10n.purchasesRestored, l10n.premiumRestored);
     } else {
       _showErrorDialog(
-        context.l10n.restoreFailed,
-        result.message ?? context.l10n.noPurchaseFound,
+        l10n.restoreFailed,
+        result.message ?? l10n.noPurchaseFound,
       );
     }
   }
@@ -619,11 +608,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
   }
 
   Future<void> _launchURL(String urlString) async {
+    final errorText = context.l10n.couldNotOpenLink;
     final url = Uri.parse(urlString);
     try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } catch (e) {
-      _showSnack(context.l10n.couldNotOpenLink);
+      _showSnack(errorText);
     }
   }
 

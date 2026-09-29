@@ -496,6 +496,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
 
+    final l10n = context.l10n;
     ref.read(audioServiceProvider).playClick();
     setState(() => _isLoading = true);
     ref.read(playerNameProvider.notifier).setName(name);
@@ -552,20 +553,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } on FreeHostLimitReachedException {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
-      _showSnack("You've used your 3 free hosted games.");
+      _showSnack(l10n.freeGamesUsed);
       if (mounted) await _goPremium(entryPoint: 'host_limit');
     } on PremiumSetupRequiredException catch (error) {
       ref.invalidate(premiumStatusProvider);
       ref.invalidate(monetizationStatusProvider);
       final message = switch (error.requirement) {
-        PremiumSetupRequirement.players => context.l10n.morePlayersPremium,
-        PremiumSetupRequirement.rounds => context.l10n.moreRoundsPremium,
-        PremiumSetupRequirement.category => context.l10n.categoryPremium,
+        PremiumSetupRequirement.players => l10n.morePlayersPremium,
+        PremiumSetupRequirement.rounds => l10n.moreRoundsPremium,
+        PremiumSetupRequirement.category => l10n.categoryPremium,
       };
       _showSnack(message);
       if (mounted) await _goPremium(entryPoint: 'setup_limit');
     } catch (e) {
-      _showSnack(context.l10n.roomCreationFailed(e.toString()));
+      _showSnack(l10n.roomCreationFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -591,6 +592,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
 
+    final l10n = context.l10n;
     ref.read(audioServiceProvider).playClick();
     setState(() => _isLoading = true);
     try {
@@ -599,12 +601,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final deviceId = ref.read(deviceIdProvider);
       final room = await roomService.findRoomByCode(code);
       if (room == null) {
-        _showSnack(context.l10n.roomNotFoundMessage);
+        _showSnack(l10n.roomNotFoundMessage);
         return;
       }
 
       if (!room.canJoinLobby) {
-        _showSnack(context.l10n.tableAlreadyPlaying);
+        _showSnack(l10n.tableAlreadyPlaying);
         return;
       }
 
@@ -625,7 +627,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         context.goNamed('lobby', pathParameters: {'roomCode': room.code});
       }
     } catch (e) {
-      _showSnack(context.l10n.roomJoinFailed(e.toString()));
+      _showSnack(l10n.roomJoinFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
