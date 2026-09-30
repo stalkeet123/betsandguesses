@@ -292,8 +292,8 @@ class GameService {
     if (boundaries.length < GameConstants.maxGuessSlots) return null;
 
     if (correctAnswer < boundaries[0]) return 0;
-    if (correctAnswer < boundaries[1]) return 1;
-    if (correctAnswer <= boundaries[2]) return 2;
+    if (correctAnswer <= boundaries[1]) return 1;
+    if (correctAnswer < boundaries[2]) return 2;
     if (correctAnswer <= boundaries[3]) return 3;
     return 4;
   }
