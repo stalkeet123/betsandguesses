@@ -147,5 +147,144 @@
   "categoryPremium": "Choosing a category requires premium.",
   "freeGamesUsed": "You've used your 3 free hosted games.",
   "category": "CATEGORY",
-  "typeNameToJoin": "Type your name to join"
+  "typeNameToJoin": "Type your name to join",
+  "classicLobby": "CLASSIC LOBBY",
+  "@gameStartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "roomCodeCopied": "Room code copied.",
+  "finalScore": "FINAL SCORE",
+  "waitingForPlayers": "Waiting for players...",
+  "returningLobby": "RETURNING TO LOBBY...",
+  "profit": "PROFIT",
+  "host": "HOST",
+  "gameStartFailed": "Game could not start: {error}",
+  "profitsAppear": "Profits will appear here.",
+  "ready": "READY",
+  "@freeLimit": {
+    "placeholders": {
+      "max": {},
+      "count": {}
+    }
+  },
+  "gameOver": "GAME OVER!",
+  "everyone": "EVERYONE",
+  "player": "PLAYER",
+  "leaveLobby": "Leave lobby",
+  "partyLobby": "PARTY LOBBY",
+  "coWinners": "CO-WINNERS",
+  "startGame": "START GAME",
+  "finalProfit": "FINAL PROFIT",
+  "returnLobbyFailed": "Could not return to the lobby. Please try again.",
+  "copyInviteLink": "COPY INVITE LINK",
+  "kickPlayer": "Kick player",
+  "markReady": "MARK READY",
+  "backToLobby": "BACK TO LOBBY",
+  "invitationLinkCopied": "Invitation link copied.",
+  "freeLimit": "Free limit: {max} players ({count} in lobby)",
+  "notReady": "NOT READY",
+  "noResultsYet": "No results yet",
+  "tieGame": "TIE GAME",
+  "removedFromLobby": "You have been removed from the lobby.",
+  "finalLeaderboard": "Final leaderboard",
+  "winner": "WINNER",
+  "upgradeToPlay": "UPGRADE TO PLAY",
+  "shareInvite": "SHARE TO INVITE",
+  "scoresAppear": "Scores will appear here.",
+  "roundProgress": "Round {current}/{max}",
+  "@roundProgress": {
+    "placeholders": {
+      "current": {},
+      "max": {}
+    }
+  },
+  "question": "QUESTION",
+  "yourGuess": "YOUR GUESS",
+  "enterGuess": "ENTER YOUR GUESS",
+  "waitingQuestion": "WAITING FOR QUESTION",
+  "locked": "LOCKED",
+  "loadingQuestion": "LOADING QUESTION",
+  "submitGuess": "SUBMIT GUESS",
+  "sending": "SENDING...",
+  "guessSent": "GUESS SENT",
+  "leaderboard": "LEADERBOARD",
+  "bank": "BANK",
+  "theRoom": "THE ROOM",
+  "chips": "CHIPS",
+  "selectChip": "SELECT A CHIP",
+  "tapBetArea": "TAP A BET AREA",
+  "chipsLocked": "CHIPS LOCKED",
+  "tapChipRecall": "TAP CHIP TO RECALL",
+  "bettingClosed": "Betting is closed!",
+  "noChipsLeft": "You have 0 chips left. You are eliminated from betting!",
+  "betLimit": "You reached your betting limit of {limit} chips!",
+  "@betLimit": {
+    "placeholders": {
+      "limit": {}
+    }
+  },
+  "roundWinner": "ROUND WINNER",
+  "noWinningGuess": "No winning guess",
+  "roundOver": "ROUND OVER!",
+  "roundResults": "Round {round} results",
+  "@roundResults": {
+    "placeholders": {
+      "round": {}
+    }
+  },
+  "finalResults": "FINAL RESULTS",
+  "nextRound": "NEXT ROUND",
+  "waitingHost": "WAITING FOR HOST",
+  "answer": "ANSWER",
+  "larger": "LARGER",
+  "sweetSpot": "SWEET SPOT",
+  "smaller": "SMALLER",
+  "betweenInclusive": "BETWEEN\n{low} & {high}\n(INCLUSIVE)",
+  "@betweenInclusive": {
+    "placeholders": {
+      "low": {},
+      "high": {}
+    }
+  },
+  "result": "RESULT",
+  "onTable": "ON TABLE",
+  "waiting": "Waiting",
+  "playersCount": "{count} PLAYERS",
+  "@playersCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "round": "ROUND",
+  "nextQuestion": "NEXT QUESTION",
+  "roundFraction": "{current} / {max}",
+  "waitingScores": "Waiting for scores",
+  "guessValue": "Guess {value}",
+  "youWon": "YOU WON +{amount}",
+  "youLost": "YOU LOST -{amount}",
+  "breakEven": "BREAK EVEN",
+  "lockingWinningRange": "LOCKING WINNING RANGE",
+  "@roundFraction": {
+    "placeholders": {
+      "current": {},
+      "max": {}
+    }
+  },
+  "@guessValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "@youWon": {
+    "placeholders": {
+      "amount": {}
+    }
+  },
+  "@youLost": {
+    "placeholders": {
+      "amount": {}
+    }
+  }
 }

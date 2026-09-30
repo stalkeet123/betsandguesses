@@ -15,6 +15,7 @@ import '../../../core/services/analytics_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/widgets/web_promo_banner.dart';
+import '../../../l10n/l10n.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/models/classic_snapshot.dart';
 import '../../../features/game/providers/game_providers.dart';
@@ -161,9 +162,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 if (mounted) {
                   context.goNamed('home');
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('You have been removed from the lobby.'),
-                    ),
+                    SnackBar(content: Text(context.l10n.removedFromLobby)),
                   );
                 }
               }
@@ -629,9 +628,9 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Game could not start: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.gameStartFailed(e.toString()))),
+        );
       }
     } finally {
       if (mounted) setState(() => _isStarting = false);
@@ -889,8 +888,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               flex: 5,
               child: Text(
                 ref.read(currentRoomProvider)?.gameMode == GameMode.party
-                    ? 'PARTY LOBBY'
-                    : 'CLASSIC LOBBY',
+                    ? context.l10n.partyLobby
+                    : context.l10n.classicLobby,
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 style: TextStyle(
@@ -916,7 +915,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               width: 44,
               height: 44,
               child: IconButton(
-                tooltip: 'Leave lobby',
+                tooltip: context.l10n.leaveLobby,
                 onPressed: _leaveLobby,
                 icon: const Icon(Icons.exit_to_app_rounded),
                 color: AppColors.brassLight,
@@ -948,7 +947,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
-          onTap: () => _copyText(widget.roomCode, 'Room code copied.'),
+          onTap: () => _copyText(widget.roomCode, context.l10n.roomCodeCopied),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -1068,7 +1067,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               _buildSpark(),
               const SizedBox(width: 10),
               Text(
-                'SHARE TO INVITE',
+                context.l10n.shareInvite,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: AppColors.ivory,
                   fontSize: 18,
@@ -1094,11 +1093,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             child: ElevatedButton.icon(
               onPressed: () => _copyText(
                 qrData,
-                'Invitation link copied.',
+                context.l10n.invitationLinkCopied,
                 trackInvitationLink: true,
               ),
               icon: const Icon(Icons.link_rounded, size: 18),
-              label: const Text('COPY INVITE LINK'),
+              label: Text(context.l10n.copyInviteLink),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.brass,
                 foregroundColor: AppColors.ink,
@@ -1150,8 +1149,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   width: 1.1,
                 ),
               ),
-              child: const Text(
-                'PLAYERS',
+              child: Text(
+                context.l10n.players,
                 style: TextStyle(
                   fontFamily: 'RehnCondensed',
                   color: AppColors.brassLight,
@@ -1168,7 +1167,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
             child: players.isEmpty
                 ? Center(
                     child: Text(
-                      'Waiting for players...',
+                      context.l10n.waitingForPlayers,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -1265,7 +1264,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           const SizedBox(width: 10),
           if (isHost && !player.isHost) ...[
             IconButton(
-              tooltip: 'Kick player',
+              tooltip: context.l10n.kickPlayer,
               icon: const Icon(
                 Icons.remove_circle_outline_rounded,
                 color: AppColors.neonRed,
@@ -1301,8 +1300,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         ? (exceedsLimit ? !_isStarting : (_canStart && !_isStarting))
         : currentPlayer != null;
     final primaryLabel = isHost
-        ? (exceedsLimit ? 'UPGRADE TO PLAY' : 'START GAME')
-        : (isPlayerReady ? 'READY' : 'MARK READY');
+        ? (exceedsLimit ? context.l10n.upgradeToPlay : context.l10n.startGame)
+        : (isPlayerReady ? context.l10n.ready : context.l10n.markReady);
     final primaryIcon = isHost
         ? (exceedsLimit
               ? Icons.workspace_premium_rounded
@@ -1337,7 +1336,10 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      'Free limit: ${GameConstants.freeMaxPlayers} players (${_activePlayers.length} in lobby)',
+                      context.l10n.freeLimit(
+                        GameConstants.freeMaxPlayers,
+                        _activePlayers.length,
+                      ),
                       style: const TextStyle(
                         color: AppColors.brassLight,
                         fontSize: 12,
@@ -1449,7 +1451,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ),
           const SizedBox(width: 6),
           Text(
-            isReady ? 'READY' : 'NOT READY',
+            isReady ? context.l10n.ready : context.l10n.notReady,
             style: TextStyle(
               color: AppColors.ivory.withValues(alpha: isReady ? 0.98 : 0.86),
               fontSize: 12,
@@ -1473,11 +1475,11 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           width: 1,
         ),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'HOST',
+            context.l10n.host,
             style: TextStyle(
               color: AppColors.brassLight,
               fontWeight: FontWeight.w900,

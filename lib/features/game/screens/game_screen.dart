@@ -18,6 +18,7 @@ import '../../../core/services/game_trace_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/adaptive_question_text.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../l10n/l10n.dart';
 import '../../../features/game/models/bet_model.dart';
 import '../../../features/game/models/guess_model.dart';
 import '../../../features/game/models/question_model.dart';
@@ -3772,7 +3773,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
         Expanded(
           child: _InfoPill(
             icon: Icons.groups_rounded,
-            label: 'Round ${gameState.currentRound}/${gameState.maxRounds}',
+            label: isParty
+                ? 'Round ${gameState.currentRound}/${gameState.maxRounds}'
+                : context.l10n.roundProgress(
+                    gameState.currentRound,
+                    gameState.maxRounds,
+                  ),
             isParty: isParty,
           ),
         ),
@@ -3866,7 +3872,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   child: Text(
                     ref.read(currentRoomProvider)?.gameMode == GameMode.party
                         ? 'PARTY CHALLENGE'
-                        : 'QUESTION',
+                        : context.l10n.question,
                     maxLines: 1,
                     style: GoogleFonts.outfit(
                       color: AppColors.felt,
@@ -4003,7 +4009,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
           const SizedBox(height: 10),
           Expanded(
             child: gameState.currentQuestion == null
-                ? const _QuestionLoadingText(color: PartyPalette.blueMuted)
+                ? const _QuestionLoadingText(
+                    color: PartyPalette.blueMuted,
+                    isParty: true,
+                  )
                 : AdaptiveQuestionText(
                     text: _partyQuestionForViewer(
                       text: gameState.currentQuestion!.getText(locale: 'en'),
@@ -4039,6 +4048,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final isChoice = challenge?.isChoice == true;
     final isAttempt = challenge?.isAttempt == true;
     final isPoll = challenge?.isPoll == true || challenge?.isShowdown == true;
+    final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
     final answerText = answer == null
         ? '--'
         : isPoll
@@ -4057,9 +4067,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
         : AppColors.brassLight;
     final banner = resultSettled
         ? (netProfit > 0
-              ? 'YOU WON +$netProfit'
-              : (netProfit < 0 ? 'YOU LOST -${netProfit.abs()}' : 'BREAK EVEN'))
-        : 'LOCKING WINNING RANGE';
+              ? (isParty
+                    ? 'YOU WON +$netProfit'
+                    : context.l10n.youWon(netProfit))
+              : (netProfit < 0
+                    ? (isParty
+                          ? 'YOU LOST -${netProfit.abs()}'
+                          : context.l10n.youLost(netProfit.abs()))
+                    : (isParty ? 'BREAK EVEN' : context.l10n.breakEven)))
+        : (isParty
+              ? 'LOCKING WINNING RANGE'
+              : context.l10n.lockingWinningRange);
     final headlineColor = didWin && resultSettled
         ? AppColors.mahoganyDark
         : Colors.white;
@@ -4122,7 +4140,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
           child: Column(
             children: [
               Text(
-                isBinary || isChoice || isAttempt ? 'RESULT' : 'ANSWER',
+                isBinary || isChoice || isAttempt
+                    ? (isParty ? 'RESULT' : context.l10n.result)
+                    : (isParty ? 'ANSWER' : context.l10n.answer),
                 maxLines: 1,
                 style: GoogleFonts.outfit(
                   color: didWin && resultSettled
@@ -4292,12 +4312,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
         final canEdit = _canCurrentPlayerEditBets(gameState);
         final pickerTitle = !canEdit
-            ? 'CHIPS LOCKED'
+            ? (isParty ? 'CHIPS LOCKED' : context.l10n.chipsLocked)
             : selectedBet != null
-            ? 'TAP CHIP TO RECALL'
+            ? (isParty ? 'TAP CHIP TO RECALL' : context.l10n.tapChipRecall)
             : _selectedChipValue == null
-            ? 'SELECT A CHIP'
-            : 'TAP A BET AREA';
+            ? (isParty ? 'SELECT A CHIP' : context.l10n.selectChip)
+            : (isParty ? 'TAP A BET AREA' : context.l10n.tapBetArea);
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
@@ -4396,10 +4416,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 height: 26,
                 child: Row(
                   children: [
-                    Expanded(child: _buildChipStatPill('BANK', bankLabel)),
+                    Expanded(
+                      child: _buildChipStatPill(
+                        isParty ? 'BANK' : context.l10n.bank,
+                        bankLabel,
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildChipStatPill('ON TABLE', '$totalOnTable'),
+                      child: _buildChipStatPill(
+                        isParty ? 'ON TABLE' : context.l10n.onTable,
+                        '$totalOnTable',
+                      ),
                     ),
                   ],
                 ),
@@ -4578,7 +4606,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                     const SizedBox(height: 22),
                     Text(
-                      'ROUND',
+                      context.l10n.round,
                       style: GoogleFonts.outfit(
                         color: AppColors.ivory.withValues(alpha: 0.72),
                         fontSize: 15,
@@ -4616,7 +4644,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         ),
                         const SizedBox(width: 14),
                         Text(
-                          'NEXT QUESTION',
+                          context.l10n.nextQuestion,
                           style: GoogleFonts.outfit(
                             color: AppColors.ivory,
                             fontSize: 18,
@@ -4635,7 +4663,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '${gameState.currentRound} / ${gameState.maxRounds}',
+                      context.l10n.roundFraction(
+                        gameState.currentRound,
+                        gameState.maxRounds,
+                      ),
                       style: GoogleFonts.outfit(
                         color: AppColors.brassLight.withValues(alpha: 0.72),
                         fontSize: 13,
@@ -4918,7 +4949,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(width: 9),
               Text(
-                'QUESTION',
+                context.l10n.question,
                 style: GoogleFonts.outfit(
                   color: AppColors.felt,
                   fontSize: 15,
@@ -5010,7 +5041,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
         const SizedBox(width: 10),
         Text(
-          'YOUR GUESS',
+          context.l10n.yourGuess,
           style: GoogleFonts.outfit(
             color: AppColors.brassLight,
             fontSize: 15,
@@ -5121,7 +5152,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Widget _buildRoundResultHero(GameState gameState, Guess? winningGuess) {
     final answer = gameState.correctAnswer;
-    final winnerName = winningGuess?.playerName ?? 'Player';
+    final winnerName = winningGuess?.playerName ?? context.l10n.player;
 
     return Container(
       width: double.infinity,
@@ -5172,13 +5203,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 width: 1.2,
               ),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.star_rounded, color: AppColors.ink, size: 17),
                 SizedBox(width: 7),
                 Text(
-                  'ROUND WINNER',
+                  context.l10n.roundWinner,
                   style: TextStyle(
                     color: AppColors.ink,
                     fontSize: 16,
@@ -5196,7 +5227,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                winningGuess == null ? 'No winning guess' : winnerName,
+                winningGuess == null ? context.l10n.noWinningGuess : winnerName,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -5218,8 +5249,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
               const SizedBox(height: 8),
               Text(
                 winningGuess == null
-                    ? 'Waiting for scores'
-                    : 'Guess ${_formatGuessInput('${winningGuess.value}')}',
+                    ? context.l10n.waitingScores
+                    : context.l10n.guessValue(
+                        _formatGuessInput('${winningGuess.value}'),
+                      ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -5234,7 +5267,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               Row(
                 children: [
                   Text(
-                    'ANSWER',
+                    context.l10n.answer,
                     style: GoogleFonts.outfit(
                       color: AppColors.ivory.withValues(alpha: 0.78),
                       fontSize: 11,
@@ -5305,8 +5338,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
             const SizedBox(width: 8),
             Text(
               gameState.currentRound >= gameState.maxRounds
-                  ? 'GAME OVER!'
-                  : 'ROUND OVER!',
+                  ? context.l10n.gameOver
+                  : context.l10n.roundOver,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'RehnCondensed',
@@ -5342,7 +5375,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
         const SizedBox(height: 3),
         Text(
-          'Round ${gameState.currentRound} results',
+          context.l10n.roundResults(gameState.currentRound),
           style: GoogleFonts.outfit(
             color: AppColors.ivory,
             fontSize: 14,
@@ -5398,7 +5431,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(width: 8),
               Text(
-                'LEADERBOARD',
+                context.l10n.leaderboard,
                 style: GoogleFonts.outfit(
                   color: AppColors.ivory,
                   fontSize: 18,
@@ -5409,7 +5442,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const Spacer(),
               Text(
-                '${entries.length} PLAYERS',
+                context.l10n.playersCount(entries.length),
                 style: GoogleFonts.outfit(
                   color: AppColors.brassLight,
                   fontSize: 11,
@@ -5425,7 +5458,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             child: entries.isEmpty
                 ? Center(
                     child: Text(
-                      'Scores will appear here.',
+                      context.l10n.scoresAppear,
                       style: GoogleFonts.outfit(
                         color: AppColors.ivory.withValues(alpha: 0.74),
                       ),
@@ -5570,8 +5603,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
             child: Center(
               child: Text(
                 isHost
-                    ? (isLastRound ? 'FINAL RESULTS' : 'NEXT ROUND')
-                    : 'WAITING FOR HOST',
+                    ? (isLastRound
+                          ? context.l10n.finalResults
+                          : context.l10n.nextRound)
+                    : context.l10n.waitingHost,
                 style: GoogleFonts.outfit(
                   color: isHost ? AppColors.ink : AppColors.ivory,
                   fontSize: 20,
@@ -5594,9 +5629,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
       gameState.currentQuestion == null,
       _guessInput.isEmpty,
     )) {
-      (true, _, _) => 'LOCKED',
-      (_, true, _) => 'WAITING FOR QUESTION',
-      (_, _, true) => 'ENTER YOUR GUESS',
+      (true, _, _) => context.l10n.locked,
+      (_, true, _) => context.l10n.waitingQuestion,
+      (_, _, true) => context.l10n.enterGuess,
       _ => _formatGuessInput(_guessInput),
     };
 
@@ -5962,10 +5997,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             fit: BoxFit.scaleDown,
                             child: Text(
                               hasSubmitted
-                                  ? 'GUESS SENT'
+                                  ? context.l10n.guessSent
                                   : _isSubmittingGuess
-                                  ? 'SENDING...'
-                                  : 'SUBMIT GUESS',
+                                  ? context.l10n.sending
+                                  : context.l10n.submitGuess,
                               maxLines: 1,
                               style: const TextStyle(
                                 fontFamily: 'RehnCondensed',
@@ -6040,7 +6075,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(width: 8),
               Text(
-                'LEADERBOARD',
+                context.l10n.leaderboard,
                 style: GoogleFonts.outfit(
                   color: AppColors.ivory.withValues(alpha: 0.78),
                   fontSize: 11,
@@ -6051,7 +6086,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
               const SizedBox(width: 7),
               Text(
-                'BANK',
+                context.l10n.bank,
                 style: GoogleFonts.outfit(
                   color: AppColors.brassLight.withValues(alpha: 0.72),
                   fontSize: 9,
@@ -6076,7 +6111,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 if (_players.isEmpty) {
                   return Center(
                     child: Text(
-                      'Waiting',
+                      context.l10n.waiting,
                       style: Theme.of(context).textTheme.labelMedium,
                     ),
                   );
@@ -6473,7 +6508,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 return;
                               }
                             }
-                            _showGameMessage('Betting is closed!');
+                            _showGameMessage(
+                              ref.read(currentRoomProvider)?.gameMode ==
+                                      GameMode.party
+                                  ? 'Betting is closed!'
+                                  : context.l10n.bettingClosed,
+                            );
                             return;
                           }
                           _handleBetSlotTap(
@@ -6562,6 +6602,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (_isBetOperationInFlight || _isPartyCommandInFlight) return;
 
     final gameState = ref.read(gameStateProvider);
+    final isParty = ref.read(currentRoomProvider)?.gameMode == GameMode.party;
     if (_canCurrentPerformerChoose(gameState)) {
       final roomId = _partySnapshot?.room.id;
       if (roomId == null) return;
@@ -6600,10 +6641,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if (available <= 0) {
         if (limit <= 0) {
           _showGameMessage(
-            'You have 0 chips left. You are eliminated from betting!',
+            isParty
+                ? 'You have 0 chips left. You are eliminated from betting!'
+                : context.l10n.noChipsLeft,
           );
         } else {
-          _showGameMessage('You reached your betting limit of $limit chips!');
+          _showGameMessage(
+            isParty
+                ? 'You reached your betting limit of $limit chips!'
+                : context.l10n.betLimit(limit),
+          );
         }
         return;
       }
@@ -7326,6 +7373,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (ref.read(currentRoomProvider)?.gameMode == GameMode.party) {
       return _buildPartySlotTitle(slot, boundaries);
     }
+    final l10n = context.l10n;
+    final title = switch (slot.index) {
+      4 => l10n.larger,
+      2 => l10n.sweetSpot,
+      0 => l10n.smaller,
+      _ => slot.title,
+    };
     final isSweetSpot = slot.isSweetSpot;
     final textColor = isSweetSpot ? AppColors.mahoganyDark : Colors.white;
     final strokeColor = isSweetSpot ? AppColors.brassLight : AppColors.feltDark;
@@ -7343,9 +7397,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (slot.title.isNotEmpty)
+                  if (title.isNotEmpty)
                     Text(
-                      slot.title,
+                      title,
                       maxLines: 1,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.rye(
@@ -7363,7 +7417,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   if (slot.index == 1 && boundaries.length >= 2)
                     Text(
-                      'BETWEEN\n${boundaries[0]} & ${boundaries[1]}\n(INCLUSIVE)',
+                      l10n.betweenInclusive(boundaries[0], boundaries[1]),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
                         color: AppColors.ivory.withValues(alpha: 0.35),
@@ -7375,7 +7429,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   if (slot.index == 3 && boundaries.length >= 4)
                     Text(
-                      'BETWEEN\n${boundaries[2]} & ${boundaries[3]}\n(INCLUSIVE)',
+                      l10n.betweenInclusive(boundaries[2], boundaries[3]),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
                         color: AppColors.ivory.withValues(alpha: 0.35),
@@ -7390,9 +7444,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (slot.title.isNotEmpty)
+                  if (title.isNotEmpty)
                     Text(
-                      slot.title,
+                      title,
                       maxLines: 1,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.rye(
@@ -7421,7 +7475,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   if (slot.index == 1 && boundaries.length >= 2)
                     Text(
-                      'BETWEEN\n${boundaries[0]} & ${boundaries[1]}\n(INCLUSIVE)',
+                      l10n.betweenInclusive(boundaries[0], boundaries[1]),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
                         color: AppColors.ivory.withValues(alpha: 0.35),
@@ -7433,7 +7487,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   if (slot.index == 3 && boundaries.length >= 4)
                     Text(
-                      'BETWEEN\n${boundaries[2]} & ${boundaries[3]}\n(INCLUSIVE)',
+                      l10n.betweenInclusive(boundaries[2], boundaries[3]),
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(
                         color: AppColors.ivory.withValues(alpha: 0.35),
@@ -8968,8 +9022,9 @@ class _LeaderboardEntry {
 
 class _QuestionLoadingText extends StatelessWidget {
   final Color color;
+  final bool isParty;
 
-  const _QuestionLoadingText({required this.color});
+  const _QuestionLoadingText({required this.color, this.isParty = false});
 
   @override
   Widget build(BuildContext context) {
@@ -8987,7 +9042,7 @@ class _QuestionLoadingText extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'LOADING QUESTION',
+            isParty ? 'LOADING QUESTION' : context.l10n.loadingQuestion,
             textAlign: TextAlign.center,
             style: GoogleFonts.outfit(
               color: color.withValues(alpha: 0.72),

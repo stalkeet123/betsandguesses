@@ -147,5 +147,144 @@
   "categoryPremium": "Kategori seçmek için Premium gerekir.",
   "freeGamesUsed": "3 ücretsiz oyun kurma hakkını kullandın.",
   "category": "KATEGORİ",
-  "typeNameToJoin": "Katılmak için adını yaz"
+  "typeNameToJoin": "Katılmak için adını yaz",
+  "classicLobby": "CLASSIC ODASI",
+  "@gameStartFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "roomCodeCopied": "Oda kodu kopyalandı.",
+  "finalScore": "FİNAL PUANI",
+  "waitingForPlayers": "Oyuncular bekleniyor...",
+  "returningLobby": "ODAYA DÖNÜLÜYOR...",
+  "profit": "FİŞ KAZANCI",
+  "host": "KURUCU",
+  "gameStartFailed": "Oyun başlatılamadı: {error}",
+  "profitsAppear": "Fiş kazançları burada görünecek.",
+  "ready": "HAZIR",
+  "@freeLimit": {
+    "placeholders": {
+      "max": {},
+      "count": {}
+    }
+  },
+  "gameOver": "OYUN BİTTİ!",
+  "everyone": "HERKES",
+  "player": "OYUNCU",
+  "leaveLobby": "Odadan ayrıl",
+  "partyLobby": "PARTY ODASI",
+  "coWinners": "ORTAK KAZANANLAR",
+  "startGame": "OYUNU BAŞLAT",
+  "finalProfit": "FİŞ KAZANCI",
+  "returnLobbyFailed": "Odaya dönülemedi. Tekrar dene.",
+  "copyInviteLink": "DAVET LİNKİNİ KOPYALA",
+  "kickPlayer": "Oyuncuyu çıkar",
+  "markReady": "HAZIRIM",
+  "backToLobby": "ODAYA DÖN",
+  "invitationLinkCopied": "Davet bağlantısı kopyalandı.",
+  "freeLimit": "Ücretsiz sınır: {max} oyuncu (odada {count})",
+  "notReady": "HAZIR DEĞİL",
+  "noResultsYet": "Henüz sonuç yok",
+  "tieGame": "BERABERE",
+  "removedFromLobby": "Odadan çıkarıldın.",
+  "finalLeaderboard": "Final sıralaması",
+  "winner": "KAZANAN",
+  "upgradeToPlay": "PREMIUM'A GEÇ",
+  "shareInvite": "DAVET İÇİN PAYLAŞ",
+  "scoresAppear": "Puanlar burada görünecek.",
+  "roundProgress": "Tur {current}/{max}",
+  "@roundProgress": {
+    "placeholders": {
+      "current": {},
+      "max": {}
+    }
+  },
+  "question": "SORU",
+  "yourGuess": "TAHMİNİN",
+  "enterGuess": "TAHMİNİNİ GİR",
+  "waitingQuestion": "SORU BEKLENİYOR",
+  "locked": "KİLİTLİ",
+  "loadingQuestion": "SORU YÜKLENİYOR",
+  "submitGuess": "TAHMİNİ GÖNDER",
+  "sending": "GÖNDERİLİYOR...",
+  "guessSent": "TAHMİN GÖNDERİLDİ",
+  "leaderboard": "SIRALAMA",
+  "bank": "FİŞLER",
+  "theRoom": "ODA",
+  "chips": "FİŞLER",
+  "selectChip": "BİR FİŞ SEÇ",
+  "tapBetArea": "FİŞ KOYACAĞIN ALANA DOKUN",
+  "chipsLocked": "FİŞLER KİLİTLENDİ",
+  "tapChipRecall": "GERİ ALMAK İÇİN FİŞE DOKUN",
+  "bettingClosed": "Fiş koyma süresi bitti!",
+  "noChipsLeft": "Hiç fişin kalmadı. Bu tur artık fiş koyamazsın!",
+  "betLimit": "{limit} fişlik limite ulaştın!",
+  "@betLimit": {
+    "placeholders": {
+      "limit": {}
+    }
+  },
+  "roundWinner": "TURUN KAZANANI",
+  "noWinningGuess": "Kazanan tahmin yok",
+  "roundOver": "TUR BİTTİ!",
+  "roundResults": "{round}. tur sonuçları",
+  "@roundResults": {
+    "placeholders": {
+      "round": {}
+    }
+  },
+  "finalResults": "SONUÇLAR",
+  "nextRound": "SONRAKİ TUR",
+  "waitingHost": "KURUCU BEKLENİYOR",
+  "answer": "CEVAP",
+  "larger": "DAHA BÜYÜK",
+  "sweetSpot": "TAM İSABET",
+  "smaller": "DAHA KÜÇÜK",
+  "betweenInclusive": "{low} - {high}\n(DAHİL)",
+  "@betweenInclusive": {
+    "placeholders": {
+      "low": {},
+      "high": {}
+    }
+  },
+  "result": "SONUÇ",
+  "onTable": "MASADA",
+  "waiting": "Bekleniyor",
+  "playersCount": "{count} OYUNCU",
+  "@playersCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "round": "TUR",
+  "nextQuestion": "SONRAKİ SORU",
+  "roundFraction": "{current} / {max}",
+  "waitingScores": "Puanlar bekleniyor",
+  "guessValue": "Tahmin {value}",
+  "youWon": "+{amount} KAZANDIN",
+  "youLost": "-{amount} KAYBETTİN",
+  "breakEven": "BAŞA BAŞ",
+  "lockingWinningRange": "KAZANAN ARALIK KİLİTLENİYOR",
+  "@roundFraction": {
+    "placeholders": {
+      "current": {},
+      "max": {}
+    }
+  },
+  "@guessValue": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "@youWon": {
+    "placeholders": {
+      "amount": {}
+    }
+  },
+  "@youLost": {
+    "placeholders": {
+      "amount": {}
+    }
+  }
 }

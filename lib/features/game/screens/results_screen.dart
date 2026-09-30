@@ -7,6 +7,7 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../l10n/l10n.dart';
 import '../../../features/game/providers/game_providers.dart';
 import '../../../features/player/models/player_model.dart';
 
@@ -156,11 +157,9 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     } catch (error, stackTrace) {
       debugPrint('Failed to return room to lobby: $error\n$stackTrace');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not return to the lobby. Please try again.'),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(context.l10n.returnLobbyFailed)));
       }
     } finally {
       if (mounted) setState(() => _isReturningToLobby = false);
@@ -312,7 +311,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              'GAME OVER!',
+              context.l10n.gameOver,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'RehnCondensed',
@@ -344,7 +343,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
         const SizedBox(height: 4),
         if (!compact)
           Text(
-            'Final leaderboard',
+            context.l10n.finalLeaderboard,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: AppColors.ivory,
@@ -371,12 +370,12 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     final isFullTie =
         winners.length > 1 && winners.length == _sortedPlayers.length;
     final ribbonLabel = isFullTie
-        ? 'TIE GAME'
+        ? context.l10n.tieGame
         : winners.length > 1
-        ? 'CO-WINNERS'
-        : 'WINNER';
+        ? context.l10n.coWinners
+        : context.l10n.winner;
     final winnerNames = isFullTie
-        ? 'EVERYONE'
+        ? context.l10n.everyone
         : winners
               .map((player) => player.name)
               .join(winners.length == 2 ? ' & ' : ', ');
@@ -392,7 +391,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       child: !hasWinner
           ? Center(
               child: Text(
-                'No results yet',
+                context.l10n.noResultsYet,
                 style: Theme.of(
                   context,
                 ).textTheme.headlineSmall?.copyWith(color: AppColors.ivory),
@@ -425,7 +424,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 ),
                 SizedBox(height: compact ? 8 : 10),
                 Text(
-                  isParty ? 'FINAL PROFIT' : 'FINAL SCORE',
+                  isParty ? context.l10n.finalProfit : context.l10n.finalScore,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: AppColors.brassLight,
@@ -474,11 +473,11 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
             child: Row(
               children: [
                 SizedBox(width: 46, child: _buildBoardHeader('#')),
-                Expanded(child: _buildBoardHeader('PLAYER')),
+                Expanded(child: _buildBoardHeader(context.l10n.player)),
                 SizedBox(
                   width: 104,
                   child: _buildBoardHeader(
-                    isParty ? 'PROFIT' : 'FINAL SCORE',
+                    isParty ? context.l10n.profit : context.l10n.finalScore,
                     alignRight: true,
                   ),
                 ),
@@ -491,8 +490,8 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
                 ? Center(
                     child: Text(
                       isParty
-                          ? 'Profits will appear here.'
-                          : 'Scores will appear here.',
+                          ? context.l10n.profitsAppear
+                          : context.l10n.scoresAppear,
                       style: Theme.of(
                         context,
                       ).textTheme.titleMedium?.copyWith(color: AppColors.ivory),
@@ -630,8 +629,8 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
           width: double.infinity,
           child: _buildActionButton(
             label: _isReturningToLobby
-                ? 'RETURNING TO LOBBY...'
-                : 'BACK TO LOBBY',
+                ? context.l10n.returningLobby
+                : context.l10n.backToLobby,
             icon: Icons.groups_rounded,
             isGold: true,
             onTap: !_isReturningToLobby ? _backToLobby : null,
@@ -641,7 +640,7 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
         SizedBox(
           width: double.infinity,
           child: _buildActionButton(
-            label: 'BACK TO HOME',
+            label: context.l10n.backToHome,
             icon: Icons.home_rounded,
             isGold: false,
             onTap: _hasLeftResults ? null : _goHome,
