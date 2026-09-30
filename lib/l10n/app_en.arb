@@ -308,5 +308,10 @@
     }
   },
   "getFullGame": "GET THE FULL GAME",
-  "downloadOnAppStore": "DOWNLOAD ON APP STORE"
+  "downloadOnAppStore": "DOWNLOAD ON APP STORE",
+  "insufficientChips": "You do not have enough chips left this round.",
+  "invalidPollTarget": "That player is not available for betting.",
+  "bettingClosedRound": "Betting has closed for this round.",
+  "betNoLongerMoved": "That bet can no longer be moved.",
+  "partyPollRequestFailed": "Party Poll request failed. Please try again."
 }

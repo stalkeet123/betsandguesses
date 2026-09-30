@@ -19,6 +19,7 @@ import '../../../l10n/l10n.dart';
 import '../../../features/game/models/question_model.dart';
 import '../../../features/game/models/classic_snapshot.dart';
 import '../../../features/game/providers/game_providers.dart';
+import '../../../features/party/presentation/party_poll_error_localizations.dart';
 import '../../../features/party/providers/party_poll_session_provider.dart';
 import '../../../features/player/models/player_model.dart';
 import '../../../features/room/models/room_model.dart';
@@ -501,10 +502,13 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               bettingDurationSeconds: GameConstants.partyBetTimerSeconds,
             );
         if (snapshot == null) {
-          final message =
-              ref.read(partyPollSessionProvider).errorMessage ??
-              'Party game could not start.';
-          throw StateError(message);
+          if (!mounted) return;
+          throw StateError(
+            partyPollErrorMessageForCode(
+              context.l10n,
+              ref.read(partyPollSessionProvider).errorCode,
+            ),
+          );
         }
         ref.read(currentRoomProvider.notifier).set(snapshot.room);
 

@@ -19,6 +19,7 @@ import '../../room/providers/room_providers.dart';
 import '../constants/party_poll_rules.dart';
 import '../models/party_poll_snapshot.dart';
 import '../providers/party_poll_session_provider.dart';
+import '../presentation/party_poll_error_localizations.dart';
 import '../utils/party_poll_deadline.dart';
 import '../utils/party_poll_snapshot_reload.dart';
 import '../widgets/party_poll_production_view.dart';
@@ -729,8 +730,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
           );
       if (placement == null && mounted) {
         _showMessage(
-          ref.read(partyPollSessionProvider).errorMessage ??
-              context.l10n.betPlacementFailed,
+          partyPollErrorMessageForCode(
+            context.l10n,
+            ref.read(partyPollSessionProvider).errorCode,
+          ),
         );
       }
     } finally {
@@ -814,8 +817,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
           );
       if (updated == null && mounted) {
         _showMessage(
-          ref.read(partyPollSessionProvider).errorMessage ??
-              context.l10n.betMoveFailed,
+          partyPollErrorMessageForCode(
+            context.l10n,
+            ref.read(partyPollSessionProvider).errorCode,
+          ),
         );
       } else if (updated != null && mounted) {
         setState(() {
@@ -856,8 +861,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       if (updated == null && mounted) {
         setState(() => _optimisticallyHiddenBetIds.remove(betId));
         _showMessage(
-          ref.read(partyPollSessionProvider).errorMessage ??
-              context.l10n.betRemoveFailed,
+          partyPollErrorMessageForCode(
+            context.l10n,
+            ref.read(partyPollSessionProvider).errorCode,
+          ),
         );
       }
     } finally {
@@ -1055,7 +1062,12 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          state.errorMessage ?? context.l10n.loadingPartyPoll,
+                          state.errorCode == null
+                              ? context.l10n.loadingPartyPoll
+                              : partyPollErrorMessageForCode(
+                                  context.l10n,
+                                  state.errorCode,
+                                ),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.outfit(
                             color: AppColors.ivory,

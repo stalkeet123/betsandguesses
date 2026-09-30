@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:witsgame/l10n/app_localizations.dart';
+import 'package:witsgame/features/party/presentation/party_poll_error_localizations.dart';
 
 void main() {
   final english = lookupAppLocalizations(const Locale('en'));
@@ -50,6 +51,67 @@ void main() {
       expect(turkish.breakEven, 'BAŞA BAŞ');
     });
 
+    test('maps backend error codes to English and Turkish UI copy', () {
+      const cases = <String, (String, String)>{
+        'POLL_MAX_THREE_TARGETS': (
+          'You can bet on up to 3 players per round.',
+          'Her tur en fazla 3 oyuncuya fiş koyabilirsin.',
+        ),
+        'POLL_CHIP_ALREADY_USED': (
+          'That chip is already used this round.',
+          'Bu fişi bu turda zaten kullandın.',
+        ),
+        'INVALID_PARTY_POLL_CHIP': (
+          'Choose an available 5, 10, or 20 chip.',
+          "Kullanılabilir 5, 10 veya 20'lik bir fiş seç.",
+        ),
+        'INSUFFICIENT_CHIPS': (
+          'You do not have enough chips left this round.',
+          'Bu tur için yeterli fişin kalmadı.',
+        ),
+        'INVALID_POLL_TARGET': (
+          'That player is not available for betting.',
+          'Bu oyuncuya fiş koyamazsın.',
+        ),
+        'BETTING_WINDOW_CLOSED': (
+          'Betting has closed for this round.',
+          'Bu tur için fiş koyma süresi bitti.',
+        ),
+        'BETTING_DEADLINE_MISSING': (
+          'Betting has closed for this round.',
+          'Bu tur için fiş koyma süresi bitti.',
+        ),
+        'INVALID_BET_MOVE': (
+          'That bet can no longer be moved.',
+          'Bu fiş artık taşınamaz.',
+        ),
+        'INVALID_BET_POSITION': (
+          'That bet can no longer be moved.',
+          'Bu fiş artık taşınamaz.',
+        ),
+      };
+
+      for (final entry in cases.entries) {
+        expect(
+          partyPollErrorMessageForCode(english, entry.key),
+          entry.value.$1,
+          reason: entry.key,
+        );
+        expect(
+          partyPollErrorMessageForCode(turkish, entry.key),
+          entry.value.$2,
+          reason: entry.key,
+        );
+      }
+      expect(
+        partyPollErrorMessageForCode(english, 'P0001'),
+        'Party Poll request failed. Please try again.',
+      );
+      expect(
+        partyPollErrorMessageForCode(turkish, 'P0001'),
+        'Party Poll işlemi başarısız oldu. Tekrar dene.',
+      );
+    });
     test('localizes Party Poll validation and action errors', () {
       expect(
         english.chooseAvailableChip,

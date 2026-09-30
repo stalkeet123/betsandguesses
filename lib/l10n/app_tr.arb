@@ -308,5 +308,10 @@
     }
   },
   "getFullGame": "TAM OYUNU AL",
-  "downloadOnAppStore": "APP STORE'DAN İNDİR"
+  "downloadOnAppStore": "APP STORE'DAN İNDİR",
+  "insufficientChips": "Bu tur için yeterli fişin kalmadı.",
+  "invalidPollTarget": "Bu oyuncuya fiş koyamazsın.",
+  "bettingClosedRound": "Bu tur için fiş koyma süresi bitti.",
+  "betNoLongerMoved": "Bu fiş artık taşınamaz.",
+  "partyPollRequestFailed": "Party Poll işlemi başarısız oldu. Tekrar dene."
 }

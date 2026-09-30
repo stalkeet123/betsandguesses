@@ -7,43 +7,26 @@ import '../models/party_poll_snapshot.dart';
 import '../services/party_poll_service.dart';
 
 class PartyPollErrorDetails {
-  final String message;
-  final String? backendCode;
+  final String errorCode;
 
-  const PartyPollErrorDetails({required this.message, this.backendCode});
+  const PartyPollErrorDetails({required this.errorCode});
 }
+
+const partyPollRequestFailedCode = 'PARTY_POLL_REQUEST_FAILED';
 
 final _partyPollBackendMarker = RegExp(r'\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b');
 
 PartyPollErrorDetails partyPollErrorDetails(Object error) {
   if (error is PostgrestException) {
     final marker = _partyPollBackendMarker.firstMatch(error.message)?.group(0);
-    final message = switch (marker) {
-      'POLL_MAX_THREE_TARGETS' => 'You can bet on up to 3 players per round.',
-      'POLL_CHIP_ALREADY_USED' => 'That chip is already used this round.',
-      'INVALID_PARTY_POLL_CHIP' => 'Choose an available 5, 10, or 20 chip.',
-      'INSUFFICIENT_CHIPS' => 'You do not have enough chips left this round.',
-      'INVALID_POLL_TARGET' => 'That player is not available for betting.',
-      'BETTING_WINDOW_CLOSED' ||
-      'BETTING_DEADLINE_MISSING' => 'Betting has closed for this round.',
-      'INVALID_BET_MOVE' ||
-      'INVALID_BET_POSITION' => 'That bet can no longer be moved.',
-      _ => 'Party Poll request failed. Please try again.',
-    };
     return PartyPollErrorDetails(
-      message: message,
-      backendCode: marker ?? error.code,
+      errorCode: marker ?? error.code ?? partyPollRequestFailedCode,
     );
   }
   if (error is ArgumentError && error.name == 'chips') {
-    return const PartyPollErrorDetails(
-      message: 'Choose an available 5, 10, or 20 chip.',
-      backendCode: 'INVALID_PARTY_POLL_CHIP',
-    );
+    return const PartyPollErrorDetails(errorCode: 'INVALID_PARTY_POLL_CHIP');
   }
-  return const PartyPollErrorDetails(
-    message: 'Party Poll request failed. Please try again.',
-  );
+  return const PartyPollErrorDetails(errorCode: partyPollRequestFailedCode);
 }
 
 PartyPollSnapshot selectPartyPollSnapshot(
@@ -58,14 +41,12 @@ class PartyPollSessionState {
   final PartyPollSnapshot? snapshot;
   final bool isLoading;
   final bool isCommandRunning;
-  final String? errorMessage;
   final String? errorCode;
 
   const PartyPollSessionState({
     this.snapshot,
     this.isLoading = false,
     this.isCommandRunning = false,
-    this.errorMessage,
     this.errorCode,
   });
 
@@ -74,7 +55,6 @@ class PartyPollSessionState {
     bool clearSnapshot = false,
     bool? isLoading,
     bool? isCommandRunning,
-    String? errorMessage,
     String? errorCode,
     bool clearError = false,
   }) {
@@ -82,7 +62,6 @@ class PartyPollSessionState {
       snapshot: clearSnapshot ? null : snapshot ?? this.snapshot,
       isLoading: isLoading ?? this.isLoading,
       isCommandRunning: isCommandRunning ?? this.isCommandRunning,
-      errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
       errorCode: clearError ? null : errorCode ?? this.errorCode,
     );
   }
@@ -108,8 +87,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     state = state.copyWith(
       isLoading: isLoading,
       isCommandRunning: isCommandRunning,
-      errorMessage: details.message,
-      errorCode: details.backendCode,
+      errorCode: details.errorCode,
     );
   }
 
@@ -161,7 +139,7 @@ class PartyPollSessionNotifier extends Notifier<PartyPollSessionState> {
     } on FreeHostLimitReachedException {
       state = state.copyWith(
         isCommandRunning: false,
-        errorMessage: freeHostLimitReachedMessage,
+        errorCode: freeHostLimitReachedMessage,
       );
       rethrow;
     } catch (error) {

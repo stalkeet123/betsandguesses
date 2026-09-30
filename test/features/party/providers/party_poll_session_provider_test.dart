@@ -91,7 +91,7 @@ void main() {
   });
 
   group('partyPollErrorDetails', () {
-    test('presents max-three-target failures without raw Postgrest text', () {
+    test('retains the max-three-target backend marker as a stable code', () {
       const raw = PostgrestException(
         message: 'POLL_MAX_THREE_TARGETS',
         code: '22023',
@@ -100,13 +100,10 @@ void main() {
 
       final details = partyPollErrorDetails(raw);
 
-      expect(details.message, 'You can bet on up to 3 players per round.');
-      expect(details.message, isNot(contains('PostgrestException')));
-      expect(details.message, isNot(contains('POLL_MAX_THREE_TARGETS')));
-      expect(details.backendCode, 'POLL_MAX_THREE_TARGETS');
+      expect(details.errorCode, 'POLL_MAX_THREE_TARGETS');
     });
 
-    test('keeps backend code while hiding unknown database details', () {
+    test('keeps unknown backend codes without exposing database details', () {
       const raw = PostgrestException(
         message: 'unexpected internal database detail',
         code: 'P0001',
@@ -115,28 +112,38 @@ void main() {
 
       final details = partyPollErrorDetails(raw);
 
-      expect(details.message, 'Party Poll request failed. Please try again.');
-      expect(details.message, isNot(contains(raw.message)));
-      expect(details.message, isNot(contains('private hint')));
-      expect(details.backendCode, 'P0001');
+      expect(details.errorCode, 'P0001');
     });
 
-    test('maps common bet validation markers to safe messages', () {
-      const cases = <String, String>{
-        'POLL_CHIP_ALREADY_USED': 'That chip is already used this round.',
-        'INVALID_PARTY_POLL_CHIP': 'Choose an available 5, 10, or 20 chip.',
-        'INSUFFICIENT_CHIPS': 'You do not have enough chips left this round.',
-        'INVALID_POLL_TARGET': 'That player is not available for betting.',
-        'BETTING_WINDOW_CLOSED': 'Betting has closed for this round.',
-      };
+    test('preserves each Party Poll validation marker', () {
+      const codes = <String>[
+        'POLL_CHIP_ALREADY_USED',
+        'INVALID_PARTY_POLL_CHIP',
+        'INSUFFICIENT_CHIPS',
+        'INVALID_POLL_TARGET',
+        'BETTING_WINDOW_CLOSED',
+        'BETTING_DEADLINE_MISSING',
+        'INVALID_BET_MOVE',
+        'INVALID_BET_POSITION',
+      ];
 
-      for (final entry in cases.entries) {
+      for (final code in codes) {
         final details = partyPollErrorDetails(
-          PostgrestException(message: entry.key, code: 'P0001'),
+          PostgrestException(message: code, code: 'P0001'),
         );
-        expect(details.message, entry.value, reason: entry.key);
-        expect(details.backendCode, entry.key, reason: entry.key);
+        expect(details.errorCode, code, reason: code);
       }
+    });
+
+    test('uses a stable code for client validation and unknown failures', () {
+      expect(
+        partyPollErrorDetails(ArgumentError.value(1, 'chips')).errorCode,
+        'INVALID_PARTY_POLL_CHIP',
+      );
+      expect(
+        partyPollErrorDetails(Exception('network')).errorCode,
+        partyPollRequestFailedCode,
+      );
     });
   });
 }
