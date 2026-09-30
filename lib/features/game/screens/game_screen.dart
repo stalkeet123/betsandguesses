@@ -2505,7 +2505,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         'state_version': settlement.stateVersion,
       });
     } catch (error, stackTrace) {
-      debugPrint('Atomic round settlement failed: $error\n$stackTrace');
+      if (error is! ClassicPhaseRaceException) {
+        debugPrint('Atomic round settlement failed: $error\n$stackTrace');
+      }
     }
 
     if (_canUseRef) {
@@ -2857,8 +2859,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _isBettingClosedError(Object error) {
     return error is BettingWindowClosedException ||
         (error is PostgrestException &&
-            error.code == '40001' &&
-            error.message.toLowerCase().contains('betting'));
+            isBettingWindowClosedPostgrestError(error));
   }
 
   void _recoverFromClosedBettingWindow() {

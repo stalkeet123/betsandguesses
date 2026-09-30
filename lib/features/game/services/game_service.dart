@@ -10,6 +10,22 @@ import '../models/classic_snapshot.dart';
 import '../../../core/constants/game_constants.dart';
 import '../../room/models/room_model.dart';
 
+bool isBettingWindowClosedPostgrestError(PostgrestException error) {
+  final message = error.message.toUpperCase();
+  return message.contains('BETTING_WINDOW_CLOSED') ||
+      message.contains('BETTING PHASE IS CLOSED') ||
+      message.contains('BETTING PHASE IS NOT ACTIVE');
+}
+
+bool isClassicPhaseRacePostgrestError(PostgrestException error) {
+  final message = error.message.toUpperCase();
+  return message.contains('ROUND CHANGED') ||
+      message.contains('BETTING PHASE IS NOT ACTIVE') ||
+      message.contains('BETTING DEADLINE NOT REACHED') ||
+      message.contains('ROOM IS NOT WAITING') ||
+      message.contains('GAME IS NOT FINISHED');
+}
+
 /// Service for game logic: questions, guesses, bets, scoring
 class GameService {
   final SupabaseClient _client;
@@ -397,13 +413,20 @@ class GameService {
     required String roomId,
     required int roundNumber,
   }) async {
-    final response = await _client.rpc(
-      'settle_game_round_v2',
-      params: {'p_room_id': roomId, 'p_round_number': roundNumber},
-    );
-    return RoundSettlementResult.fromJson(
-      Map<String, dynamic>.from(response as Map),
-    );
+    try {
+      final response = await _client.rpc(
+        'settle_game_round_v2',
+        params: {'p_room_id': roomId, 'p_round_number': roundNumber},
+      );
+      return RoundSettlementResult.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
+    } on PostgrestException catch (error) {
+      if (isClassicPhaseRacePostgrestError(error)) {
+        throw const ClassicPhaseRaceException();
+      }
+      rethrow;
+    }
   }
 
   // ── Bets ──
@@ -468,7 +491,14 @@ class GameService {
 
   /// Remove a bet
   Future<void> removeBet(String betId) async {
-    await _client.rpc('remove_bet_v2', params: {'p_bet_id': betId});
+    try {
+      await _client.rpc('remove_bet_v2', params: {'p_bet_id': betId});
+    } on PostgrestException catch (error) {
+      if (isBettingWindowClosedPostgrestError(error)) {
+        throw const BettingWindowClosedException();
+      }
+      rethrow;
+    }
   }
 
   // ── Scoring ──
@@ -512,6 +542,10 @@ class GuessingWindowClosedException implements Exception {
 /// optimistic chip stranded in local state.
 class BettingWindowClosedException implements Exception {
   const BettingWindowClosedException();
+}
+
+class ClassicPhaseRaceException implements Exception {
+  const ClassicPhaseRaceException();
 }
 
 class SecureGameStart {

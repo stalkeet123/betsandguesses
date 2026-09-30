@@ -93,6 +93,47 @@ void main() {
     );
   });
 
+  group('PostgREST phase-race classifiers', () {
+    test('accepts old and hardened betting-window contracts', () {
+      expect(
+        isBettingWindowClosedPostgrestError(
+          const PostgrestException(
+            message: 'BETTING PHASE IS CLOSED',
+            code: '40001',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isBettingWindowClosedPostgrestError(
+          const PostgrestException(
+            message: 'BETTING_WINDOW_CLOSED',
+            code: 'P0001',
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('recognizes Classic phase races by backend message', () {
+      for (final message in const [
+        'ROUND CHANGED',
+        'BETTING PHASE IS NOT ACTIVE',
+        'BETTING DEADLINE NOT REACHED',
+        'ROOM IS NOT WAITING',
+        'GAME IS NOT FINISHED',
+      ]) {
+        expect(
+          isClassicPhaseRacePostgrestError(
+            PostgrestException(message: message, code: 'P0001'),
+          ),
+          isTrue,
+          reason: message,
+        );
+      }
+    });
+  });
+
   test('round settlement result parses authoritative scores', () {
     final result = RoundSettlementResult.fromJson({
       'status': 'settled',
