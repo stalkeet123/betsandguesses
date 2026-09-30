@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/adaptive_question_text.dart';
 import '../../../core/widgets/cached_asset_image.dart';
+import '../../../l10n/l10n.dart';
 import '../../game/widgets/poker_chip.dart';
 import '../constants/party_poll_rules.dart';
 
@@ -152,24 +153,24 @@ class PartyPollProductionView extends StatelessWidget {
                                 SizedBox(height: gapTight),
                                 SizedBox(
                                   height: isCompact ? 39 : 42,
-                                  child: _roundTimer(),
+                                  child: _roundTimer(context),
                                 ),
                                 SizedBox(height: gap),
                                 Expanded(
                                   flex: isCompact ? 30 : 29,
                                   child: isReveal
-                                      ? _resultRevealCard(scale: 1)
-                                      : _questionCard(),
+                                      ? _resultRevealCard(context, scale: 1)
+                                      : _questionCard(context),
                                 ),
                                 SizedBox(height: gap),
                                 SizedBox(
                                   height: chipHeight,
-                                  child: _chipPicker(scale: 1),
+                                  child: _chipPicker(context, scale: 1),
                                 ),
                                 SizedBox(height: gap),
                                 Expanded(
                                   flex: isCompact ? 24 : 26,
-                                  child: _playersStrip(),
+                                  child: _playersStrip(context),
                                 ),
                               ],
                             ),
@@ -185,7 +186,7 @@ class PartyPollProductionView extends StatelessWidget {
                       key: const ValueKey('party-betting-board-column'),
                       child: KeyedSubtree(
                         key: ValueKey('party-board-$roundNumber'),
-                        child: _partyPollBoard(),
+                        child: _partyPollBoard(context),
                       ),
                     ),
                   ),
@@ -198,14 +199,14 @@ class PartyPollProductionView extends StatelessWidget {
     );
   }
 
-  Widget _roundTimer() {
+  Widget _roundTimer(BuildContext context) {
     final seconds = max(0, remaining.inSeconds);
     return Row(
       children: [
         Expanded(
           child: _infoPill(
             Icons.groups_rounded,
-            'Round $roundNumber/$maxRounds',
+            context.l10n.roundProgress(roundNumber, maxRounds),
           ),
         ),
         const SizedBox(width: 10),
@@ -213,7 +214,7 @@ class PartyPollProductionView extends StatelessWidget {
           child: _infoPill(
             isReveal ? Icons.emoji_events_rounded : Icons.timer_rounded,
             isReveal
-                ? 'RESULT'
+                ? context.l10n.result
                 : seconds > 0
                 ? '0:${seconds.toString().padLeft(2, '0')}'
                 : '--:--',
@@ -278,7 +279,7 @@ class PartyPollProductionView extends StatelessWidget {
       ],
     ),
   );
-  Widget _chipPicker({required double scale}) {
+  Widget _chipPicker(BuildContext context, {required double scale}) {
     const chips = PartyPollRules.chipValues;
     final usedChips = bets
         .where((bet) => bet.bettorPlayerId == currentPlayerId)
@@ -296,12 +297,12 @@ class PartyPollProductionView extends StatelessWidget {
     }
     final canEdit = !isReveal;
     final pickerTitle = !canEdit
-        ? 'CHIPS LOCKED'
+        ? context.l10n.chipsLocked
         : selectedBet != null
-        ? 'TAP CHIP TO RECALL'
+        ? context.l10n.tapChipRecall
         : selectedChipValue == null
-        ? 'SELECT A CHIP'
-        : 'TAP A BET AREA';
+        ? context.l10n.selectChip
+        : context.l10n.tapBetArea;
     return AnimatedContainer(
       key: const ValueKey('party-chip-picker'),
       duration: const Duration(milliseconds: 120),
@@ -401,11 +402,16 @@ class PartyPollProductionView extends StatelessWidget {
             height: 26,
             child: Row(
               children: [
-                Expanded(child: _chipStatPill('PROFIT', _formatProfit(score))),
+                Expanded(
+                  child: _chipStatPill(
+                    context.l10n.profit,
+                    _formatProfit(score),
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _chipStatPill(
-                    'CHIPS LEFT',
+                    context.l10n.chipsLeft,
                     isReveal ? '--' : '$availableChips',
                   ),
                 ),
@@ -521,7 +527,7 @@ class PartyPollProductionView extends StatelessWidget {
 
   String _formatProfit(int value) => value > 0 ? '+$value' : '$value';
 
-  Widget _playersStrip() {
+  Widget _playersStrip(BuildContext context) {
     final sorted = [...players]..sort((a, b) => b.score.compareTo(a.score));
     final visiblePlayers = sorted.take(3).toList();
     return Container(
@@ -562,7 +568,7 @@ class PartyPollProductionView extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'LEADERBOARD',
+                        context.l10n.leaderboard,
                         style: GoogleFonts.outfit(
                           color: AppColors.ivory.withValues(alpha: .78),
                           fontSize: 11,
@@ -573,7 +579,7 @@ class PartyPollProductionView extends StatelessWidget {
                       ),
                       const SizedBox(width: 7),
                       Text(
-                        'PROFIT',
+                        context.l10n.profit,
                         style: GoogleFonts.outfit(
                           color: AppColors.brassLight.withValues(alpha: .72),
                           fontSize: 9,
@@ -700,10 +706,10 @@ class PartyPollProductionView extends StatelessWidget {
     return null;
   }
 
-  Widget _partyPollBoard() {
+  Widget _partyPollBoard(BuildContext context) {
     final boardPlayers = [...players]
       ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
-    final specs = _partyPollSlotsFor(boardPlayers);
+    final specs = _partyPollSlotsFor(boardPlayers, context);
     final orderedSpecs = [
       ...specs.where((slot) => !slot.isGold),
       ...specs.where((slot) => slot.isGold),
@@ -777,7 +783,7 @@ class PartyPollProductionView extends StatelessWidget {
               if (showRevealEffects && winningSpecs.isNotEmpty)
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: _pollWinnerOverlay(winningSpecs, boardSize),
+                    child: _pollWinnerOverlay(context, winningSpecs, boardSize),
                   ),
                 ),
             ],
@@ -946,6 +952,7 @@ class PartyPollProductionView extends StatelessWidget {
   }
 
   Widget _pollWinnerOverlay(
+    BuildContext context,
     List<_PartyPollSlotSpec> winningSpecs,
     Size boardSize,
   ) {
@@ -980,7 +987,7 @@ class PartyPollProductionView extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isTie ? 'WINNERS' : 'WINNER',
+                    isTie ? context.l10n.winners : context.l10n.winner,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.outfit(
                       color: AppColors.mahoganyDark.withValues(alpha: .8),
@@ -1029,6 +1036,7 @@ class PartyPollProductionView extends StatelessWidget {
 
   List<_PartyPollSlotSpec> _partyPollSlotsFor(
     List<PartyPollViewPlayer> boardPlayers,
+    BuildContext context,
   ) {
     final count = boardPlayers.isEmpty ? 4 : boardPlayers.length.clamp(2, 8);
     const tones = [
@@ -1052,7 +1060,7 @@ class PartyPollProductionView extends StatelessWidget {
         rowIndex: rowIndex,
         targetPlayerId: player?.id ?? '',
         targetSlotIndex: player?.slotIndex ?? rowIndex,
-        title: player?.name ?? 'PLAYER ${rowIndex + 1}',
+        title: player?.name ?? context.l10n.playerNumber(rowIndex + 1),
         odds: 2,
         tone: tones[rowIndex % tones.length],
         rect: Rect.fromLTWH(
@@ -1376,7 +1384,7 @@ class PartyPollProductionView extends StatelessWidget {
     );
   }
 
-  Widget _questionCard() => LayoutBuilder(
+  Widget _questionCard(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final isNarrow = constraints.maxWidth < 160;
       final horizontalPadding = isNarrow ? 10.0 : 18.0;
@@ -1437,7 +1445,7 @@ class PartyPollProductionView extends StatelessWidget {
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      'POLL',
+                      context.l10n.poll,
                       maxLines: 1,
                       style: GoogleFonts.outfit(
                         color: AppColors.felt,
@@ -1481,7 +1489,7 @@ class PartyPollProductionView extends StatelessWidget {
       );
     },
   );
-  Widget _resultRevealCard({required double scale}) {
+  Widget _resultRevealCard(BuildContext context, {required double scale}) {
     final resultGlowSize = (108 * scale).clamp(78.0, 118.0).toDouble();
     final resultSettled = isReveal && emphasizeWinners;
     final orderedPlayers = [...players]
@@ -1492,7 +1500,7 @@ class PartyPollProductionView extends StatelessWidget {
     final answerText = !resultSettled
         ? '--'
         : winners.isEmpty
-        ? 'MAJORITY PICK'
+        ? context.l10n.majorityPick
         : winners.map((player) => player.name.toUpperCase()).join(' · ');
     final ownBets = bets
         .where((bet) => bet.bettorPlayerId == currentPlayerId)
@@ -1504,12 +1512,12 @@ class PartyPollProductionView extends StatelessWidget {
     final didWin = resultSettled && netProfit > 0;
     final accent = didWin ? AppColors.chipGold : AppColors.brassLight;
     final banner = !resultSettled
-        ? 'LOCKING RESULT'
+        ? context.l10n.lockingResult
         : netProfit > 0
-        ? 'YOU WON +$netProfit'
+        ? context.l10n.youWon(netProfit)
         : netProfit < 0
-        ? 'YOU LOST -${netProfit.abs()}'
-        : 'BREAK EVEN';
+        ? context.l10n.youLost(netProfit.abs())
+        : context.l10n.breakEven;
     final headlineColor = didWin ? AppColors.mahoganyDark : Colors.white;
     return AnimatedContainer(
           key: ValueKey('party-result-$roundNumber'),
@@ -1560,7 +1568,7 @@ class PartyPollProductionView extends StatelessWidget {
           child: Column(
             children: [
               Text(
-                'RESULT',
+                context.l10n.result,
                 style: GoogleFonts.outfit(
                   color: didWin
                       ? AppColors.mahoganyDark.withValues(alpha: .72)

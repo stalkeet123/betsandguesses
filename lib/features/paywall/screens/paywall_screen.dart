@@ -789,8 +789,8 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
-                'OK',
+              child: Text(
+                context.l10n.ok,
                 style: TextStyle(
                   color: Colors.redAccent,
                   fontWeight: FontWeight.w900,

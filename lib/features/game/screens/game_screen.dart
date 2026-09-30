@@ -3686,7 +3686,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final entries = playerIds.map((playerId) {
       final player = _playerById(playerId);
       return _LeaderboardEntry(
-        name: player?.name ?? 'Player',
+        name: player?.name ?? context.l10n.player,
         score:
             gameState.scores[playerId] ??
             (player == null ? 0 : _authoritativePlayerScore(player)),
@@ -9588,7 +9588,7 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'GET THE FULL GAME',
+                              context.l10n.getFullGame,
                               style: GoogleFonts.outfit(
                                 color: AppColors.brassLight,
                                 fontWeight: FontWeight.w800,
@@ -9599,7 +9599,7 @@ class _WebPromoLogoState extends State<_WebPromoLogo> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'DOWNLOAD ON APP STORE',
+                              context.l10n.downloadOnAppStore,
                               style: GoogleFonts.outfit(
                                 color: AppColors.ivory,
                                 fontWeight: FontWeight.w900,

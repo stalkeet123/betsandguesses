@@ -13,6 +13,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/cached_asset_image.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/services/game_trace_service.dart';
+import '../../../l10n/l10n.dart';
 import '../../room/models/room_model.dart';
 import '../../room/providers/room_providers.dart';
 import '../constants/party_poll_rules.dart';
@@ -516,7 +517,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                     ),
                     const SizedBox(height: 22),
                     Text(
-                      'ROUND',
+                      context.l10n.round,
                       style: GoogleFonts.outfit(
                         color: AppColors.ivory.withValues(alpha: .72),
                         fontSize: 15,
@@ -554,7 +555,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                         ),
                         const SizedBox(width: 14),
                         Text(
-                          'PARTY POLL',
+                          context.l10n.partyPoll,
                           style: GoogleFonts.outfit(
                             color: AppColors.ivory,
                             fontSize: 18,
@@ -573,7 +574,10 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '${round.number} / ${snapshot.room.maxRounds}',
+                      context.l10n.roundFraction(
+                        round.number,
+                        snapshot.room.maxRounds,
+                      ),
                       style: GoogleFonts.outfit(
                         color: AppColors.brassLight.withValues(alpha: .72),
                         fontSize: 13,
@@ -682,21 +686,21 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         .toSet();
     final effectiveUsedChips = <int>{...usedChips, ...pendingChips};
     if (!PartyPollRules.isValidChip(chip)) {
-      _showMessage('Choose an available 5, 10, or 20 chip.');
+      _showMessage(context.l10n.chooseAvailableChip);
       return;
     }
     if (!PartyPollRules.isChipAvailable(
       chip: chip,
       usedChips: effectiveUsedChips,
     )) {
-      _showMessage('That chip is already used this round.');
+      _showMessage(context.l10n.chipAlreadyUsed);
       return;
     }
     if (!PartyPollRules.canTargetPlayer(
       occupiedTargetPlayerIds: _effectiveOwnTargetPlayerIds(snapshot),
       targetPlayerId: targetPlayerId,
     )) {
-      _showMessage('You can bet on up to 3 players per round.');
+      _showMessage(context.l10n.targetLimit);
       return;
     }
     final clientActionId = const Uuid().v4();
@@ -726,7 +730,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       if (placement == null && mounted) {
         _showMessage(
           ref.read(partyPollSessionProvider).errorMessage ??
-              'Bet could not be placed.',
+              context.l10n.betPlacementFailed,
         );
       }
     } finally {
@@ -785,7 +789,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       ),
       targetPlayerId: targetPlayerId,
     )) {
-      _showMessage('You can bet on up to 3 players per round.');
+      _showMessage(context.l10n.targetLimit);
       return;
     }
     setState(() {
@@ -811,7 +815,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
       if (updated == null && mounted) {
         _showMessage(
           ref.read(partyPollSessionProvider).errorMessage ??
-              'Bet could not be moved.',
+              context.l10n.betMoveFailed,
         );
       } else if (updated != null && mounted) {
         setState(() {
@@ -853,7 +857,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
         setState(() => _optimisticallyHiddenBetIds.remove(betId));
         _showMessage(
           ref.read(partyPollSessionProvider).errorMessage ??
-              'Bet could not be removed.',
+              context.l10n.betRemoveFailed,
         );
       }
     } finally {
@@ -1051,7 +1055,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          state.errorMessage ?? 'Loading Party Poll...',
+                          state.errorMessage ?? context.l10n.loadingPartyPoll,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.outfit(
                             color: AppColors.ivory,
@@ -1065,7 +1069,7 @@ class _PartyPollGameScreenState extends ConsumerState<PartyPollGameScreen>
                             side: const BorderSide(color: AppColors.brassLight),
                           ),
                           onPressed: _loadSnapshot,
-                          child: const Text('RETRY'),
+                          child: Text(context.l10n.retry),
                         ),
                       ],
                     ),

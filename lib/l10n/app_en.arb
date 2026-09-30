@@ -286,5 +286,27 @@
     "placeholders": {
       "amount": {}
     }
-  }
+  },
+  "partyPoll": "PARTY POLL",
+  "chipsLeft": "CHIPS LEFT",
+  "poll": "POLL",
+  "winners": "WINNERS",
+  "majorityPick": "MAJORITY PICK",
+  "lockingResult": "LOCKING RESULT",
+  "chooseAvailableChip": "Choose an available 5, 10, or 20 chip.",
+  "chipAlreadyUsed": "That chip is already used this round.",
+  "targetLimit": "You can bet on up to 3 players per round.",
+  "betPlacementFailed": "Bet could not be placed.",
+  "betMoveFailed": "Bet could not be moved.",
+  "betRemoveFailed": "Bet could not be removed.",
+  "loadingPartyPoll": "Loading Party Poll...",
+  "retry": "RETRY",
+  "playerNumber": "PLAYER {number}",
+  "@playerNumber": {
+    "placeholders": {
+      "number": {}
+    }
+  },
+  "getFullGame": "GET THE FULL GAME",
+  "downloadOnAppStore": "DOWNLOAD ON APP STORE"
 }

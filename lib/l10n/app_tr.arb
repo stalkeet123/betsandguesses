@@ -286,5 +286,27 @@
     "placeholders": {
       "amount": {}
     }
-  }
+  },
+  "partyPoll": "PARTY POLL",
+  "chipsLeft": "KALAN FİŞ",
+  "poll": "OYLAMA",
+  "winners": "KAZANANLAR",
+  "majorityPick": "ÇOĞUNLUĞUN SEÇİMİ",
+  "lockingResult": "SONUÇ KİLİTLENİYOR",
+  "chooseAvailableChip": "Kullanılabilir 5, 10 veya 20'lik bir fiş seç.",
+  "chipAlreadyUsed": "Bu fişi bu turda zaten kullandın.",
+  "targetLimit": "Her tur en fazla 3 oyuncuya fiş koyabilirsin.",
+  "betPlacementFailed": "Fiş yerleştirilemedi.",
+  "betMoveFailed": "Fiş taşınamadı.",
+  "betRemoveFailed": "Fiş kaldırılamadı.",
+  "loadingPartyPoll": "Party Poll yükleniyor...",
+  "retry": "TEKRAR DENE",
+  "playerNumber": "OYUNCU {number}",
+  "@playerNumber": {
+    "placeholders": {
+      "number": {}
+    }
+  },
+  "getFullGame": "TAM OYUNU AL",
+  "downloadOnAppStore": "APP STORE'DAN İNDİR"
 }
