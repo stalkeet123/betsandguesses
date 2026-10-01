@@ -51,14 +51,33 @@ void main() {
       ]);
     });
 
-    test('keeps the current five-slot edge behavior', () {
+    test('assigns every inclusive boundary to its BETWEEN slot', () {
       expect(service.determineWinningBetSlotIndex(guesses, 9), 0);
       expect(service.determineWinningBetSlotIndex(guesses, 10), 1);
-      expect(service.determineWinningBetSlotIndex(guesses, 20), 2);
-      expect(service.determineWinningBetSlotIndex(guesses, 30), 2);
+      expect(service.determineWinningBetSlotIndex(guesses, 20), 1);
+      expect(service.determineWinningBetSlotIndex(guesses, 21), 2);
+      expect(service.determineWinningBetSlotIndex(guesses, 29), 2);
+      expect(service.determineWinningBetSlotIndex(guesses, 30), 3);
       expect(service.determineWinningBetSlotIndex(guesses, 40), 3);
       expect(service.determineWinningBetSlotIndex(guesses, 41), 4);
     });
+
+    test(
+      'assigns the production boundary bug answer to the upper BETWEEN slot',
+      () {
+        final productionBoundaries = [
+          _guess(id: 'a', value: 100),
+          _guess(id: 'b', value: 200),
+          _guess(id: 'c', value: 300),
+          _guess(id: 'd', value: 500),
+        ];
+
+        expect(
+          service.determineWinningBetSlotIndex(productionBoundaries, 300),
+          3,
+        );
+      },
+    );
 
     test('creates four ascending boundaries when guesses are missing', () {
       final boundaries = service.boardBoundaryValues([
@@ -91,6 +110,91 @@ void main() {
       service.calculatePayouts(guesses: guesses, bets: bets, correctAnswer: 25),
       {'player-a': 6},
     );
+  });
+
+  test('calculatePayouts uses the corrected inclusive boundary slots', () {
+    final guesses = [
+      _guess(id: 'a', value: 10),
+      _guess(id: 'b', value: 20),
+      _guess(id: 'c', value: 30),
+      _guess(id: 'd', value: 40),
+    ];
+    final bets = [
+      _bet(
+        id: 'bet-1',
+        playerId: 'at-b2',
+        slotIndex: 1,
+        chips: 2,
+        payoutMultiplier: 3,
+      ),
+      _bet(id: 'bet-2', playerId: 'sweet-spot', slotIndex: 2, chips: 4),
+      _bet(
+        id: 'bet-3',
+        playerId: 'at-b3',
+        slotIndex: 3,
+        chips: 3,
+        payoutMultiplier: 3,
+      ),
+    ];
+
+    expect(
+      service.calculatePayouts(guesses: guesses, bets: bets, correctAnswer: 20),
+      {'at-b2': 6},
+    );
+    expect(
+      service.calculatePayouts(guesses: guesses, bets: bets, correctAnswer: 30),
+      {'at-b3': 9},
+    );
+  });
+
+  group('PostgREST phase-race classifiers', () {
+    test('accepts old and hardened betting-window contracts', () {
+      expect(
+        isBettingWindowClosedPostgrestError(
+          const PostgrestException(
+            message: 'BETTING PHASE IS CLOSED',
+            code: '40001',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isBettingWindowClosedPostgrestError(
+          const PostgrestException(
+            message: 'BETTING_WINDOW_CLOSED',
+            code: 'P0001',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isBettingWindowClosedPostgrestError(
+          const PostgrestException(
+            message: 'BETTING PHASE IS NOT ACTIVE',
+            code: 'P0001',
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('recognizes Classic phase races by backend message', () {
+      for (final message in const [
+        'ROUND CHANGED',
+        'BETTING PHASE IS NOT ACTIVE',
+        'BETTING DEADLINE NOT REACHED',
+        'ROOM IS NOT WAITING',
+        'GAME IS NOT FINISHED',
+      ]) {
+        expect(
+          isClassicPhaseRacePostgrestError(
+            PostgrestException(message: message, code: 'P0001'),
+          ),
+          isTrue,
+          reason: message,
+        );
+      }
+    });
   });
 
   test('round settlement result parses authoritative scores', () {
@@ -130,6 +234,7 @@ Bet _bet({
   required String playerId,
   required int slotIndex,
   required int chips,
+  int payoutMultiplier = 2,
 }) {
   return Bet(
     id: id,
@@ -138,6 +243,6 @@ Bet _bet({
     playerId: playerId,
     slotIndex: slotIndex,
     chips: chips,
-    payoutMultiplier: 2,
+    payoutMultiplier: payoutMultiplier,
   );
 }
